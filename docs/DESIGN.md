@@ -19,13 +19,15 @@ deterministic and AI-free. AI is the primary consumer layer.
    aggregation, and assessment stay with the owner.
 5. Fixed, aligned opportunities and the decision to persist a snap are separate
    concerns.
-6. Meaningful component changes make a snap due; periodic baselines bound quiet
-   intervals.
-7. Every logical snap represents complete state across the registered scope.
-8. Event streams carry exact transitions; snaps carry coherent sampled state.
-9. Historical interpretation uses recorded timestamps, versions, policy epochs,
+6. Registration begins with a concrete historical retrieval need and a declared
+   useful representation and temporal resolution.
+7. Any canonical change in an owner-curated component projection makes a snap
+   due; periodic baselines bound quiet intervals.
+8. Every logical snap represents complete state across the registered scope.
+9. Event streams carry exact transitions; snaps carry coherent sampled state.
+10. Historical interpretation uses recorded timestamps, versions, policy epochs,
    provenance, and database ordering.
-10. Component schemas and capture practice can evolve while old history remains
+11. Component schemas and capture practice can evolve while old history remains
     directly interpretable.
 
 ## Terms and roles
@@ -39,6 +41,7 @@ deterministic and AI-free. AI is the primary consumer layer.
 | publication | Atomic replacement of a component's registered current state |
 | snap opportunity | A fixed clock-aligned boundary at which capture is evaluated |
 | system snap | One immutable logical state across the registered scope |
+| coherent cut | One transactionally consistent read of the component registry |
 | event stream | Exact transition history retained by the owning system |
 
 ```text
@@ -56,6 +59,11 @@ The declaration travels with the publisher and can be reconciled idempotently
 during deployment or maintainer startup. Snapper remains component-agnostic and
 executes no component callbacks.
 
+Every proposed component and quantity starts with the historical question it
+will answer and the representation and temporal resolution at which that answer
+is useful. These consumer requirements determine the curated projection before
+its schema is registered.
+
 A component is the ownership, consistency, revision, and replacement unit. A
 quantity is a typed subtree inside the component's `data`. Quantities provide
 discovery, validation, documentation, and generic presentation.
@@ -70,10 +78,15 @@ Each quantity definition includes, as applicable:
   bounded map, or window statistic;
 - unit and window definition;
 - dimension definitions and whether their value sets are open;
+- publication resolution, aggregation, or bucketing semantics when relevant;
 - required, optional, unavailable, and unknown-value semantics;
 - maximum cardinality or serialized size for bounded collections;
 - visibility classification; and
 - freshness, assessment, algorithm, and provenance policy identifiers.
+
+A component may also register related event sources. Each source declaration
+gives exact-event context a stable identity and resolver while the events remain
+in their authoritative system. The event-reference contract is defined below.
 
 Open bounded maps represent domains such as `jobs_by_state`. The map is one
 registered quantity; individual jobs, tasks, sites, or states stay outside the
@@ -87,10 +100,39 @@ external mutable catalog is unnecessary for interpretation.
 
 ## Publication and maintained now
 
-The owning subsystem publishes a complete replacement whenever its snap-visible
-state changes meaningfully. Whole-component publication gives every component
+The owning subsystem publishes a complete replacement whenever its curated,
+snap-visible state changes. Whole-component publication gives every component
 one assessment time, one source time, one revision, and one atomic consistency
 boundary. Independent publishers use separate component names.
+
+The owner chooses both content and resolution before publication. It may publish
+bucketed counts, rounded rates, stable categories, or another bounded projection
+whose changes are worth recording. snapper-ai applies one mechanical rule after
+publication: a canonical content change advances the component revision. It has
+no component or quantity significance engine. A publisher that exposes a raw
+fast-changing gauge has intentionally chosen that gauge's change rate as a
+possible system snap rate.
+
+The component API supports two owner assessments:
+
+- `publish_component(...)` submits a complete curated projection; and
+- `report_component_unchanged(...)` affirms that the owner assessed its source
+  and the currently registered projection remains current at its declared
+  resolution.
+
+A no-change report updates assessment time, optional source time, latest report
+time, and maintainer liveness. It preserves component data, content hash, and
+revision, so it creates no new change reason. An earlier unrecorded revision
+remains due. Assessment and source times are provenance outside the
+revision-driving canonical content; the next periodic baseline records their
+newest values.
+
+The no-change operation authenticates the same component owner and requires an
+active registered projection. A transport that can reorder messages also sends
+the revision it is affirming, allowing Snapper to reject a stale affirmation.
+An identical complete publication remains valid and has the same revision
+semantics; the explicit operation avoids constructing and validating a possibly
+large unchanged payload.
 
 Publication performs these generic operations:
 
@@ -144,6 +186,23 @@ Historical readers receive the assessment exactly as recorded. Alternative
 analysis can use supporting facts and an explicitly identified policy; it stays
 distinct from the assessment the system knew at the time.
 
+## Coherence and time
+
+A coherent snap is a transactionally consistent read of the current component
+registry. It guarantees that every included component was a complete accepted
+publication and that the registry did not change midway through composition.
+
+Coherence does not imply simultaneous source observation. Component owners run
+independently, and one snap may contain assessments made seconds or minutes
+apart. Every component therefore retains `assessed_at`, optional `source_as_of`,
+and its assessment-policy version. The snap envelope separately records the
+aligned `snap_time` and actual registry `observed_at`.
+
+APIs and AI context present these times with the state. The precise historical
+claim is: *these were the latest accepted component projections in one stable
+registry cut*. Consumers can apply freshness requirements to that evidence; they
+must not describe the components as simultaneously observed.
+
 ## Capture practice
 
 Snap opportunities occur at a fixed, aligned cadence. Every opportunity makes a
@@ -180,6 +239,12 @@ The first capture pass reads only the small `(component, revision,
 registration_version)` vector. Quiet opportunities stop before component JSON
 assembly. Capture performs only local registry reads, envelope construction,
 canonical ordering, hashing, and persistence.
+
+Storage sparsity is an observed outcome rather than a correctness target. A
+scope whose useful state changes at every opportunity produces a snap at every
+opportunity. The configured cadence bounds that rate. The revision-vector path
+still supplies durable change detection and cheap evaluation whenever the scope
+is quiet.
 
 Initial cadence values favor measurement:
 
@@ -317,7 +382,7 @@ The core retrieval operations are:
 - `component_history(scope, component, start, end)` returns the component's
   recorded evolution with applicable registration and provenance; and
 - `context_around(scope, time, window)` returns system state, nearby changes,
-  and references to exact event streams.
+  and resolvable references to registered exact event streams.
 
 Point-in-time results preserve their actual snap timestamp. Known observer gaps
 produce unknown coverage rather than silently carrying old state across the
@@ -334,6 +399,48 @@ Component-facing operations also expose the current registration and state,
 latest acceptance time, current revision, whether accepted content changed, and
 whether current content differs from the latest recorded snap.
 
+## Event-reference contract
+
+snapper-ai links coherent state to exact transitions without copying event
+streams into snap history. A component registration can declare zero or more
+event sources. Each declaration contains:
+
+- a stable source key unique within the component;
+- the authoritative owner and event kind;
+- event-time semantics and the field that carries event time;
+- a stable resolver identifier, such as an API route, MCP tool, or adapter name;
+- the JSON shape of any source-specific selector;
+- optional event-ID, cursor, and watermark semantics;
+- visibility and authorization classification; and
+- retention or availability semantics when known.
+
+`context_around` returns references using a common envelope:
+
+```json
+{
+  "component": "panda",
+  "source": "actions",
+  "resolver": "panda-action-stream",
+  "scope": "epicprod",
+  "from": "2026-07-16T18:25:00Z",
+  "until": "2026-07-16T18:35:00Z",
+  "selector": {"campaign": "26.06"},
+  "watermark": "opaque-source-watermark",
+  "availability": "available"
+}
+```
+
+`component`, `source`, and `resolver` identify the registered declaration.
+`from` and `until` bound event time. `selector`, `watermark`, and explicit event
+IDs are optional source-defined fields whose shapes come from that declaration.
+`availability` reports `available`, `expired`, `unauthorized`, or `unknown` at
+query time.
+
+A resolver must produce the referenced events or a specific availability
+result. The SWF integration maps resolver identifiers to concrete APIs and MCP
+tools. Stable registered identifiers keep stored or returned references
+independent of deployment URLs.
+
 ## AI evidence contract
 
 snapper-ai makes system state directly knowable across time. It moves the first
@@ -348,7 +455,7 @@ An AI-facing result includes:
 - schema, registration, assessment-policy, and capture-policy versions;
 - content hashes and source provenance;
 - changes within the requested context window; and
-- references to exact events and authoritative source records.
+- resolvable event references and authoritative source records.
 
 This contract supports incident analysis, anomaly detection, automated
 reporting, planning, evaluation, and reliable agent decisions. MCP and agent
@@ -396,8 +503,9 @@ snap history within its configured horizon.
 | epicprod | `ops` | agent state, actions, alarms, assessment execution |
 
 The PanDA maintainer performs raw queries or consumes maintained rollups and
-publishes a compact local projection. Snap capture remains independent of PanDA
-job and task tables.
+publishes a compact local projection at a deliberately chosen resolution. Raw
+job and task changes affect snap rate only through that curated projection. Snap
+capture remains independent of PanDA job and task tables.
 
 ## Prior art and distinction
 
@@ -442,8 +550,13 @@ policy, and temporal retrieval. Domain knowledge for SWF, PanDA, testbed state
 machines, epicprod campaigns, and monitor pages stays in adapters.
 
 SWF and epicprod provide the initial integration and deployment. Their component
-definitions, database adapters, SysConfig keys, process wiring, and bootstrap
-plan belong in an integration document.
+definitions, database adapters, publisher authentication, SysConfig keys,
+process wiring, event resolvers, liveness alarms, and bootstrap plan are defined
+in [SWF_EPICPROD_INTEGRATION.md](SWF_EPICPROD_INTEGRATION.md).
+
+Capture has one active writer per scope, enforced by the scope interlock. A
+deployment may run multiple contenders for failover. Deployment count,
+scheduler heartbeat, and alarm behavior belong to the integration contract.
 
 ## Decisions intentionally left empirical
 

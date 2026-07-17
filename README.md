@@ -58,14 +58,32 @@ Its registration supplies the shape, meaning, ownership, units, freshness, and
 provenance needed to interpret that state. The mutable component registry holds
 the latest accepted value from every owner.
 
+Registration begins with a concrete retrieval need: state that consumers want
+back, in a representation and temporal granularity that will be useful when
+returned.
+
+A submitted component state must be curated so that every change within it is a
+change worth recording. The owner chooses the projection and its resolution;
+snapper-ai then treats every canonical change as meaningful. Publishing a raw,
+fast-changing gauge is therefore an explicit choice to drive snaps at that rate.
+
+After an assessment, the owner either publishes a new curated state or reports
+that it has nothing new. A no-change report refreshes assessment and liveness
+metadata while leaving component content and revision unchanged. A snap at every
+opportunity is also valid when that is the history consumers want.
+
 At fixed, clock-aligned opportunities, snapper-ai checks a small revision vector.
-A meaningful component change makes a snap due. A periodic baseline records the
+A canonical component change makes a snap due. A periodic baseline records the
 system even through long quiet periods. Quiet opportunities end before JSON
 assembly, keeping the system inexpensive when little is happening.
 
 A **system snap** is one immutable, versioned JSON structure containing a stable
 cut across the registered components in a scope. Event streams retain exact
 transitions; snaps retain coherent sampled state.
+
+Coherence means a consistent read of the component registry. Components may
+have been assessed at different times, so every component carries its own
+assessment time and, when applicable, source time.
 
 ## The narrow design
 
@@ -125,6 +143,9 @@ otherwise expensive or impossible to recover later.
 The [technical design](docs/DESIGN.md) defines registration, publication,
 capture, snap representation, evolution, query semantics, AI evidence,
 efficiency, and the implementation boundary.
+
+The [SWF and epicprod integration](docs/SWF_EPICPROD_INTEGRATION.md) identifies
+the deployment contracts that connect the generic service to its first users.
 
 The original detailed exploration remains available as a
 [superseded early design](docs/archive/SNAP_EARLY_DESIGN_SUPERSEDED.md).
