@@ -544,10 +544,17 @@ applications, and AIs.
 
 ## Implementation boundary
 
-snapper-ai is a generic, factorized service in its own repository. Its core
-knows scopes, components, registrations, JSON state, versions, hashes, capture
-policy, and temporal retrieval. Domain knowledge for SWF, PanDA, testbed state
-machines, epicprod campaigns, and monitor pages stays in adapters.
+snapper-ai is a generic, factorized Django application in its own repository.
+Its core knows scopes, components, registrations, JSON state, versions, hashes,
+capture policy, and temporal retrieval. Domain knowledge for SWF, PanDA,
+testbed state machines, epicprod campaigns, and monitor pages stays in
+adapters.
+
+The package is independent of any one hosting project. A deployment supplies
+the Django settings, PostgreSQL connection, route mounting, authentication,
+logging, configuration, migration execution, and process supervision. The core
+does not import or depend on its deployment adapters. Web and capture processes
+coordinate only through Snapper's database state and locks.
 
 SWF and epicprod provide the initial integration and deployment. Their component
 definitions, database adapters, publisher authentication, SysConfig keys,

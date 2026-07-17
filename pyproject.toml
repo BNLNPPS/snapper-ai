@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snapper-ai"
+version = "0.1.0"
+description = "Authoritative subsystem-owned state across time"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+dependencies = [
+    "Django>=5.2.12",
+]
+
+[tool.setuptools.packages.find]
+include = ["snapper_ai*"]

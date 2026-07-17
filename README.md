@@ -138,6 +138,19 @@ tasks by state, running jobs and cores, active task types, sites, and recent
 outcomes. Recording that maintained now supplies concurrency history that is
 otherwise expensive or impossible to recover later.
 
+## Implementation
+
+snapper-ai is packaged as a reusable Django application backed by PostgreSQL.
+It contains no SWF, PanDA, testbed, or epicprod domain model. A hosting Django
+project supplies runtime settings, database connection, routing,
+authentication, logging, migrations, and process deployment.
+
+The initial SWF application installs this generic package into the existing SWF
+monitor runtime and uses its `swfdb` PostgreSQL database. That deployment is an
+integration choice defined in
+[SWF_EPICPROD_INTEGRATION.md](docs/SWF_EPICPROD_INTEGRATION.md), not part of the
+generic Snapper product contract.
+
 ## Documentation
 
 The [technical design](docs/DESIGN.md) defines registration, publication,

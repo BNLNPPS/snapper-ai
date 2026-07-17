@@ -10,6 +10,14 @@ capture and query contract remains in [DESIGN.md](DESIGN.md).
 snapper-ai owns component registration, canonical publication, the current
 component registry, coherent capture, immutable history, and temporal retrieval.
 
+The initial integration installs `snapper_ai` as a Django application in the
+SWF monitor runtime, in the same pattern as the installable `pcs` application
+from `swf-epicprod`. Its models use the monitor's default PostgreSQL connection
+and therefore create `snapper_*` tables in `swfdb`. There is no second database,
+standalone web server, or independent authentication stack. SWF owns route
+mounting, REST and MCP authentication, AppLog integration, environment
+configuration, release deployment, and migration execution.
+
 SWF and epicprod own:
 
 - the processes that maintain each component projection;
@@ -76,6 +84,59 @@ another curated representation reduce that rate when they preserve the history
 users and AIs need. This is a PanDA maintainer decision recorded in its component
 contract. The maintainer may report no change after any assessment that leaves
 the curated projection unchanged.
+
+### `health` v1 contract
+
+The first real component is `health` in exactly two scopes: `testbed` and
+`epicprod`. Its authenticated publisher identity is
+`swf-monitor:system-status`; the SWF adapter derives that identity server-side
+and never accepts it from a request payload.
+
+The authoritative source is the current `SystemStatus` registry after a
+completed refresh. The initial scope membership is explicit:
+
+| Scope | Included System status checks |
+|---|---|
+| `testbed` | `swf-monitor-mcp-asgi`, `httpd`, `github-actions` |
+| `epicprod` | the three shared checks plus `epicprod-ops-agent`, `swf-panda-bot`, `campaign-assessments`, `epic-devcloud-prod`, and `epic-devcloud-doc` |
+
+`bot-usage` is informational and does not enter health history. New checks do
+not enter a scope implicitly; the adapter mapping changes under review.
+
+The complete revision-driving projection is:
+
+```json
+{
+  "overall": {
+    "status": "ok | warning | error | unknown",
+    "reason": "bounded deterministic summary",
+    "counts": {"ok": 0, "warning": 0, "error": 0, "unknown": 0}
+  },
+  "checks": {
+    "stable-check-name": {
+      "category": "stable category",
+      "status": "ok | warning | error | unknown",
+      "summary": "bounded operator-facing summary"
+    }
+  }
+}
+```
+
+The map is limited to 128 checks, each summary to 500 characters, and the
+canonical component JSON to 64 KiB. Raw collector data and continuously
+advancing check timestamps stay in `SystemStatus` and its history rather than
+forcing Snapper revisions. `assessed_at` is when the scoped projection is
+evaluated; `source_as_of` is the oldest non-null `checked_at` among its included
+checks. Any included row older than the existing 15-minute System status
+threshold is projected as `error`. The overall status and reason are then
+computed deterministically from the scoped rows. These timestamps update on an
+identical publication without advancing the component revision.
+
+The historical question is: *what health did SWF assess for this scope, which
+checks determined it, and when was the oldest source check made?* Visibility is
+public, the assessment policy is `swf-system-status-v1`, and the stable event
+resolver `swf-system-status-history` points to the existing System status
+history API or MCP adapter for exact check transitions.
 
 ## Adapter and transaction wiring
 
