@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone as datetime_timezone
 from typing import Optional, Sequence
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from .models import CaptureCursor, CurrentComponent, SystemSnap
@@ -149,6 +149,7 @@ def capture_scope(
     baseline_every: int,
     manual: bool = False,
     snap_schema_version: int = 1,
+    lock_timeout_ms: int = 5000,
 ) -> CaptureResult:
     """Evaluate one aligned opportunity and persist a full snap when due."""
     scope = _bounded_scope(scope)
@@ -161,11 +162,17 @@ def capture_scope(
     snap_schema_version = _positive_integer(
         snap_schema_version, "snap_schema_version"
     )
+    lock_timeout_ms = _positive_integer(lock_timeout_ms, "lock_timeout_ms")
     if not isinstance(manual, bool):
         raise InvalidCapture("manual must be boolean")
     if aligned_boundary(boundary_at, opportunity_seconds) != boundary_at:
         raise InvalidCapture(
             f"boundary_at is not aligned to {opportunity_seconds} seconds"
+        )
+    with connection.cursor() as database_cursor:
+        database_cursor.execute(
+            "SELECT set_config('lock_timeout', %s, true)",
+            [f"{lock_timeout_ms}ms"],
         )
 
     cursor = _cursor(scope)
