@@ -7,7 +7,7 @@ snapper-ai turns operational state into operational memory. It is a snapper of
 histories: subsystems publish their present state, and snapper-ai records that
 state as a sequence of coherent system-wide snaps.
 
-The `-ai` names the primary consumer: an AI charged with reasoning and
+The -ai suffix names the primary consumer: an AI charged with reasoning and
 inference across system histories. The deterministic, AI-free capture path
 of snapper-ai provides operational memory that AIs can retrieve and reason over directly.
 Pages, plots, reports, and incident reviews use the same history.
@@ -123,8 +123,8 @@ The core retrieval surface answers questions such as:
 - What was pending when an incident began?
 - Is a component's current state different from the latest recorded state?
 
-The corresponding operations are `latest`, `state_at`, `changes_between`,
-`component_history`, and `context_around`. Results include actual snap and source
+The corresponding operations are latest, state at, changes between, component
+history, and context around. Results include actual snap and source
 times, schema and policy versions, provenance, and observer-coverage status.
 Exact transition sequences remain available from event streams joined around a
 snap.
@@ -152,7 +152,7 @@ project supplies runtime settings, database connection, routing,
 authentication, logging, migrations, and process deployment.
 
 The initial SWF application installs this generic package into the existing SWF
-monitor runtime and uses its `swfdb` PostgreSQL database. That deployment is an
+monitor runtime and uses its swfdb PostgreSQL database. That deployment is an
 integration choice defined in
 [SWF_EPICPROD_INTEGRATION.md](docs/SWF_EPICPROD_INTEGRATION.md), not part of the
 generic Snapper product contract.
@@ -164,7 +164,7 @@ record. The [implementation record](docs/IMPLEMENTATION.md) preserves durable
 decisions and their code and integration consequences.
 
 The [development workflow](docs/DEVELOPMENT.md) defines the required branch
-boundary between `snapper-ai` and its SWF core-repository integrations, shared
+boundary between snapper-ai and its SWF core-repository integrations, shared
 checkout safety, and the coordinated-baseline deployment rule.
 
 The [technical design](docs/DESIGN.md) defines registration, publication,

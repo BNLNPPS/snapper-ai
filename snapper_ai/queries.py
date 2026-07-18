@@ -167,6 +167,120 @@ class ComponentHistoryResult:
         }
 
 
+@dataclass(frozen=True)
+class ChangedComponent:
+    """One component addition, mutation, or removal at a logical snap."""
+
+    name: str
+    kind: str
+    previous_hash: Optional[str]
+    current_hash: Optional[str]
+    previous_registration_version: Optional[int]
+    current_registration_version: Optional[int]
+    previous_revision: Optional[int]
+    current_revision: Optional[int]
+    previous: Optional[Dict[str, Any]]
+    current: Optional[Dict[str, Any]]
+
+    def as_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "previous_hash": self.previous_hash,
+            "current_hash": self.current_hash,
+            "previous_registration_version": (
+                self.previous_registration_version
+            ),
+            "current_registration_version": (
+                self.current_registration_version
+            ),
+            "previous_revision": self.previous_revision,
+            "current_revision": self.current_revision,
+            "previous": deepcopy(self.previous),
+            "current": deepcopy(self.current),
+        }
+
+
+@dataclass(frozen=True)
+class SystemChange:
+    """All derived component changes and recovery evidence at one snap."""
+
+    kind: str
+    snap_id: str
+    snap_time: datetime
+    observed_at: datetime
+    completed_at: datetime
+    previous_snap_schema_version: int
+    snap_schema_version: int
+    previous_capture_policy: str
+    capture_policy: str
+    encoding: str
+    state_hash: str
+    schema_changed: bool
+    capture_policy_changed: bool
+    reasons: Tuple[str, ...]
+    declared_changed_components: Tuple[str, ...]
+    recovered_gap_started_at: Optional[datetime]
+    recovered_gap_start_unknown: bool
+    components: Tuple[ChangedComponent, ...]
+
+    def as_dict(self) -> dict:
+        return {
+            "kind": self.kind,
+            "snap_id": self.snap_id,
+            "snap_time": _timestamp(self.snap_time),
+            "observed_at": _timestamp(self.observed_at),
+            "completed_at": _timestamp(self.completed_at),
+            "previous_snap_schema_version": (
+                self.previous_snap_schema_version
+            ),
+            "snap_schema_version": self.snap_schema_version,
+            "previous_capture_policy": self.previous_capture_policy,
+            "capture_policy": self.capture_policy,
+            "encoding": self.encoding,
+            "state_hash": self.state_hash,
+            "schema_changed": self.schema_changed,
+            "capture_policy_changed": self.capture_policy_changed,
+            "reasons": list(self.reasons),
+            "declared_changed_components": list(
+                self.declared_changed_components
+            ),
+            "recovered_gap_started_at": _timestamp(
+                self.recovered_gap_started_at
+            ),
+            "recovered_gap_start_unknown": self.recovered_gap_start_unknown,
+            "components": [
+                component.as_dict() for component in self.components
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class ChangesBetweenResult:
+    """System component changes over one requested interval."""
+
+    scope: str
+    start_at: datetime
+    end_at: datetime
+    boundary_snap_id: str
+    boundary_snap_time: datetime
+    start_coverage: ObserverCoverage
+    end_coverage: ObserverCoverage
+    changes: Tuple[SystemChange, ...]
+
+    def as_dict(self) -> dict:
+        return {
+            "scope": self.scope,
+            "start_at": _timestamp(self.start_at),
+            "end_at": _timestamp(self.end_at),
+            "boundary_snap_id": self.boundary_snap_id,
+            "boundary_snap_time": _timestamp(self.boundary_snap_time),
+            "start_coverage": self.start_coverage.as_dict(),
+            "end_coverage": self.end_coverage.as_dict(),
+            "changes": [change.as_dict() for change in self.changes],
+        }
+
+
 def _coverage(cursor: Optional[CaptureCursor]) -> ObserverCoverage:
     if cursor is None:
         return ObserverCoverage(
@@ -356,12 +470,7 @@ def _component_state(
     snap: SystemSnap,
     component_name: str,
 ) -> Tuple[bool, Optional[Dict[str, Any]]]:
-    _require_full_snap(snap)
-    if not isinstance(snap.state, dict):
-        raise InvalidQuery(f"snap {snap.pk} does not contain an object state")
-    components = snap.state.get("components")
-    if not isinstance(components, dict):
-        raise InvalidQuery(f"snap {snap.pk} has no object component map")
+    components = _component_map(snap)
     if component_name not in components:
         return False, None
     component = components[component_name]
@@ -372,6 +481,59 @@ def _component_state(
     return True, component
 
 
+def _component_map(snap: SystemSnap) -> Dict[str, Dict[str, Any]]:
+    _require_full_snap(snap)
+    if not isinstance(snap.state, dict):
+        raise InvalidQuery(f"snap {snap.pk} does not contain an object state")
+    components = snap.state.get("components")
+    if not isinstance(components, dict):
+        raise InvalidQuery(f"snap {snap.pk} has no object component map")
+    for component_name, component in components.items():
+        if not isinstance(component_name, str) or not isinstance(
+            component,
+            dict,
+        ):
+            raise InvalidQuery(
+                f"snap {snap.pk} has an invalid component map"
+            )
+    return components
+
+
+def _component_metadata(
+    snap: SystemSnap,
+    component_name: str,
+    component: Optional[Dict[str, Any]],
+) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+    return (
+        (snap.component_hashes or {}).get(component_name),
+        (snap.registration_versions or {}).get(
+            component_name,
+            component.get("registration_version") if component else None,
+        ),
+        (snap.component_revisions or {}).get(
+            component_name,
+            component.get("revision") if component else None,
+        ),
+    )
+
+
+def _recovery_evidence(
+    snap: SystemSnap,
+) -> Tuple[Tuple[str, ...], bool, bool]:
+    reasons = tuple(snap.reasons) if isinstance(snap.reasons, list) else ()
+    start_unknown = (
+        snap.recovered_gap_started_at is None
+        and (
+            snap.recovered_gap_start_unknown is not False
+            or "recovery" in reasons
+        )
+    )
+    is_recovery = (
+        snap.recovered_gap_started_at is not None or start_unknown
+    )
+    return reasons, is_recovery, start_unknown
+
+
 def _component_signature(
     snap: SystemSnap,
     component_name: str,
@@ -380,7 +542,11 @@ def _component_signature(
 ) -> tuple:
     if not present or component is None:
         return (False,)
-    component_hash = (snap.component_hashes or {}).get(component_name)
+    component_hash, registration_version, revision = _component_metadata(
+        snap,
+        component_name,
+        component,
+    )
     if component_hash is None:
         component_hash = json.dumps(
             component.get("data"),
@@ -389,14 +555,6 @@ def _component_signature(
             separators=(",", ":"),
             sort_keys=True,
         )
-    registration_version = (snap.registration_versions or {}).get(
-        component_name,
-        component.get("registration_version"),
-    )
-    revision = (snap.component_revisions or {}).get(
-        component_name,
-        component.get("revision"),
-    )
     return (
         True,
         component_hash,
@@ -416,14 +574,12 @@ def _history_point(
     component_changed: bool,
 ) -> ComponentHistoryPoint:
     present, component = _component_state(snap, component_name)
-    reasons = tuple(snap.reasons) if isinstance(snap.reasons, list) else ()
-    recovered_gap_start_unknown = (
-        snap.recovered_gap_started_at is None
-        and (
-            snap.recovered_gap_start_unknown is not False
-            or "recovery" in reasons
-        )
+    component_hash, registration_version, revision = _component_metadata(
+        snap,
+        component_name,
+        component,
     )
+    reasons, _, recovered_gap_start_unknown = _recovery_evidence(snap)
     return ComponentHistoryPoint(
         kind=kind,
         snap_id=str(snap.pk),
@@ -436,15 +592,9 @@ def _history_point(
         reasons=reasons,
         component_changed=component_changed,
         present=present,
-        component_hash=(snap.component_hashes or {}).get(component_name),
-        registration_version=(snap.registration_versions or {}).get(
-            component_name,
-            component.get("registration_version") if component else None,
-        ),
-        revision=(snap.component_revisions or {}).get(
-            component_name,
-            component.get("revision") if component else None,
-        ),
+        component_hash=component_hash,
+        registration_version=registration_version,
+        revision=revision,
         recovered_gap_started_at=snap.recovered_gap_started_at,
         recovered_gap_start_unknown=recovered_gap_start_unknown,
         component=deepcopy(component),
@@ -546,12 +696,7 @@ def component_history(
             component_state,
         )
         component_changed = signature != previous_signature
-        reasons = snap.reasons if isinstance(snap.reasons, list) else []
-        is_recovery = (
-            snap.recovered_gap_started_at is not None
-            or snap.recovered_gap_start_unknown is not False
-            or "recovery" in reasons
-        )
+        _, is_recovery, _ = _recovery_evidence(snap)
         if component_changed or not suppress_unchanged_baselines or is_recovery:
             if is_recovery:
                 kind = "recovery"
@@ -586,4 +731,157 @@ def component_history(
             snap=end_snap,
         ),
         entries=tuple(entries),
+    )
+
+
+def changes_between(
+    scope: str,
+    start: datetime,
+    end: datetime,
+) -> ChangesBetweenResult:
+    """Return derived component changes after ``start`` through ``end``."""
+    scope = _bounded_scope(scope)
+    start_at = _aware_time(start, "start")
+    end_at = _aware_time(end, "end")
+    if start_at > end_at:
+        raise InvalidQuery("start must not be later than end")
+
+    boundary_snap = _snap_at(scope, start_at)
+    end_snap = _snap_at(scope, end_at)
+    previous_snap = boundary_snap
+    previous_components = _component_map(boundary_snap)
+    changes = []
+
+    interval_snaps = SystemSnap.objects.filter(
+        scope=scope,
+        snap_time__gt=start_at,
+        snap_time__lte=end_at,
+    ).order_by("snap_time")
+    for snap in interval_snaps:
+        current_components = _component_map(snap)
+        component_changes = []
+        for component_name in sorted(
+            set(previous_components) | set(current_components)
+        ):
+            previous = previous_components.get(component_name)
+            current = current_components.get(component_name)
+            previous_present = previous is not None
+            current_present = current is not None
+            previous_signature = _component_signature(
+                previous_snap,
+                component_name,
+                previous_present,
+                previous,
+            )
+            current_signature = _component_signature(
+                snap,
+                component_name,
+                current_present,
+                current,
+            )
+            if previous_signature == current_signature:
+                continue
+            if not previous_present:
+                kind = "added"
+            elif not current_present:
+                kind = "removed"
+            else:
+                kind = "changed"
+            previous_hash, previous_registration, previous_revision = (
+                _component_metadata(
+                    previous_snap,
+                    component_name,
+                    previous,
+                )
+            )
+            current_hash, current_registration, current_revision = (
+                _component_metadata(
+                    snap,
+                    component_name,
+                    current,
+                )
+            )
+            component_changes.append(
+                ChangedComponent(
+                    name=component_name,
+                    kind=kind,
+                    previous_hash=previous_hash,
+                    current_hash=current_hash,
+                    previous_registration_version=previous_registration,
+                    current_registration_version=current_registration,
+                    previous_revision=previous_revision,
+                    current_revision=current_revision,
+                    previous=deepcopy(previous),
+                    current=deepcopy(current),
+                )
+            )
+
+        reasons, is_recovery, start_unknown = _recovery_evidence(snap)
+        schema_changed = (
+            snap.snap_schema_version != previous_snap.snap_schema_version
+        )
+        capture_policy_changed = (
+            snap.capture_policy != previous_snap.capture_policy
+        )
+        if (
+            component_changes
+            or is_recovery
+            or schema_changed
+            or capture_policy_changed
+        ):
+            declared_changed_components = (
+                tuple(snap.changed_components)
+                if isinstance(snap.changed_components, list)
+                else ()
+            )
+            if is_recovery:
+                kind = "recovery"
+            elif schema_changed or capture_policy_changed:
+                kind = "policy"
+            else:
+                kind = "change"
+            changes.append(
+                SystemChange(
+                    kind=kind,
+                    snap_id=str(snap.pk),
+                    snap_time=snap.snap_time,
+                    observed_at=snap.observed_at,
+                    completed_at=snap.completed_at,
+                    previous_snap_schema_version=(
+                        previous_snap.snap_schema_version
+                    ),
+                    snap_schema_version=snap.snap_schema_version,
+                    previous_capture_policy=previous_snap.capture_policy,
+                    capture_policy=snap.capture_policy,
+                    encoding=snap.encoding,
+                    state_hash=snap.state_hash,
+                    schema_changed=schema_changed,
+                    capture_policy_changed=capture_policy_changed,
+                    reasons=reasons,
+                    declared_changed_components=declared_changed_components,
+                    recovered_gap_started_at=snap.recovered_gap_started_at,
+                    recovered_gap_start_unknown=start_unknown,
+                    components=tuple(component_changes),
+                )
+            )
+        previous_snap = snap
+        previous_components = current_components
+
+    return ChangesBetweenResult(
+        scope=scope,
+        start_at=start_at,
+        end_at=end_at,
+        boundary_snap_id=str(boundary_snap.pk),
+        boundary_snap_time=boundary_snap.snap_time,
+        start_coverage=_coverage_at(
+            scope=scope,
+            requested_at=start_at,
+            snap=boundary_snap,
+        ),
+        end_coverage=_coverage_at(
+            scope=scope,
+            requested_at=end_at,
+            snap=end_snap,
+        ),
+        changes=tuple(changes),
     )

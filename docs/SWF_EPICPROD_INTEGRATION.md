@@ -7,9 +7,9 @@ generic capture and query contract remains in [DESIGN.md](DESIGN.md); current
 execution order and progress live only in [PLAN.md](PLAN.md).
 
 Integration development and deployment must follow the repository/branch
-boundary in [DEVELOPMENT.md](DEVELOPMENT.md): the generic `snapper-ai` package
-is developed on its `main`, while changes in `swf-testbed`, `swf-monitor`, and
-`swf-common-lib` go to the current coordinated `infra/baseline-vNN` and are
+boundary in [DEVELOPMENT.md](DEVELOPMENT.md): the generic snapper-ai package is
+developed on its main branch, while changes in swf-testbed, swf-monitor, and
+swf-common-lib go to the current coordinated infra/baseline-vNN branch and are
 deployed from that branch until the baseline delivery boundary.
 
 ## Integration boundary
@@ -17,10 +17,10 @@ deployed from that branch until the baseline delivery boundary.
 snapper-ai owns component registration, canonical publication, the current
 component registry, coherent capture, immutable history, and temporal retrieval.
 
-The initial integration installs `snapper_ai` as a Django application in the
-SWF monitor runtime, in the same pattern as the installable `pcs` application
-from `swf-epicprod`. Its models use the monitor's default PostgreSQL connection
-and therefore create `snapper_*` tables in `swfdb`. There is no second database,
+The initial integration installs snapper_ai as a Django application in the SWF
+monitor runtime, in the same pattern as the installable pcs application from
+swf-epicprod. Its models use the monitor's default PostgreSQL connection and
+therefore create snapper-prefixed tables in swfdb. There is no second database,
 standalone web server, or independent authentication stack. SWF owns route
 mounting, REST and MCP authentication, AppLog integration, environment
 configuration, release deployment, and migration execution.
@@ -71,43 +71,43 @@ snapper-ai applies canonical comparison after this curation.
 
 | Scope | Component | Initial maintainer | Projection and resolution |
 |---|---|---|---|
-| both | `health` | System status maintainer | assessed health transitions and bounded status summaries |
-| testbed | `datataking` | datataking state owner | per-namespace operational state transitions, run identity, transition time |
-| testbed | `workflows` | workflow-state maintainer | bounded active-work summaries and outcome aggregates |
-| testbed | `agents` | agent-status maintainer | bounded instance map with operational and assessed health state |
-| testbed | `data` | data-state maintainer | bounded queues, file and slice state, rounded recent throughput |
-| epicprod | `panda` | PanDA activity maintainer | curated job, core, site, and task summaries at declared count/rate resolution |
-| epicprod | `production` | campaign-state maintainer | campaign progress, outputs, bytes, placement, and data arrival summaries |
-| epicprod | `ops` | epicprod ops maintainer | agent state, actions, alarms, and assessment execution |
+| both | System health (health) | System status maintainer | assessed health transitions and bounded status summaries |
+| testbed | Datataking state (datataking) | datataking state owner | per-namespace operational state transitions, run identity, transition time |
+| testbed | Workflow activity (workflows) | workflow-state maintainer | bounded active-work summaries and outcome aggregates |
+| testbed | Agent status (agents) | agent-status maintainer | bounded instance map with operational and assessed health state |
+| testbed | Data activity (data) | data-state maintainer | bounded queues, file and slice state, rounded recent throughput |
+| epicprod | PanDA activity (panda) | PanDA activity maintainer | curated job, core, site, and task summaries at declared count/rate resolution |
+| epicprod | Production activity (production) | campaign-state maintainer | campaign progress, outputs, bytes, placement, and data arrival summaries |
+| epicprod | Operations activity (ops) | epicprod ops maintainer | agent state, actions, alarms, and assessment execution |
 
 Before enabling a component, its owner must complete its quantity registration,
 publication trigger, curation resolution, freshness and assessment policy,
 maximum serialized size, visibility, and related event sources.
 
 The PanDA projection requires an explicit commissioning choice. Publishing raw
-`jobs_by_state` counts makes every canonical count change meaningful and can
+job counts grouped by state makes every canonical count change meaningful and can
 drive epicprod snaps at every opportunity. Bucketed counts, rounded rates, or
 another curated representation reduce that rate when they preserve the history
 users and AIs need. This is a PanDA maintainer decision recorded in its component
 contract. The maintainer may report no change after any assessment that leaves
 the curated projection unchanged.
 
-### `health` v1 contract
+### System-health component (health), version 1
 
-The first real component is `health` in exactly two scopes: `testbed` and
-`epicprod`. Its authenticated publisher identity is
-`swf-monitor:system-status`; the SWF adapter derives that identity server-side
+The first real component represents assessed System health. Its internal name
+is health, and it exists in exactly two scopes: testbed and epicprod. Its
+authenticated publisher identity is swf-monitor:system-status; the SWF adapter derives that identity server-side
 and never accepts it from a request payload.
 
-The authoritative source is the current `SystemStatus` registry after a
+The authoritative source is the current SystemStatus registry after a
 completed refresh. The initial scope membership is explicit:
 
 | Scope | Included System status checks |
 |---|---|
-| `testbed` | `swf-monitor-mcp-asgi`, `httpd`, `github-actions` |
-| `epicprod` | the three shared checks plus `epicprod-ops-agent`, `swf-panda-bot`, `campaign-assessments`, `epic-devcloud-prod`, and `epic-devcloud-doc` |
+| testbed | swf-monitor-mcp-asgi, httpd, github-actions |
+| epicprod | the three shared checks plus epicprod-ops-agent, swf-panda-bot, campaign-assessments, epic-devcloud-prod, and epic-devcloud-doc |
 
-`bot-usage` is informational and does not enter health history. New checks do
+The bot-usage check is informational and does not enter health history. New checks do
 not enter a scope implicitly; the adapter mapping changes under review.
 
 The complete revision-driving projection is:
@@ -131,24 +131,25 @@ The complete revision-driving projection is:
 
 The map is limited to 128 checks, each summary to 500 characters, and the
 canonical component JSON to 64 KiB. Raw collector data and continuously
-advancing check timestamps stay in `SystemStatus` and its history rather than
-forcing Snapper revisions. `assessed_at` is when the scoped projection is
-evaluated; `source_as_of` is the oldest non-null `checked_at` among its included
+advancing check timestamps stay in SystemStatus and its history rather than
+forcing Snapper revisions. The assessment time is when the scoped projection is
+evaluated; the source time is the oldest non-null check time among its included
 checks. Any included row older than the existing 15-minute System status
-threshold is projected as `error`. The overall status and reason are then
+threshold is projected as an error. The overall status and reason are then
 computed deterministically from the scoped rows. These timestamps update on an
 identical publication without advancing the component revision.
 
 The historical question is: *what health did SWF assess for this scope, which
 checks determined it, and when was the oldest source check made?* Visibility is
-public, the assessment policy is `swf-system-status-v1`, and the stable event
-resolver identifier `swf-system-status-history` is registered for exact check
+public, the assessment policy is swf-system-status-v1, and the stable event
+resolver identifier swf-system-status-history is registered for exact check
 transitions. Its concrete System status history API or MCP mapping remains part
 of the event-resolver tranche.
 
-### `datataking` v2 contract
+### Datataking-state component (datataking), version 2
 
-The first state component is `datataking` in the shared `testbed` scope. It is
+The first state component represents datataking state in the shared testbed
+scope. Its internal name is datataking. It is
 the initial concrete realization of the vertical cut through the
 [ePIC E0-E1 global-state model](https://github.com/BNLNPPS/swf-testbed/blob/main/docs/images/e0-e1-global-state-v1.svg):
 the latest component state marks the independent datataking lane for every
@@ -159,14 +160,14 @@ The brief v1 singleton projection is superseded. Version 2 represents the
 platform as it is operated: multiple independently namespaced testbeds sharing
 common infrastructure.
 
-Its server-derived publisher identity is `swf-monitor:run-state`. The
-authoritative source is the highest-numbered `RunState` row in each namespace.
-The adapter resolves `RunState.metadata.execution_id` through the corresponding
-`WorkflowExecution.namespace`; legacy executions without a namespace do not
+Its server-derived publisher identity is swf-monitor:run-state. The authoritative
+source is the highest-numbered RunState row in each namespace. The adapter
+resolves the execution ID in RunState metadata through the corresponding
+WorkflowExecution namespace; legacy executions without a namespace do not
 enter this projection. Namespace membership is discovered from those records,
 not configured in Snapper, so a namespace enters automatically with its first
-RunState. Creation of a run and a semantic change to `phase`, `state`, or
-`substate` publish the complete namespace map immediately in the same database
+RunState. Creation of a run and a semantic change to phase, state, or substate
+publish the complete namespace map immediately in the same database
 transaction. Slice counters and other run bookkeeping do not enter the
 projection and do not advance its revision.
 
@@ -187,27 +188,28 @@ The complete revision-driving projection is:
 ```
 
 The map is limited to 128 namespaces and the canonical component JSON to 64
-KiB. Within each namespace, `substate` is omitted when the state model does not
-define one, and `last_transition_at` carries the authoritative
-`state_changed_at` value. `assessed_at` is the adapter evaluation time.
-`source_as_of` is unset because no single source timestamp represents the
+KiB. Within each namespace, substate is omitted when the state model does not
+define one, and the last-transition time carries the authoritative state-change
+time. The assessment time is the adapter evaluation time. The source time is
+unset because no single source timestamp represents the
 independently evolving namespace states. Visibility is public and the
-assessment policy is `swf-datataking-state-v1`.
+assessment policy is swf-datataking-state-v1.
 
 The historical question is: *where did the recorded vertical cut intersect the
 datataking lane for each namespace, for which run, and when did each state
 begin?* Snap history provides coherent sampled evolution. The stable resolver
-identifier `swf-testbed-system-state-events` is registered for the authoritative
-`SystemStateEvent` stream. Concrete resolution, including namespace-to-run
+identifier swf-testbed-system-state-events is registered for the authoritative
+SystemStateEvent stream. Concrete resolution, including namespace-to-run
 selector translation, remains part of the event-resolver tranche.
 
-### `panda` v3 contract
+### PanDA-activity component (panda), version 3
 
-The first epicprod state component is `panda`. Its server-derived publisher
-identity is `swf-monitor:panda-activity`, and its authoritative source is the
-existing SWF PanDA monitor query layer over the ePIC PanDA database.
+This epicprod state component represents PanDA job, task, core, and site
+activity. Its internal name is panda. Its server-derived publisher identity is
+swf-monitor:panda-activity, and its authoritative source is the existing SWF
+PanDA monitor query layer over the ePIC PanDA database.
 
-The brief v1 projection recorded current `running` jobs and cores but did not
+The brief v1 projection recorded current running jobs and cores but did not
 distinguish the rest of the in-flight population from the trailing activity
 window. Version 2 records every current in-flight job state explicitly.
 Version 3 adds the corresponding current nonterminal JEDI task states and
@@ -216,8 +218,8 @@ target-site counts.
 The supervised ops agent publishes the component after each full five-minute
 System status refresh. Snapper does not query PanDA during capture. Each
 publication reads the existing trailing 24-hour aggregate, a lightweight
-current in-flight query over `jobsactive4`, and a nonterminal task aggregate
-over `jedi_tasks`, then removes users and individual job and task records before
+current in-flight query over jobsactive4, and a nonterminal task aggregate over
+jedi_tasks, then removes users and individual job and task records before
 publication.
 
 The revision-driving projection is:
@@ -272,19 +274,18 @@ Job and task status maps are limited to 32 entries, each site map to 32 sites,
 the task-type map to 32 types, and canonical component JSON to 64 KiB. Job
 sites with current in-flight work rank ahead of inactive sites, followed by
 trailing job volume; task sites rank by current nonterminal task count. Current
-in-flight job states are `defined`, `waiting`, `assigned`,
-`activated`, `sent`, `starting`, `running`, `holding`, `transferring`, and
-`merging`. Current tasks are all JEDI states except `done`, `finished`,
-`failed`, `broken`, `aborted`, `exhausted`, and `passed`. The component records
+in-flight job states are defined, waiting, assigned, activated, sent, starting,
+running, holding, transferring, and merging. Current tasks are all JEDI states
+except done, finished, failed, broken, aborted, exhausted, and passed. The component records
 raw integer counts at five-minute observation resolution: a count change
 between maintainer runs is meaningful, while changes inside that interval
 intentionally collapse into the next maintained state.
 
-`assessed_at` and `source_as_of` are the completed-query time. Visibility is
-public and the assessment policy is `swf-panda-activity-24h-v2`. The historical
+The assessment and source times are the completed-query time. Visibility is
+public and the assessment policy is swf-panda-activity-24h-v2. The historical
 question is: *how much PanDA work was active, what states were its jobs and
 tasks in at each target site, and how did recent outcomes evolve?* The stable
-resolver identifier `swf-panda-activity-history` is registered for exact PanDA
+resolver identifier swf-panda-activity-history is registered for exact PanDA
 task and job context. Its concrete activity or action-history mapping remains
 part of the event-resolver tranche.
 
@@ -297,7 +298,7 @@ as remote access, joins, aggregation, and health assessment.
 For local mutations, publication should share the authoritative database
 transaction so current application state and the component registry advance
 together. Periodic remote maintainers publish after a completed refresh and
-carry both `assessed_at` and `source_as_of`.
+carry both assessment and source times.
 
 The generic helper returns acceptance time, registration and component
 revisions, whether canonical content changed, and whether current content
@@ -358,12 +359,12 @@ The initial mapping should cover:
 
 | Component | Event context | Resolver target |
 |---|---|---|
-| `health` | assessed health transitions | System status history API or MCP tool |
-| `datataking` | state transitions | testbed action or status stream |
-| `workflows` | workflow transitions | SWF action stream |
-| `panda` | task and job activity | PanDA activity or action-history adapter |
-| `production` | campaign and placement activity | epicprod and Rucio action adapters |
-| `ops` | operator and agent actions | epicprod action stream |
+| System health (health) | assessed health transitions | System status history API or MCP tool |
+| Datataking state (datataking) | state transitions | testbed action or status stream |
+| Workflow activity (workflows) | workflow transitions | SWF action stream |
+| PanDA activity (panda) | task and job activity | PanDA activity or action-history adapter |
+| Production activity (production) | campaign and placement activity | epicprod and Rucio action adapters |
+| Operations activity (ops) | operator and agent actions | epicprod action stream |
 
 Each mapping defines authorization, selector translation, event-time field,
 retention semantics, and availability reporting. Stable resolver identifiers
@@ -375,7 +376,7 @@ The integration assigns every registered quantity and event source a public,
 operator, or internal visibility. API, page, MCP, and AI callers receive the
 same logical snap under their authorized projection.
 
-`state_at` and `context_around` must surface component assessment and source
+State-at and context-around queries must surface component assessment and source
 times so users and AIs can distinguish registry coherence from simultaneous
 source observation. Event-reference resolution applies the caller's normal
 authorization to the authoritative event source.
@@ -388,14 +389,14 @@ See [PLAN.md](PLAN.md) for completed, current, and pending work.
 1. Install the current-component, system-snap, and capture-cursor schema.
 2. Deploy the shared registration and publication helper with publisher
    authentication.
-3. Register and publish `health` for both scopes.
+3. Register and publish System health for both scopes.
 4. Start one supervised scheduler and verify heartbeat, quiet checks, manual
    capture, failure, and recovery behavior.
-5. Add one testbed state component and the curated epicprod `panda` component.
+5. Add one testbed state component and the curated epicprod PanDA-activity component.
 6. Run full-only commissioning at the higher cadence and measure change rate,
    per-component snap contribution, no-change rate, row size, assembly time,
    lock time, and query behavior.
-7. Validate `latest`, `state_at`, component history, change queries, coverage
+7. Validate latest and state-at queries, component history, change queries, coverage
    gaps, and event-reference resolution through API and MCP.
 8. Add remaining components individually, with owner and alarm review for each.
 9. Set production cadence and retention from measurements; evaluate delta

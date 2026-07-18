@@ -10,29 +10,30 @@ remains visible.
 
 Status markers:
 
-- `[x]` complete for the stated item;
-- `[~]` current bounded work; and
-- `[ ]` not started.
+- [x] means complete for the stated item;
+- [~] means current bounded work; and
+- [ ] means not started.
 
 ## Current position
 
-As of 2026-07-18, coherent capture is operating for `testbed` and `epicprod`.
+As of 2026-07-18, coherent capture is operating for testbed and epicprod.
 The initial state-evolution components are live:
 
-- `testbed:health` and `epicprod:health`;
-- `testbed:datataking`, with independent automatically discovered namespace
+- **System health** for the testbed and epicprod scopes (component name:
+  health);
+- **Datataking state** for testbed (component name: datataking), with
+  independent automatically discovered namespace
   lanes; and
-- `epicprod:panda`, with current job and task states and target-site
-  discrimination.
+- **PanDA activity** for epicprod (component name: panda), with current job and
+  task states and target-site discrimination.
 
-The first bounded commissioning read is recorded below. `latest(scope)` and
-`state_at(scope, time)` are implemented in the generic package, including
-immutable recovery-gap evidence and conservative treatment of legacy gaps. The
-generic `component_history` query is also implemented. The next query is
-`changes_between`; deployment of the new migration is deferred until
-coordinated SWF work resumes. Do not expand the testbed or production component
-catalog before the retrieval layer exists unless an operational need requires
-it.
+The first bounded commissioning read is recorded below. The four generic base
+queries—latest, state at, component history, and changes between—are
+implemented with actual times, provenance, schema/policy evolution, and honest
+observer coverage. Deployment of the new migration and Phase 5 SWF adapters is
+deferred until coordinated SWF work resumes. The remaining package-only work is
+to close the bounded commissioning read; do not expand the component catalog
+unless an operational need requires it.
 
 ## Ordered plan
 
@@ -43,16 +44,16 @@ it.
 - [x] Capture coherent immutable full snaps at aligned opportunities.
 - [x] Maintain per-scope capture cursors, heartbeat, baseline, failure, and
   coverage-gap state.
-- [x] Deploy supervised `testbed` and `epicprod` capture at the initial
+- [x] Deploy supervised testbed and epicprod capture at the initial
   30-second opportunity and five-minute maximum quiet interval.
 
 ### 2. Initial real state components
 
-- [x] Publish assessed `health` for both scopes.
-- [x] Publish namespaced `testbed:datataking` state evolution.
+- [x] Publish assessed System health for both scopes.
+- [x] Publish namespaced testbed datataking state evolution.
 - [x] Register the datataking exact-transition source and its stable resolver
   identifier; concrete resolver mapping remains in Phase 5.
-- [x] Publish `epicprod:panda` job activity, including every current in-flight
+- [x] Publish epicprod PanDA job activity, including every current in-flight
   job state, running jobs and cores, and target-site maps.
 - [x] Publish current nonterminal JEDI task states globally and by target site,
   plus trailing 24-hour task outcomes and processing types.
@@ -86,21 +87,21 @@ representative 24-hour window.
 
 | Scope | Snaps | Snaps/hour | State bytes mean / p95 / max | Assembly ms mean / p95 | Observation delay ms mean / p95 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `epicprod` | 251 | 15.9 | 1,878 / 3,210 / 3,720 | 0.028 / 0.041 | 7,107 / 11,458 |
-| `testbed` | 247 | 15.7 | 1,560 / 2,202 / 2,208 | 0.033 / 0.048 | 7,014 / 11,391 |
+| epicprod | 251 | 15.9 | 1,878 / 3,210 / 3,720 | 0.028 / 0.041 | 7,107 / 11,458 |
+| testbed | 247 | 15.7 | 1,560 / 2,202 / 2,208 | 0.033 / 0.048 | 7,014 / 11,391 |
 
-The full `snapper_system_snap` relation, including its indexes, occupied
-1,400,832 bytes. Change-bearing snaps attributed 48 changes to
-`epicprod:health`, 8 to `epicprod:panda`, 10 to `testbed:health`, and 2 to
-`testbed:datataking`. Baselines dominated snap reasons: 206 for `epicprod` and
-209 for `testbed`. The five-minute PanDA maintainer therefore contributes
+The full snapper_system_snap relation, including its indexes, occupied
+1,400,832 bytes. Change-bearing snaps attributed 48 changes to epicprod System
+health, 8 to epicprod PanDA activity, 10 to testbed System health, and 2 to
+testbed datataking state. Baselines dominated snap reasons: 206 for epicprod and
+209 for testbed. The five-minute PanDA maintainer therefore contributes
 bounded production detail without driving every aligned opportunity into a
 snap in this initial window.
 
 Both scope cursors were current, reporting a quiet latest opportunity, zero
 consecutive failures, and no active coverage gap. Each scope nevertheless had
-28 recovery-marked snaps. Those legacy snaps retain the `recovery` reason but
-not the gap's start boundary. Migration `0002` marks their start explicitly
+28 recovery-marked snaps. Those legacy snaps retain the recovery reason but
+not the gap's start boundary. Migration 0002 marks their start explicitly
 unknown rather than inventing continuity; new recovery snaps retain the exact
 start. Exact no-change and lock-wait rates are also unavailable from retained
 history; instrumentation should be added only if the completed commissioning
@@ -114,14 +115,11 @@ window shows that those measures are worth their operational cost.
 - [x] Implement `component_history(scope, component, start, end)`, beginning
   with state at the interval boundary and optionally suppressing unchanged
   baselines.
-- [ ] Implement `changes_between(scope, start, end)`.
-- [~] Return component assessment/source times, schema and policy versions,
-  provenance, hashes, and coverage state consistently. Latest, point-in-time,
-  and component-history results do so; remaining range queries must preserve
-  the same evidence.
-- [~] Test quiet intervals, exact boundaries, schema evolution, and known
-  coverage gaps. Point-in-time boundaries and current, recovered, and legacy
-  gaps are covered; broader history and schema-evolution cases remain.
+- [x] Implement `changes_between(scope, start, end)`.
+- [x] Return component assessment/source times, schema and policy versions,
+  provenance, hashes, and coverage state consistently.
+- [x] Test quiet intervals, exact boundaries, schema evolution, and known
+  coverage gaps.
 
 ### 5. SWF REST, MCP, and event context
 
@@ -137,11 +135,11 @@ window shows that those measures are worth their operational cost.
 
 ### 6. Expand the component catalog individually
 
-- [ ] `testbed:workflows`.
-- [ ] `testbed:agents`.
-- [ ] `testbed:data`.
-- [ ] `epicprod:production`.
-- [ ] `epicprod:ops`.
+- [ ] Testbed workflow activity.
+- [ ] Testbed agent status.
+- [ ] Testbed data activity.
+- [ ] Epicprod production activity.
+- [ ] Epicprod operations activity.
 
 Each component requires a historical question, owner, bounded projection,
 resolution, freshness policy, size limit, visibility, publication trigger,
@@ -157,6 +155,13 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-18:** Implemented `changes_between(scope, start, end)`, completing
+  the four generic base queries. It derives added, changed, and removed
+  component values from adjacent complete snaps; omits value-identical
+  baselines; and preserves recovery, snap-schema, and capture-policy
+  transitions. Endpoint coverage bounds every interval. Twenty-two PostgreSQL
+  tests now cover the Phase 4 query contract, including component registration
+  and schema evolution. No SWF repository or deployment was touched.
 - **2026-07-18:** Implemented
   `component_history(scope, component, start, end)` in the generic package.
   History begins with explicit boundary state, records absence and appearance,
@@ -165,7 +170,7 @@ alarm behavior, and event resolver before implementation.
   The package suite now has 17 passing PostgreSQL tests. No SWF repository or
   deployment was touched.
 - **2026-07-18:** Implemented immutable half-open recovery-gap intervals and
-  `state_at(scope, time)` entirely in the generic package. Migration `0002`
+  `state_at(scope, time)` entirely in the generic package. Migration 0002
   marks existing recovery starts unknown and preserves exact starts for new
   snaps. Twelve package-level PostgreSQL tests cover capture, migration,
   latest, point-in-time selection, exact recovery boundaries, active gaps, and
@@ -176,7 +181,7 @@ alarm behavior, and event resolver before implementation.
   `state_at`: persist immutable recovery-gap boundaries before making
   historical coverage claims.
 - **2026-07-18:** Completed the bounded initial component tranche.
-  `testbed:datataking` is namespace-aware; `epicprod:panda` schema v3 records
+  testbed datataking is namespace-aware; epicprod PanDA schema v3 records
   all current in-flight job states and all current nonterminal task states by
   target site. The deployed capture path recorded the v3 component. Began the
   bounded commissioning phase; temporal queries are next.

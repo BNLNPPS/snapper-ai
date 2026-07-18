@@ -34,7 +34,7 @@ deterministic and AI-free. AI is the primary consumer layer.
 
 | Term | Meaning |
 |---|---|
-| scope | A system whose state is recorded, initially `testbed` or `epicprod` |
+| scope | A system whose state is recorded, initially testbed or epicprod |
 | component | One subsystem-owned bounded state projection and atomic update unit |
 | now | A component's latest accepted complete state and provenance |
 | registration | Serializable metadata defining a component and its quantities |
@@ -65,12 +65,12 @@ is useful. These consumer requirements determine the curated projection before
 its schema is registered.
 
 A component is the ownership, consistency, revision, and replacement unit. A
-quantity is a typed subtree inside the component's `data`. Quantities provide
+quantity is a typed subtree inside the component's data. Quantities provide
 discovery, validation, documentation, and generic presentation.
 
 Each quantity definition includes, as applicable:
 
-- a stable key and path relative to component `data`;
+- a stable key and path relative to the component data;
 - scope, component, owning subsystem, and publisher identity;
 - a title and precise semantic description;
 - JSON value shape, nullability, and numeric bounds;
@@ -88,7 +88,7 @@ A component may also register related event sources. Each source declaration
 gives exact-event context a stable identity and resolver while the events remain
 in their authoritative system. The event-reference contract is defined below.
 
-Open bounded maps represent domains such as `jobs_by_state`. The map is one
+Open bounded maps represent domains such as jobs grouped by state. The map is one
 registered quantity; individual jobs, tasks, sites, or states stay outside the
 registration catalog. Registered paths inside a component have unambiguous
 ownership and shape.
@@ -177,7 +177,7 @@ evaluation, and window calculations before publication. Operationally useful
 health, age, rate, and rolling-window values enter the maintained projection
 together with their assessment time and policy version.
 
-A cached view of a remote system also carries `source_as_of`. A failed refresh
+A cached view of a remote system also carries its source-as-of time. A failed refresh
 preserves the last source time and publishes the owner's assessed stale,
 unavailable, or unknown state. Time-driven transitions, such as crossing a
 staleness threshold, are semantic state changes and produce a new publication.
@@ -194,9 +194,9 @@ publication and that the registry did not change midway through composition.
 
 Coherence does not imply simultaneous source observation. Component owners run
 independently, and one snap may contain assessments made seconds or minutes
-apart. Every component therefore retains `assessed_at`, optional `source_as_of`,
-and its assessment-policy version. The snap envelope separately records the
-aligned `snap_time` and actual registry `observed_at`.
+apart. Every component therefore retains its assessment time, optional source
+time, and assessment-policy version. The snap envelope separately records the
+aligned snap time and actual registry observation time.
 
 APIs and AI context present these times with the state. The precise historical
 claim is: *these were the latest accepted component projections in one stable
@@ -327,7 +327,7 @@ components and explicit tombstones; field-level patch operations would weaken
 component ownership. The semantic contract remains complete logical state for
 every snap.
 
-Historical sequence is discovered dynamically through `(scope, snap_time)`
+Historical sequence is discovered dynamically through scope and snap-time
 database order. Previous and next rows require no stored chain pointer. A
 historical insertion takes its chronological position automatically. Full-plus-
 delta reconstruction selects the latest preceding full row and applies later
@@ -340,7 +340,7 @@ cursor.
 
 ### Current component
 
-One mutable record per `(scope, component)` contains registration, current data,
+One mutable record per scope and component pair contains registration, current data,
 revision, hashes, timestamps, policy provenance, publisher identity, and
 retirement state. Component publication and snap capture coordinate through
 this record.
@@ -352,7 +352,7 @@ times, schema and policy versions, encoding, capture reasons, changed components
 revision and hash vectors, composed state hash, state JSON, and immutable
 recovery-gap evidence.
 
-An index beginning with `(scope, snap_time)` serves latest, point-in-time, and
+An index beginning with scope and snap time serves latest, point-in-time, and
 range queries. JSON indexes should follow measured query patterns.
 
 ### Capture cursor
@@ -392,12 +392,12 @@ The core retrieval operations are:
   and resolvable references to registered exact event streams.
 
 Point-in-time results preserve their actual snap timestamp. Observer coverage
-is `covered`, `gap`, or `unknown`. A requested time in a recorded half-open gap
-returns `gap` with its known start and recovery boundary rather than silently
-carrying old state across it. The recovery boundary returns `covered`.
+is covered, in a gap, or unknown. A requested time in a recorded half-open gap
+returns the gap with its known start and recovery boundary rather than silently
+carrying old state across it. The recovery boundary is covered.
 Pre-migration recovery snaps whose start cannot be reconstructed return
-`unknown` conservatively between the preceding snap and recovery. A time later
-than the cursor's latest evaluated boundary is also `unknown`. Charts plot
+unknown conservatively between the preceding snap and recovery. A time later
+than the cursor's latest evaluated boundary is also unknown. Charts plot
 actual snap times. Regular series are explicit resampling operations with a
 declared resolution and carry-forward policy.
 
@@ -415,6 +415,16 @@ recovery snaps remain in the result because observer evidence is not a component
 value and must not disappear with value filtering. Component history returns
 coverage at both requested endpoints; recovery entries carry the immutable gap
 evidence inside the interval.
+
+The changes-between query uses the latest eligible snap at the requested start as its
+comparison boundary, then derives changes from each complete snap in
+(start, end]. It compares actual component identities rather than trusting the
+recorded changed-component hint alone, while returning that hint as provenance.
+Additions, changes, and removals carry both previous and current values and
+their hashes, revisions, and registration versions. Value-identical baselines
+are omitted. Recovery-only records and snap-schema or capture-policy transitions
+remain visible even when no component value changed. Coverage at both requested
+endpoints bounds the returned change sequence.
 
 Component-facing operations also expose the current registration and state,
 latest acceptance time, current revision, whether accepted content changed, and
@@ -435,7 +445,7 @@ event sources. Each declaration contains:
 - visibility and authorization classification; and
 - retention or availability semantics when known.
 
-`context_around` returns references using a common envelope:
+The context-around query returns references using a common envelope:
 
 ```json
 {
@@ -451,11 +461,11 @@ event sources. Each declaration contains:
 }
 ```
 
-`component`, `source`, and `resolver` identify the registered declaration.
-`from` and `until` bound event time. `selector`, `watermark`, and explicit event
-IDs are optional source-defined fields whose shapes come from that declaration.
-`availability` reports `available`, `expired`, `unauthorized`, or `unknown` at
-query time.
+The component, source, and resolver identify the registered declaration. The
+from and until times bound event time. The selector, watermark, and explicit
+event IDs are optional source-defined fields whose shapes come from that
+declaration. Availability reports whether the source is available, expired,
+unauthorized, or unknown at query time.
 
 A resolver must produce the referenced events or a specific availability
 result. The SWF integration maps resolver identifiers to concrete APIs and MCP
@@ -514,14 +524,14 @@ snap history within its configured horizon.
 
 | Scope | Component | Initial state |
 |---|---|---|
-| both | `health` | overall status, checks, assessment freshness |
-| testbed | `datataking` | per-namespace state, substate, run number, last transition |
-| testbed | `workflows` | active work, outcomes, cumulative totals |
-| testbed | `agents` | bounded instance map with operational and health state |
-| testbed | `data` | files, slices, queues, recent throughput |
-| epicprod | `panda` | jobs, cores, sites, tasks, and outcomes by state or type |
-| epicprod | `production` | campaigns, outputs, bytes, placement, data arrival |
-| epicprod | `ops` | agent state, actions, alarms, assessment execution |
+| both | System health (health) | overall status, checks, assessment freshness |
+| testbed | Datataking state (datataking) | per-namespace state, substate, run number, last transition |
+| testbed | Workflow activity (workflows) | active work, outcomes, cumulative totals |
+| testbed | Agent status (agents) | bounded instance map with operational and health state |
+| testbed | Data activity (data) | files, slices, queues, recent throughput |
+| epicprod | PanDA activity (panda) | jobs, cores, sites, tasks, and outcomes by state or type |
+| epicprod | Production activity (production) | campaigns, outputs, bytes, placement, data arrival |
+| epicprod | Operations activity (ops) | agent state, actions, alarms, assessment execution |
 
 The PanDA maintainer performs raw queries or consumes maintained rollups and
 publishes a compact local projection at a deliberately chosen resolution. Raw

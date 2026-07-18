@@ -7,6 +7,7 @@ from snapper_ai.queries import (
     InvalidQuery,
     SnapNotFound,
     UnsupportedEncoding,
+    changes_between,
     component_history,
     latest,
     state_at,
@@ -238,6 +239,9 @@ class ComponentHistoryQueryTests(TestCase):
         reasons=None,
         recovered_gap_started_at=None,
         recovered_gap_start_unknown=False,
+        component_schema_version=3,
+        registration_version=3,
+        assessment_policy="epicprod-panda-v3",
     ):
         snap_time = self.at + timedelta(minutes=minutes)
         if revision is None:
@@ -248,18 +252,18 @@ class ComponentHistoryQueryTests(TestCase):
         else:
             components = {
                 "panda": {
-                    "v": 3,
-                    "registration_version": 3,
+                    "v": component_schema_version,
+                    "registration_version": registration_version,
                     "revision": revision,
                     "publisher_identity": "swf-monitor:panda-activity",
                     "assessed_at": snap_time.isoformat(),
                     "source_as_of": snap_time.isoformat(),
-                    "assessment_policy": "epicprod-panda-v3",
+                    "assessment_policy": assessment_policy,
                     "data": {"jobs_by_state": {"running": revision}},
                 },
             }
             component_revisions = {"panda": revision}
-            registration_versions = {"panda": 3}
+            registration_versions = {"panda": registration_version}
             component_hashes = {"panda": f"component-hash-{revision}"}
         return SystemSnap.objects.create(
             scope="epicprod",
@@ -364,6 +368,30 @@ class ComponentHistoryQueryTests(TestCase):
         )
         self.assertEqual(result.end_coverage.status, "covered")
 
+    def test_history_keeps_component_schema_and_registration_evolution(self):
+        self._snap(minutes=0, revision=1)
+        evolved = self._snap(
+            minutes=5,
+            revision=1,
+            component_schema_version=4,
+            registration_version=4,
+            assessment_policy="epicprod-panda-v4",
+        )
+
+        result = component_history(
+            "epicprod",
+            "panda",
+            self.at + timedelta(minutes=1),
+            self.at + timedelta(minutes=5),
+        )
+
+        self.assertEqual(len(result.entries), 2)
+        self.assertEqual(result.entries[1].snap_id, str(evolved.pk))
+        self.assertEqual(result.entries[1].kind, "change")
+        self.assertTrue(result.entries[1].component_changed)
+        self.assertEqual(result.entries[1].registration_version, 4)
+        self.assertEqual(result.entries[1].component["v"], 4)
+
     def test_history_records_component_absence_and_later_appearance(self):
         self._snap(minutes=0, revision=None)
         self._snap(minutes=5, revision=1, reasons=["change"])
@@ -432,6 +460,216 @@ class ComponentHistoryQueryTests(TestCase):
             component_history(
                 "epicprod",
                 "panda",
+                first.snap_time,
+                delta.snap_time,
+            )
+
+
+class ChangesBetweenQueryTests(TestCase):
+    def setUp(self):
+        self.at = datetime(2026, 7, 18, 13, 30, tzinfo=timezone.utc)
+
+    def _snap(
+        self,
+        *,
+        minutes,
+        components,
+        reasons=None,
+        declared_changes=None,
+        recovered_gap_started_at=None,
+        snap_schema_version=1,
+        capture_policy="epicprod-v1",
+    ):
+        snap_time = self.at + timedelta(minutes=minutes)
+        documents = {}
+        component_revisions = {}
+        registration_versions = {}
+        component_hashes = {}
+        for name, revision in components.items():
+            documents[name] = {
+                "v": 1,
+                "registration_version": 1,
+                "revision": revision,
+                "publisher_identity": f"test:{name}",
+                "assessed_at": snap_time.isoformat(),
+                "source_as_of": snap_time.isoformat(),
+                "assessment_policy": f"{name}-v1",
+                "data": {"value": revision},
+            }
+            component_revisions[name] = revision
+            registration_versions[name] = 1
+            component_hashes[name] = f"{name}-hash-{revision}"
+        return SystemSnap.objects.create(
+            scope="epicprod",
+            snap_time=snap_time,
+            observed_at=snap_time + timedelta(seconds=2),
+            completed_at=snap_time + timedelta(seconds=2, milliseconds=5),
+            snap_schema_version=snap_schema_version,
+            capture_policy=capture_policy,
+            reasons=reasons or ["baseline"],
+            changed_components=declared_changes or [],
+            component_revisions=component_revisions,
+            registration_versions=registration_versions,
+            component_hashes=component_hashes,
+            state_hash=f"state-hash-{minutes}",
+            state={"components": documents},
+            recovered_gap_started_at=recovered_gap_started_at,
+        )
+
+    def test_changes_between_returns_changed_removed_and_added_values(self):
+        boundary = self._snap(
+            minutes=0,
+            components={"health": 1, "panda": 1},
+        )
+        changed = self._snap(
+            minutes=5,
+            components={"health": 1, "panda": 2},
+            reasons=["change"],
+            declared_changes=["panda"],
+        )
+        removed = self._snap(
+            minutes=10,
+            components={"health": 1},
+            reasons=["change"],
+            declared_changes=["panda"],
+        )
+        added = self._snap(
+            minutes=15,
+            components={"health": 1, "production": 1},
+            reasons=["change"],
+            declared_changes=["production"],
+        )
+
+        result = changes_between(
+            "epicprod",
+            self.at + timedelta(minutes=2),
+            self.at + timedelta(minutes=15),
+        )
+
+        self.assertEqual(result.boundary_snap_id, str(boundary.pk))
+        self.assertEqual(
+            [change.snap_id for change in result.changes],
+            [str(changed.pk), str(removed.pk), str(added.pk)],
+        )
+        self.assertEqual(
+            [change.components[0].kind for change in result.changes],
+            ["changed", "removed", "added"],
+        )
+        panda_change = result.changes[0].components[0]
+        self.assertEqual(panda_change.name, "panda")
+        self.assertEqual(panda_change.previous_revision, 1)
+        self.assertEqual(panda_change.current_revision, 2)
+        self.assertEqual(panda_change.previous["data"]["value"], 1)
+        self.assertEqual(panda_change.current["data"]["value"], 2)
+        self.assertIsNone(result.changes[1].components[0].current)
+        self.assertIsNone(result.changes[2].components[0].previous)
+        self.assertEqual(result.start_coverage.status, "covered")
+        self.assertEqual(result.end_coverage.status, "covered")
+        self.assertEqual(
+            result.as_dict()["changes"][0]["declared_changed_components"],
+            ["panda"],
+        )
+
+    def test_changes_between_skips_quiet_baselines_but_keeps_recovery(self):
+        self._snap(minutes=0, components={"panda": 1})
+        self._snap(minutes=5, components={"panda": 1})
+        gap_started_at = self.at + timedelta(minutes=8)
+        recovery = self._snap(
+            minutes=10,
+            components={"panda": 1},
+            reasons=["recovery"],
+            recovered_gap_started_at=gap_started_at,
+        )
+
+        result = changes_between(
+            "epicprod",
+            self.at + timedelta(minutes=1),
+            self.at + timedelta(minutes=10),
+        )
+
+        self.assertEqual(len(result.changes), 1)
+        self.assertEqual(result.changes[0].snap_id, str(recovery.pk))
+        self.assertEqual(result.changes[0].kind, "recovery")
+        self.assertEqual(result.changes[0].components, ())
+        self.assertEqual(
+            result.changes[0].recovered_gap_started_at,
+            gap_started_at,
+        )
+
+        during_gap = changes_between(
+            "epicprod",
+            self.at + timedelta(minutes=1),
+            self.at + timedelta(minutes=9),
+        )
+        self.assertEqual(during_gap.changes, ())
+        self.assertEqual(during_gap.end_coverage.status, "gap")
+        self.assertEqual(
+            during_gap.end_coverage.gap_ended_at,
+            recovery.snap_time,
+        )
+
+    def test_changes_between_keeps_schema_and_capture_policy_transitions(self):
+        self._snap(minutes=0, components={"panda": 1})
+        policy = self._snap(
+            minutes=5,
+            components={"panda": 1},
+            snap_schema_version=2,
+            capture_policy="epicprod-v2",
+        )
+
+        result = changes_between(
+            "epicprod",
+            self.at + timedelta(minutes=1),
+            self.at + timedelta(minutes=5),
+        )
+
+        self.assertEqual(len(result.changes), 1)
+        self.assertEqual(result.changes[0].snap_id, str(policy.pk))
+        self.assertEqual(result.changes[0].kind, "policy")
+        self.assertEqual(result.changes[0].components, ())
+        self.assertTrue(result.changes[0].schema_changed)
+        self.assertTrue(result.changes[0].capture_policy_changed)
+        self.assertEqual(result.changes[0].previous_snap_schema_version, 1)
+        self.assertEqual(result.changes[0].snap_schema_version, 2)
+        self.assertEqual(
+            result.changes[0].previous_capture_policy,
+            "epicprod-v1",
+        )
+        self.assertEqual(result.changes[0].capture_policy, "epicprod-v2")
+
+    def test_changes_between_rejects_invalid_or_unreconstructable_interval(self):
+        first = self._snap(minutes=0, components={"panda": 1})
+        with self.assertRaises(InvalidQuery):
+            changes_between(
+                "epicprod",
+                first.snap_time + timedelta(minutes=1),
+                first.snap_time,
+            )
+        with self.assertRaises(InvalidQuery):
+            changes_between(
+                "epicprod",
+                datetime(2026, 7, 18, 13, 30),
+                first.snap_time,
+            )
+        with self.assertRaises(SnapNotFound):
+            changes_between(
+                "epicprod",
+                first.snap_time - timedelta(minutes=1),
+                first.snap_time,
+            )
+        delta = SystemSnap.objects.create(
+            scope="epicprod",
+            snap_time=self.at + timedelta(minutes=5),
+            observed_at=self.at + timedelta(minutes=5, seconds=2),
+            completed_at=self.at + timedelta(minutes=5, seconds=3),
+            capture_policy="epicprod-v1",
+            encoding=SystemSnap.Encoding.DELTA,
+            state_hash="delta-hash",
+            state={"components": {}},
+        )
+        with self.assertRaises(UnsupportedEncoding):
+            changes_between(
+                "epicprod",
                 first.snap_time,
                 delta.snap_time,
             )
