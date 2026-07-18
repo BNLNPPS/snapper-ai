@@ -163,6 +163,10 @@ The [execution plan](docs/PLAN.md) is the authoritative roadmap and progress
 record. The [implementation record](docs/IMPLEMENTATION.md) preserves durable
 decisions and their code and integration consequences.
 
+The [development workflow](docs/DEVELOPMENT.md) defines the required branch
+boundary between `snapper-ai` and its SWF core-repository integrations, shared
+checkout safety, and the coordinated-baseline deployment rule.
+
 The [technical design](docs/DESIGN.md) defines registration, publication,
 capture, snap representation, evolution, query semantics, AI evidence,
 efficiency, and the implementation boundary.

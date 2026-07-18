@@ -6,6 +6,12 @@ It names the integration decisions and ownership required for bootstrap. The
 generic capture and query contract remains in [DESIGN.md](DESIGN.md); current
 execution order and progress live only in [PLAN.md](PLAN.md).
 
+Integration development and deployment must follow the repository/branch
+boundary in [DEVELOPMENT.md](DEVELOPMENT.md): the generic `snapper-ai` package
+is developed on its `main`, while changes in `swf-testbed`, `swf-monitor`, and
+`swf-common-lib` go to the current coordinated `infra/baseline-vNN` and are
+deployed from that branch until the baseline delivery boundary.
+
 ## Integration boundary
 
 snapper-ai owns component registration, canonical publication, the current
