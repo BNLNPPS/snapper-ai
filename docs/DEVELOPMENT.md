@@ -79,8 +79,22 @@ During an active coordinated baseline, deploy the SWF monitor from that
 baseline, not from main:
 
 ```bash
-./deploy-swf-monitor.sh branch infra/baseline-vNN
+sudo bash deploy-swf-monitor.sh branch infra/baseline-vNN
 ```
+
+Run the repository's standard deployment script in the foreground. It creates
+an isolated release copy of the requested Git branch under
+/opt/swf-monitor/releases; it does not clone over or switch the shared
+development checkout. The script then copies the validated development virtual
+environment, freezes its editable local packages into the release, runs
+migrations, updates the current release link, restarts the required services,
+and performs the HTTP health check.
+
+Because the script freezes local package checkouts, verify that snapper-ai,
+swf-epicprod, site-canary, swf-common-lib, swf-testbed, and swf-monitor are all
+clean and at their intended revisions immediately before deployment. Otherwise
+another session's uncommitted package work could be shipped even though the
+swf-monitor branch itself is clean.
 
 A deployment from core-repository main can omit work that exists only on the
 active baseline. Deployment does not change the branch workflow: first put the

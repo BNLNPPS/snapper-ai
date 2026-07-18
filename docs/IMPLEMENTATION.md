@@ -45,6 +45,11 @@ commits that implement or specify it.
   status refresh maintains health and PanDA current state before capture.
 - `SWF_EPICPROD_INTEGRATION.md` is the host-specific contract.
 
+As of 2026-07-18 16:10 UTC, the initial host runs the generic package through
+snapper-ai commit 385aeee in the coordinated swf-monitor v40 release at commit
+a9c0a7a. Migration 0002 is applied. The four generic query functions are
+installed but have no SWF REST or MCP transport adapters yet.
+
 ## Decisions
 
 ### D-001 — Generic Django application in the existing runtime
@@ -204,13 +209,16 @@ the current payload violates its authoritative registration.
 
 ### D-008 — Actual time and coverage are part of every temporal answer
 
-**Status:** accepted; latest and state-at queries implemented
+**Status:** accepted; all four generic base queries implemented and installed
 
 **Date:** 2026-07-16
 
 **Specified in:** snapper-ai commit 3035970, principally `docs/DESIGN.md`.
-`latest(scope)` and `state_at(scope, time)` are implemented in
-`snapper_ai/queries.py`; range queries remain in Phase 4 of `PLAN.md`.
+`latest(scope)`, `state_at(scope, time)`,
+`component_history(scope, component, start, end)`, and
+`changes_between(scope, start, end)` are implemented in
+`snapper_ai/queries.py`. SWF transport adapters remain in Phase 5 of
+`PLAN.md`.
 
 The state-at query returns the latest eligible logical state together with its actual
 snap time. It does not pretend the state was observed at the requested time.
@@ -272,13 +280,15 @@ later decisions.
 
 ### D-011 — Recovery gaps are immutable half-open intervals
 
-**Status:** accepted and implemented in the package; deployment pending
+**Status:** accepted, implemented, and deployed in the initial SWF host
 
 **Date:** 2026-07-18
 
 **Implemented in:** `snapper_ai/models.py`, `snapper_ai/capture.py`, migration
 `0002_systemsnap_recovery_gap.py`, and package-level capture, migration, and
 query tests.
+
+Migration 0002 was confirmed applied in the initial SWF host on 2026-07-18.
 
 A recovery snap stores the time at which the recovered gap started. Together
 with its own snap time, this defines a half-open gap ending at the snap time.
@@ -300,7 +310,7 @@ boundary without projecting the mutable cursor backward through history.
 
 ### D-012 — Component history begins with boundary state
 
-**Status:** accepted and implemented in the package
+**Status:** accepted, implemented, and installed in the initial SWF host
 
 **Date:** 2026-07-18
 
@@ -326,7 +336,7 @@ periodic full snap to appear as a value change.
 
 ### D-013 — System changes are derived from adjacent complete snaps
 
-**Status:** accepted and implemented in the package
+**Status:** accepted, implemented, and installed in the initial SWF host
 
 **Date:** 2026-07-18
 

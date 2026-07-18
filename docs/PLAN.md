@@ -30,10 +30,35 @@ The initial state-evolution components are live:
 The first bounded commissioning read is recorded below. The four generic base
 queries—latest, state at, component history, and changes between—are
 implemented with actual times, provenance, schema/policy evolution, and honest
-observer coverage. Deployment of the new migration and Phase 5 SWF adapters is
-deferred until coordinated SWF work resumes. The remaining package-only work is
-to close the bounded commissioning read; do not expand the component catalog
-unless an operational need requires it.
+observer coverage. The package through snapper-ai commit 385aeee and migration
+0002 are installed in the initial SWF host. The generic queries are not yet
+exposed through SWF REST or MCP adapters.
+
+The next bounded task is to close the representative 24-hour commissioning
+read after approximately 2026-07-18 21:59 UTC. Do not expand the component
+catalog before that read. Phase 5 is the next implementation tranche after
+commissioning; it crosses into swf-monitor and must be coordinated with other
+work in the shared core repositories.
+
+### Next-session bootstrap
+
+As of 2026-07-18 16:10 UTC:
+
+- production is the coordinated swf-monitor v40 release at commit a9c0a7a;
+- migration 0002 is applied, and the installed snapper-ai package contains the
+  four generic temporal queries through commit 385aeee;
+- epicprod has 286 snaps and testbed has 277, both beginning at
+  2026-07-17 21:59:20 UTC;
+- both capture cursors evaluated the 16:10 UTC boundary with fresh heartbeats,
+  zero consecutive failures, and no open coverage gap; and
+- the production Snapper UI presents descriptive component titles and plain
+  internal names; it does not use red code styling for names or fields.
+
+Before doing new work, verify these facts because branches and runtime state
+can move. snapper-ai work stays on main. Any Phase 5 integration work belongs on
+the current coordinated infra/baseline-vNN branch in swf-monitor, after checking
+the shared checkout for another session's work. Use
+[DEVELOPMENT.md](DEVELOPMENT.md) for the branch and deployment procedure.
 
 ## Ordered plan
 
@@ -69,8 +94,8 @@ unless an operational need requires it.
   size and assembly measurements are below; lock wait is bounded but is not
   separately timed or retained.
 - [~] Confirm scheduler heartbeat and coverage-gap behavior throughout the
-  window. Current cursors are healthy; immutable gap boundaries are implemented
-  in the package and await the next coordinated deployment.
+  window. Current cursors are healthy; immutable gap boundaries are deployed,
+  and migration 0002 is applied.
 - [ ] Inspect whether raw five-minute PanDA counts provide useful temporal
   resolution without unacceptable growth.
 - [x] Record the initial findings here and make only evidence-driven
@@ -155,6 +180,14 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-18:** Deployed the generic package through commit 385aeee and
+  migration 0002 with the standard SWF deployment script from the coordinated
+  swf-monitor v40 branch. The active host release is swf-monitor commit
+  a9c0a7a. The production health check returned HTTP 200; both capture cursors
+  were current with zero failures and no open gap at the 16:10 UTC audit. The
+  deployed package exposes all four generic queries, but SWF REST, MCP, and
+  exact-event resolver adapters remain Phase 5. The same release removed code
+  styling from human-facing Snapper names and fields.
 - **2026-07-18:** Implemented `changes_between(scope, start, end)`, completing
   the four generic base queries. It derives added, changed, and removed
   component values from adjacent complete snaps; omits value-identical
@@ -174,7 +207,8 @@ alarm behavior, and event resolver before implementation.
   marks existing recovery starts unknown and preserves exact starts for new
   snaps. Twelve package-level PostgreSQL tests cover capture, migration,
   latest, point-in-time selection, exact recovery boundaries, active gaps, and
-  unchecked future times. Coordinated deployment remains pending.
+  unchecked future times. Coordinated deployment was still pending at that
+  point; the deployment is recorded in the latest entry above.
 - **2026-07-18:** Recorded the initial 15-hour-46-minute commissioning read and
   implemented generic `latest(scope)` retrieval with actual snap time and
   current observer coverage. The read identified one prerequisite for
@@ -184,4 +218,5 @@ alarm behavior, and event resolver before implementation.
   testbed datataking is namespace-aware; epicprod PanDA schema v3 records
   all current in-flight job states and all current nonterminal task states by
   target site. The deployed capture path recorded the v3 component. Began the
-  bounded commissioning phase; temporal queries are next.
+  bounded commissioning phase; temporal queries were the next tranche and are
+  recorded as complete in the later entries above.
