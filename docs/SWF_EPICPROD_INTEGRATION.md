@@ -65,7 +65,7 @@ snapper-ai applies canonical comparison after this curation.
 | Scope | Component | Initial maintainer | Projection and resolution |
 |---|---|---|---|
 | both | `health` | System status maintainer | assessed health transitions and bounded status summaries |
-| testbed | `datataking` | datataking state owner | operational state transitions, run identity, transition time |
+| testbed | `datataking` | datataking state owner | per-namespace operational state transitions, run identity, transition time |
 | testbed | `workflows` | workflow-state maintainer | bounded active-work summaries and outcome aggregates |
 | testbed | `agents` | agent-status maintainer | bounded instance map with operational and assessed health state |
 | testbed | `data` | data-state maintainer | bounded queues, file and slice state, rounded recent throughput |
@@ -137,6 +137,61 @@ checks determined it, and when was the oldest source check made?* Visibility is
 public, the assessment policy is `swf-system-status-v1`, and the stable event
 resolver `swf-system-status-history` points to the existing System status
 history API or MCP adapter for exact check transitions.
+
+### `datataking` v2 contract
+
+The first state component is `datataking` in the shared `testbed` scope. It is
+the initial concrete realization of the vertical cut through the
+[ePIC E0-E1 global-state model](https://github.com/BNLNPPS/swf-testbed/blob/main/docs/images/e0-e1-global-state-v1.svg):
+the latest component state marks the independent datataking lane for every
+namespaced testbed at the present instant, while recorded snaps show how those
+lanes evolve with the rest of the shared platform.
+
+The brief v1 singleton projection is superseded. Version 2 represents the
+platform as it is operated: multiple independently namespaced testbeds sharing
+common infrastructure.
+
+Its server-derived publisher identity is `swf-monitor:run-state`. The
+authoritative source is the highest-numbered `RunState` row in each namespace.
+The adapter resolves `RunState.metadata.execution_id` through the corresponding
+`WorkflowExecution.namespace`; legacy executions without a namespace do not
+enter this projection. Namespace membership is discovered from those records,
+not configured in Snapper, so a namespace enters automatically with its first
+RunState. Creation of a run and a semantic change to `phase`, `state`, or
+`substate` publish the complete namespace map immediately in the same database
+transaction. Slice counters and other run bookkeeping do not enter the
+projection and do not advance its revision.
+
+The complete revision-driving projection is:
+
+```json
+{
+  "namespaces": {
+    "test-zy": {
+      "run_number": 101,
+      "phase": "physics",
+      "state": "running",
+      "substate": "physics",
+      "last_transition_at": "2026-07-18T12:00:00Z"
+    }
+  }
+}
+```
+
+The map is limited to 128 namespaces and the canonical component JSON to 64
+KiB. Within each namespace, `substate` is omitted when the state model does not
+define one, and `last_transition_at` carries the authoritative
+`state_changed_at` value. `assessed_at` is the adapter evaluation time.
+`source_as_of` is unset because no single source timestamp represents the
+independently evolving namespace states. Visibility is public and the
+assessment policy is `swf-datataking-state-v1`.
+
+The historical question is: *where did the recorded vertical cut intersect the
+datataking lane for each namespace, for which run, and when did each state
+begin?* Snap history provides coherent sampled evolution. The stable resolver
+`swf-testbed-system-state-events` links the component to the authoritative
+`SystemStateEvent` stream, using namespace-to-run selector translation, when an
+exact intermediate transition sequence is required.
 
 ## Adapter and transaction wiring
 

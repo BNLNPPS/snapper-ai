@@ -27,14 +27,20 @@ follows it. Many other kinds of state have no recoverable history at all.
 snapper-ai records history while the present state is already known. It turns
 historical state from an inference problem into a retrieval problem.
 
-The application was conceived for the PanDA workload-management ecosystem,
-initially the ePIC streaming workflow testbed and epicprod production system.
-Production progress and distributed processing activity are important to the
+The immediate catalyst was the ePIC E0-E1 global-state model in the streaming
+workflow testbed. Its vertical cut through concurrent state lanes is the global
+state at an instant. Following those cuts through time is the operational memory
+that snapper-ai records.
+
+[![The ePIC E0-E1 global state across a datataking arc](https://raw.githubusercontent.com/BNLNPPS/swf-testbed/main/docs/images/e0-e1-global-state-v1.svg)](https://github.com/BNLNPPS/swf-testbed/blob/main/docs/images/e0-e1-global-state-v1.svg)
+
+The first concrete lanes are the datataking states of the independently
+namespaced testbeds sharing that platform. The application also serves the PanDA
+workload-management ecosystem and the epicprod production system, where
+production progress and distributed processing activity are important to the
 collaboration, valuable in diagnosis, and rich input for AI reasoning and
-reporting. Prior-art research found several adjacent open-source systems;
-focused development still offered the shortest path to this particular need.
-The design therefore broadened into an application-agnostic service, with
-PanDA/ePIC as its first integration.
+reporting. The design therefore broadened into an application-agnostic service,
+with ePIC/SWF and PanDA as its first integration.
 
 ## How it works
 
@@ -130,7 +136,7 @@ The first registration set is intentionally small:
 | Scope | Initial components |
 |---|---|
 | both | system health and assessment freshness |
-| testbed | datataking state, workflow activity, agent state, data activity |
+| testbed | datataking state by namespace, workflow activity, agent state, data activity |
 | epicprod | PanDA activity, production and campaign state, operational state |
 
 The first high-value epicprod projection is current PanDA activity: jobs and

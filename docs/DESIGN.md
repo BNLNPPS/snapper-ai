@@ -494,7 +494,7 @@ snap history within its configured horizon.
 | Scope | Component | Initial state |
 |---|---|---|
 | both | `health` | overall status, checks, assessment freshness |
-| testbed | `datataking` | state, substate, run number, last transition |
+| testbed | `datataking` | per-namespace state, substate, run number, last transition |
 | testbed | `workflows` | active work, outcomes, cumulative totals |
 | testbed | `agents` | bounded instance map with operational and health state |
 | testbed | `data` | files, slices, queues, recent throughput |
