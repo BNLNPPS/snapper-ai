@@ -10,7 +10,7 @@ remains visible.
 
 Status markers:
 
-- `[x]` complete and operating;
+- `[x]` complete for the stated item;
 - `[~]` current bounded work; and
 - `[ ]` not started.
 
@@ -25,12 +25,13 @@ The initial state-evolution components are live:
 - `epicprod:panda`, with current job and task states and target-site
   discrimination.
 
-The first bounded commissioning read is recorded below, and `latest(scope)` is
-implemented as the first generic temporal query. The next tranche is the
-historical coverage correction required for honest `state_at(scope, time)`,
-followed by that query itself. Do not expand the testbed or production component
-catalog before the retrieval layer exists unless an operational need requires
-it.
+The first bounded commissioning read is recorded below. `latest(scope)` and
+`state_at(scope, time)` are implemented in the generic package, including
+immutable recovery-gap evidence and conservative treatment of legacy gaps. The
+next generic query is `component_history`; deployment of the new migration is
+deferred until coordinated SWF work resumes. Do not expand the testbed or
+production component catalog before the retrieval layer exists unless an
+operational need requires it.
 
 ## Ordered plan
 
@@ -66,8 +67,8 @@ it.
   size and assembly measurements are below; lock wait is bounded but is not
   separately timed or retained.
 - [~] Confirm scheduler heartbeat and coverage-gap behavior throughout the
-  window. Current cursors are healthy; immutable gap boundaries need the
-  correction identified below.
+  window. Current cursors are healthy; immutable gap boundaries are implemented
+  in the package and await the next coordinated deployment.
 - [ ] Inspect whether raw five-minute PanDA counts provide useful temporal
   resolution without unacceptable growth.
 - [x] Record the initial findings here and make only evidence-driven
@@ -97,18 +98,17 @@ snap in this initial window.
 
 Both scope cursors were current, reporting a quiet latest opportunity, zero
 consecutive failures, and no active coverage gap. Each scope nevertheless had
-28 recovery-marked snaps. A recovery snap retains the `recovery` reason, but the
-immutable snap does not retain the gap's start boundary; the cursor clears that
-boundary after recovery. This must be corrected before `state_at` can make
-exact historical observer-coverage claims. Exact no-change and lock-wait rates
-are also unavailable from retained history; instrumentation should be added
-only if the completed commissioning window shows that those measures are worth
-their operational cost.
+28 recovery-marked snaps. Those legacy snaps retain the `recovery` reason but
+not the gap's start boundary. Migration `0002` marks their start explicitly
+unknown rather than inventing continuity; new recovery snaps retain the exact
+start. Exact no-change and lock-wait rates are also unavailable from retained
+history; instrumentation should be added only if the completed commissioning
+window shows that those measures are worth their operational cost.
 
 ### 4. Generic temporal query service
 
 - [x] Implement `latest(scope)`.
-- [ ] Implement `state_at(scope, time)` with actual snap time and explicit
+- [x] Implement `state_at(scope, time)` with actual snap time and explicit
   observer-coverage status.
 - [ ] Implement `component_history(scope, component, start, end)`, beginning
   with state at the interval boundary and optionally suppressing unchanged
@@ -116,8 +116,9 @@ their operational cost.
 - [ ] Implement `changes_between(scope, start, end)`.
 - [ ] Return component assessment/source times, schema and policy versions,
   provenance, hashes, and coverage state consistently.
-- [ ] Test quiet intervals, exact boundaries, schema evolution, and known
-  coverage gaps.
+- [~] Test quiet intervals, exact boundaries, schema evolution, and known
+  coverage gaps. Point-in-time boundaries and current, recovered, and legacy
+  gaps are covered; broader history and schema-evolution cases remain.
 
 ### 5. SWF REST, MCP, and event context
 
@@ -153,6 +154,12 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-18:** Implemented immutable half-open recovery-gap intervals and
+  `state_at(scope, time)` entirely in the generic package. Migration `0002`
+  marks existing recovery starts unknown and preserves exact starts for new
+  snaps. Twelve package-level PostgreSQL tests cover capture, migration,
+  latest, point-in-time selection, exact recovery boundaries, active gaps, and
+  unchecked future times. Coordinated deployment remains pending.
 - **2026-07-18:** Recorded the initial 15-hour-46-minute commissioning read and
   implemented generic `latest(scope)` retrieval with actual snap time and
   current observer coverage. The read identified one prerequisite for

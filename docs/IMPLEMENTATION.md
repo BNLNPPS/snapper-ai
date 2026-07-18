@@ -22,7 +22,10 @@ commits that implement or specify it.
   coherent registry cuts, full-snap persistence, baseline behavior, and
   coverage-gap bookkeeping.
 - `snapper_ai/queries.py` owns deterministic temporal retrieval and its typed
-  evidence results. It currently implements `latest(scope)`.
+  evidence results. It currently implements `latest(scope)` and
+  `state_at(scope, time)`.
+- `snapper_ai/migrations/0002_systemsnap_recovery_gap.py` makes recovered gap
+  boundaries immutable and marks pre-existing recovery starts unknown.
 - `DESIGN.md` is the generic semantic contract.
 
 ### Initial host: `swf-monitor`
@@ -196,18 +199,19 @@ the current payload violates its authoritative registration.
 
 ### D-008 — Actual time and coverage are part of every temporal answer
 
-**Status:** accepted; `latest` implemented, historical queries pending
+**Status:** accepted; `latest` and `state_at` implemented
 
 **Date:** 2026-07-16
 
 **Specified in:** snapper-ai `3035970`, principally `docs/DESIGN.md`.
-`latest(scope)` is implemented in `snapper_ai/queries.py`; historical query
-implementation remains in Phase 4 of `PLAN.md`.
+`latest(scope)` and `state_at(scope, time)` are implemented in
+`snapper_ai/queries.py`; range queries remain in Phase 4 of `PLAN.md`.
 
 `state_at` returns the latest eligible logical state together with its actual
 snap time. It does not pretend the state was observed at the requested time.
-Known observer gaps produce explicit unknown coverage rather than silently
-carrying state across the gap.
+Known observer gaps produce explicit `gap` coverage rather than silently
+carrying state across the gap. Incomplete historical evidence produces
+`unknown`.
 
 Component history begins with state at the interval boundary and then recorded
 changes. Exact transitions that collapse between aligned captures remain the
@@ -235,7 +239,7 @@ generation sit above Snapper rather than altering recorded operational facts.
 
 ### D-010 — Temporal retrieval returns a typed evidence result
 
-**Status:** accepted; initial query implemented
+**Status:** accepted; latest and point-in-time queries implemented
 
 **Date:** 2026-07-18
 
@@ -245,23 +249,48 @@ in `snapper_ai/tests/test_queries.py`.
 The generic Python service returns a frozen `StateQueryResult` envelope, not a
 bare state dictionary. Its serialization includes the scope, requested time,
 actual snap time, observation and completion times, snap identity, schema and
-capture policy, encoding, state hash, current observer coverage, and a complete
-copied state document.
+capture policy, encoding, state hash, applicable observer coverage, and a
+complete copied state document.
 
 Coverage has explicit `covered`, `gap`, and `unknown` states. For `latest`, it
-describes the current capture cursor. A missing scope raises `SnapNotFound`, and
-an encoding that cannot yet be reconstructed raises `UnsupportedEncoding`
-rather than returning partial or misleading state.
+describes the current capture cursor. For `state_at`, it is derived from exact
+snap boundaries, the next immutable recovery record, or the current cursor at
+the open end of history. A missing scope or eligible snap raises
+`SnapNotFound`, and an encoding that cannot yet be reconstructed raises
+`UnsupportedEncoding` rather than returning partial or misleading state.
 
-The current immutable record identifies a recovery snap but not the start of
-the recovered gap. Historical gap boundaries must be persisted before
-`state_at` is implemented; current cursor coverage must not be projected
-backward onto an earlier snap.
+**Consequence:** callers can consume `latest` and `state_at` without guessing
+evidence times or capture health. REST and MCP may wrap this result for
+transport, but must preserve these semantics. Delta reconstruction and exact
+external envelopes remain later decisions.
 
-**Consequence:** callers can consume `latest` without guessing evidence times
-or capture health. REST and MCP may wrap this result for transport, but must
-preserve these semantics. Delta reconstruction and exact external envelopes
-remain later decisions.
+### D-011 — Recovery gaps are immutable half-open intervals
+
+**Status:** accepted and implemented in the package; deployment pending
+
+**Date:** 2026-07-18
+
+**Implemented in:** `snapper_ai/models.py`, `snapper_ai/capture.py`, migration
+`0002_systemsnap_recovery_gap.py`, and package-level capture, migration, and
+query tests.
+
+A recovery snap stores `recovered_gap_started_at`. Together with its own
+`snap_time`, this defines the gap as `[recovered_gap_started_at, snap_time)`.
+The recovery boundary is covered because capture assembled a complete state at
+that boundary. Database constraints prevent a known start from being marked
+unknown and require every known start to precede its recovery snap.
+
+Recovery snaps written before this field existed cannot recover their exact
+start from immutable data. Migration `0002` marks them with
+`recovered_gap_start_unknown`; it does not estimate or backfill a timestamp.
+`state_at` conservatively returns `unknown` between the preceding snap and such
+a legacy recovery. A null evidence flag is also treated as unknown so a writer
+from the preceding code version cannot create false continuity during a
+coordinated upgrade.
+
+**Consequence:** point-in-time answers distinguish known gaps, genuinely
+covered intervals, legacy uncertainty, and times beyond the current observer
+boundary without projecting the mutable cursor backward through history.
 
 ## Open implementation decisions
 

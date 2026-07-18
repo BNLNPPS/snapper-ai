@@ -318,6 +318,7 @@ def capture_scope(
         "capture_policy": capture_policy,
         "encoding": SystemSnap.Encoding.FULL,
         "reasons": reasons,
+        "recovered_gap_started_at": _timestamp(gap_started_at),
         "changed_components": list(changed_components),
         "components": component_documents,
     }
@@ -337,6 +338,8 @@ def capture_scope(
         component_hashes=content_hashes,
         state_hash=state_hash,
         state=state,
+        recovered_gap_started_at=gap_started_at,
+        recovered_gap_start_unknown=False,
     )
     cursor.observed_revisions = revisions
     cursor.observed_hashes = content_hashes

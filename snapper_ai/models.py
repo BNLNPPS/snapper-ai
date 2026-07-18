@@ -81,6 +81,11 @@ class SystemSnap(models.Model):
     component_hashes = models.JSONField(default=dict)
     state_hash = models.CharField(max_length=64)
     state = models.JSONField(default=dict)
+    recovered_gap_started_at = models.DateTimeField(null=True, blank=True)
+    recovered_gap_start_unknown = models.BooleanField(
+        default=False,
+        null=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -90,6 +95,25 @@ class SystemSnap(models.Model):
             models.UniqueConstraint(
                 fields=["scope", "snap_time"],
                 name="snapper_snap_scope_time_uniq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(recovered_gap_started_at__isnull=True)
+                    | (
+                        models.Q(recovered_gap_start_unknown__isnull=False)
+                        & models.Q(recovered_gap_start_unknown=False)
+                    )
+                ),
+                name="snapper_recovery_gap_evidence_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(recovered_gap_started_at__isnull=True)
+                    | models.Q(
+                        recovered_gap_started_at__lt=models.F("snap_time")
+                    )
+                ),
+                name="snapper_recovery_gap_order_ck",
             ),
         ]
         indexes = [

@@ -261,7 +261,11 @@ period changes and their edges require no cadence-aware query behavior.
 Initial startup, a maximum quiet interval, a manual request, and recovery after
 an observer gap produce full snaps. Manual requests target the next aligned
 boundary. Missed boundaries create explicit observer-coverage gaps; the next
-successful boundary records recovery using current state at that time.
+successful boundary records recovery using current state at that time and
+retains the first missed boundary. A recovered gap is the half-open interval
+from that boundary up to, but not including, the recovery snap time. The
+recovery boundary itself is covered because a complete state was observed
+there.
 
 Scheduler health is maintained separately from snap age. A quiet healthy system
 may have sparse snap history while the scheduler continues to evaluate every
@@ -283,6 +287,7 @@ single document.
   "capture_policy": "epicprod-v1",
   "encoding": "full",
   "reasons": ["change"],
+  "recovered_gap_started_at": null,
   "changed_components": ["panda"],
   "components": {
     "panda": {
@@ -304,7 +309,8 @@ The snap envelope carries:
 
 - scope, aligned snap time, observation time, and completion time;
 - snap-schema and capture-policy versions;
-- reasons for capture and changed component names;
+- reasons for capture, the start of any gap closed by this snap, and changed
+  component names;
 - component revision, registration-version, and hash vectors;
 - a composed state hash; and
 - the named component map.
@@ -343,7 +349,8 @@ this record.
 
 Each immutable history record contains an identity, scope, aligned and observed
 times, schema and policy versions, encoding, capture reasons, changed components,
-revision and hash vectors, composed state hash, and state JSON.
+revision and hash vectors, composed state hash, state JSON, and immutable
+recovery-gap evidence.
 
 An index beginning with `(scope, snap_time)` serves latest, point-in-time, and
 range queries. JSON indexes should follow measured query patterns.
@@ -384,10 +391,15 @@ The core retrieval operations are:
 - `context_around(scope, time, window)` returns system state, nearby changes,
   and resolvable references to registered exact event streams.
 
-Point-in-time results preserve their actual snap timestamp. Known observer gaps
-produce unknown coverage rather than silently carrying old state across the
-gap. Charts plot actual snap times. Regular series are explicit resampling
-operations with a declared resolution and carry-forward policy.
+Point-in-time results preserve their actual snap timestamp. Observer coverage
+is `covered`, `gap`, or `unknown`. A requested time in a recorded half-open gap
+returns `gap` with its known start and recovery boundary rather than silently
+carrying old state across it. The recovery boundary returns `covered`.
+Pre-migration recovery snaps whose start cannot be reconstructed return
+`unknown` conservatively between the preceding snap and recovery. A time later
+than the cursor's latest evaluated boundary is also `unknown`. Charts plot
+actual snap times. Regular series are explicit resampling operations with a
+declared resolution and carry-forward policy.
 
 A component-history view extracts one named component from logical snaps and
 can suppress unchanged baseline values. It begins with the state at the start of
