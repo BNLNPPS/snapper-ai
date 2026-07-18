@@ -23,7 +23,8 @@ commits that implement or specify it.
   coverage-gap bookkeeping.
 - `snapper_ai/queries.py` owns deterministic temporal retrieval and its typed
   evidence results. It currently implements `latest(scope)` and
-  `state_at(scope, time)`.
+  `state_at(scope, time)`, and
+  `component_history(scope, component, start, end)`.
 - `snapper_ai/migrations/0002_systemsnap_recovery_gap.py` makes recovered gap
   boundaries immutable and marks pre-existing recovery starts unknown.
 - `DESIGN.md` is the generic semantic contract.
@@ -239,7 +240,8 @@ generation sit above Snapper rather than altering recorded operational facts.
 
 ### D-010 — Temporal retrieval returns a typed evidence result
 
-**Status:** accepted; latest and point-in-time queries implemented
+**Status:** accepted; latest, point-in-time, and component-history queries
+implemented
 
 **Date:** 2026-07-18
 
@@ -259,10 +261,10 @@ the open end of history. A missing scope or eligible snap raises
 `SnapNotFound`, and an encoding that cannot yet be reconstructed raises
 `UnsupportedEncoding` rather than returning partial or misleading state.
 
-**Consequence:** callers can consume `latest` and `state_at` without guessing
-evidence times or capture health. REST and MCP may wrap this result for
-transport, but must preserve these semantics. Delta reconstruction and exact
-external envelopes remain later decisions.
+**Consequence:** callers can consume `latest`, `state_at`, and component
+history without guessing evidence times or capture health. REST and MCP may
+wrap these results for transport, but must preserve their semantics. Delta
+reconstruction and exact external envelopes remain later decisions.
 
 ### D-011 — Recovery gaps are immutable half-open intervals
 
@@ -291,6 +293,32 @@ coordinated upgrade.
 **Consequence:** point-in-time answers distinguish known gaps, genuinely
 covered intervals, legacy uncertainty, and times beyond the current observer
 boundary without projecting the mutable cursor backward through history.
+
+### D-012 — Component history begins with boundary state
+
+**Status:** accepted and implemented in the package
+
+**Date:** 2026-07-18
+
+**Implemented in:** `snapper_ai/queries.py` and package-level query tests in
+`snapper_ai/tests/test_queries.py`.
+
+`component_history(scope, component, start, end)` returns a frozen result whose
+first entry is the latest eligible state at the requested start. The entry
+retains its actual snap time and represents absence explicitly rather than
+dropping a component that had not yet appeared or had been retired.
+
+Subsequent entries are classified as component changes, unchanged baselines,
+or recoveries. Component identity includes its content hash, revision,
+registration and schema versions, assessment policy, and publisher identity.
+Callers may include unchanged baselines; by default they are suppressed.
+Recovery entries are never suppressed, even when the component value is
+unchanged. The result returns observer coverage at both requested endpoints,
+while recovery entries expose gap evidence within the interval.
+
+**Consequence:** component timelines start from a knowable boundary value and
+remain honest about component absence and observer gaps without requiring every
+periodic full snap to appear as a value change.
 
 ## Open implementation decisions
 

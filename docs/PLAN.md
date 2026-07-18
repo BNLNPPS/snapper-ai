@@ -28,10 +28,11 @@ The initial state-evolution components are live:
 The first bounded commissioning read is recorded below. `latest(scope)` and
 `state_at(scope, time)` are implemented in the generic package, including
 immutable recovery-gap evidence and conservative treatment of legacy gaps. The
-next generic query is `component_history`; deployment of the new migration is
-deferred until coordinated SWF work resumes. Do not expand the testbed or
-production component catalog before the retrieval layer exists unless an
-operational need requires it.
+generic `component_history` query is also implemented. The next query is
+`changes_between`; deployment of the new migration is deferred until
+coordinated SWF work resumes. Do not expand the testbed or production component
+catalog before the retrieval layer exists unless an operational need requires
+it.
 
 ## Ordered plan
 
@@ -110,12 +111,14 @@ window shows that those measures are worth their operational cost.
 - [x] Implement `latest(scope)`.
 - [x] Implement `state_at(scope, time)` with actual snap time and explicit
   observer-coverage status.
-- [ ] Implement `component_history(scope, component, start, end)`, beginning
+- [x] Implement `component_history(scope, component, start, end)`, beginning
   with state at the interval boundary and optionally suppressing unchanged
   baselines.
 - [ ] Implement `changes_between(scope, start, end)`.
-- [ ] Return component assessment/source times, schema and policy versions,
-  provenance, hashes, and coverage state consistently.
+- [~] Return component assessment/source times, schema and policy versions,
+  provenance, hashes, and coverage state consistently. Latest, point-in-time,
+  and component-history results do so; remaining range queries must preserve
+  the same evidence.
 - [~] Test quiet intervals, exact boundaries, schema evolution, and known
   coverage gaps. Point-in-time boundaries and current, recovered, and legacy
   gaps are covered; broader history and schema-evolution cases remain.
@@ -154,6 +157,13 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-18:** Implemented
+  `component_history(scope, component, start, end)` in the generic package.
+  History begins with explicit boundary state, records absence and appearance,
+  optionally suppresses semantically unchanged baselines, retains recovery
+  evidence unconditionally, and returns coverage at both requested endpoints.
+  The package suite now has 17 passing PostgreSQL tests. No SWF repository or
+  deployment was touched.
 - **2026-07-18:** Implemented immutable half-open recovery-gap intervals and
   `state_at(scope, time)` entirely in the generic package. Migration `0002`
   marks existing recovery starts unknown and preserves exact starts for new

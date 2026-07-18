@@ -407,6 +407,15 @@ the interval, followed by recorded changes. Several publications between aligned
 boundaries may collapse into the one now captured at the boundary; components
 that need every intermediate transition retain an event or measurement stream.
 
+The boundary entry preserves the actual snap time and explicitly represents a
+component that was absent at the requested start. Subsequent component identity
+uses its content hash, revision, registration and schema versions, assessment
+policy, and publisher identity. When unchanged baselines are suppressed,
+recovery snaps remain in the result because observer evidence is not a component
+value and must not disappear with value filtering. Component history returns
+coverage at both requested endpoints; recovery entries carry the immutable gap
+evidence inside the interval.
+
 Component-facing operations also expose the current registration and state,
 latest acceptance time, current revision, whether accepted content changed, and
 whether current content differs from the latest recorded snap.
