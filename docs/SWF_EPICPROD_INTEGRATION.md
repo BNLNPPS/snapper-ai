@@ -193,6 +193,93 @@ begin?* Snap history provides coherent sampled evolution. The stable resolver
 `SystemStateEvent` stream, using namespace-to-run selector translation, when an
 exact intermediate transition sequence is required.
 
+### `panda` v3 contract
+
+The first epicprod state component is `panda`. Its server-derived publisher
+identity is `swf-monitor:panda-activity`, and its authoritative source is the
+existing SWF PanDA monitor query layer over the ePIC PanDA database.
+
+The brief v1 projection recorded current `running` jobs and cores but did not
+distinguish the rest of the in-flight population from the trailing activity
+window. Version 2 records every current in-flight job state explicitly.
+Version 3 adds the corresponding current nonterminal JEDI task states and
+target-site counts.
+
+The supervised ops agent publishes the component after each full five-minute
+System status refresh. Snapper does not query PanDA during capture. Each
+publication reads the existing trailing 24-hour aggregate, a lightweight
+current in-flight query over `jobsactive4`, and a nonterminal task aggregate
+over `jedi_tasks`, then removes users and individual job and task records before
+publication.
+
+The revision-driving projection is:
+
+```json
+{
+  "window_hours": 24,
+  "jobs": {
+    "total_24h": 12720,
+    "by_status_24h": {"running": 331, "finished": 3805},
+    "in_flight_now": {
+      "total": 161167,
+      "by_status": {"activated": 160805, "starting": 100, "running": 262},
+      "running_jobs": 262,
+      "running_cores": 391
+    },
+    "sites": {
+      "NERSC_Perlmutter_epic": {
+        "jobs_24h": 1795,
+        "finished_24h": 1532,
+        "failed_24h": 3,
+        "in_flight_jobs_now": 52771,
+        "by_status_now": {"activated": 52514, "running": 257},
+        "running_jobs_now": 257,
+        "running_cores_now": 386
+      }
+    }
+  },
+  "tasks": {
+    "total_24h": 19,
+    "by_status_24h": {"running": 9, "done": 5},
+    "by_type_24h": {"epicproduction": 9},
+    "in_flight_now": {
+      "total": 38,
+      "by_status": {"running": 27, "ready": 10, "assigning": 1}
+    },
+    "sites": {
+      "UM_GREX_PanDA_1": {
+        "in_flight_tasks_now": 18,
+        "by_status_now": {"running": 18}
+      },
+      "NERSC_Perlmutter_epic": {
+        "in_flight_tasks_now": 9,
+        "by_status_now": {"running": 9}
+      }
+    }
+  }
+}
+```
+
+Job and task status maps are limited to 32 entries, each site map to 32 sites,
+the task-type map to 32 types, and canonical component JSON to 64 KiB. Job
+sites with current in-flight work rank ahead of inactive sites, followed by
+trailing job volume; task sites rank by current nonterminal task count. Current
+in-flight job states are `defined`, `waiting`, `assigned`,
+`activated`, `sent`, `starting`, `running`, `holding`, `transferring`, and
+`merging`. Current tasks are all JEDI states except `done`, `finished`,
+`failed`, `broken`, `aborted`, `exhausted`, and `passed`. The component records
+raw integer counts at five-minute observation resolution: a count change
+between maintainer runs is meaningful, while changes inside that interval
+intentionally collapse into the next maintained state.
+
+`assessed_at` and `source_as_of` are the completed-query time. Visibility is
+public and the assessment policy is `swf-panda-activity-24h-v2`. The historical
+question is: *how much PanDA work was active, what states were its jobs and
+tasks in at each target site, and how did recent outcomes evolve?* The stable
+resolver
+`swf-panda-activity-history` supplies exact PanDA task and job context when a
+sampled aggregate requires drill-down.
+
 ## Adapter and transaction wiring
 
 Existing current-state stores remain authoritative. Their maintainers publish
