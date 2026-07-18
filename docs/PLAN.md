@@ -25,10 +25,12 @@ The initial state-evolution components are live:
 - `epicprod:panda`, with current job and task states and target-site
   discrimination.
 
-The immediate path is a bounded commissioning read, followed directly by the
-generic temporal query service. Do not expand the testbed or production
-component catalog before that retrieval layer exists unless an operational need
-requires it.
+The first bounded commissioning read is recorded below, and `latest(scope)` is
+implemented as the first generic temporal query. The next tranche is the
+historical coverage correction required for honest `state_at(scope, time)`,
+followed by that query itself. Do not expand the testbed or production component
+catalog before the retrieval layer exists unless an operational need requires
+it.
 
 ## Ordered plan
 
@@ -57,21 +59,55 @@ requires it.
 ### 3. Bounded commissioning
 
 - [~] Observe one representative active window, initially 24 hours.
-- [ ] Measure snap and no-change rates by scope.
-- [ ] Measure each component's contribution to snap creation.
-- [ ] Measure canonical row size, capture/assembly time, and lock time.
-- [ ] Confirm scheduler heartbeat and coverage-gap behavior throughout the
-  window.
+- [~] Measure snap and no-change rates by scope. Initial snap rates are below;
+  exact historical no-change outcomes are not currently retained.
+- [x] Measure each component's initial contribution to snap creation.
+- [~] Measure canonical row size, capture/assembly time, and lock time. Initial
+  size and assembly measurements are below; lock wait is bounded but is not
+  separately timed or retained.
+- [~] Confirm scheduler heartbeat and coverage-gap behavior throughout the
+  window. Current cursors are healthy; immutable gap boundaries need the
+  correction identified below.
 - [ ] Inspect whether raw five-minute PanDA counts provide useful temporal
   resolution without unacceptable growth.
-- [ ] Record the findings here and make only evidence-driven corrections.
+- [x] Record the initial findings here and make only evidence-driven
+  corrections.
 
 Commissioning is deliberately bounded. It is not a dashboard project and must
 not delay temporal retrieval unless it uncovers a correctness problem.
 
+#### Initial read — 2026-07-18 13:49 UTC
+
+This read covers the first roughly 15 hours 46 minutes of operation, from
+2026-07-17 21:59 UTC. It is an early baseline, not a substitute for closing the
+representative 24-hour window.
+
+| Scope | Snaps | Snaps/hour | State bytes mean / p95 / max | Assembly ms mean / p95 | Observation delay ms mean / p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `epicprod` | 251 | 15.9 | 1,878 / 3,210 / 3,720 | 0.028 / 0.041 | 7,107 / 11,458 |
+| `testbed` | 247 | 15.7 | 1,560 / 2,202 / 2,208 | 0.033 / 0.048 | 7,014 / 11,391 |
+
+The full `snapper_system_snap` relation, including its indexes, occupied
+1,400,832 bytes. Change-bearing snaps attributed 48 changes to
+`epicprod:health`, 8 to `epicprod:panda`, 10 to `testbed:health`, and 2 to
+`testbed:datataking`. Baselines dominated snap reasons: 206 for `epicprod` and
+209 for `testbed`. The five-minute PanDA maintainer therefore contributes
+bounded production detail without driving every aligned opportunity into a
+snap in this initial window.
+
+Both scope cursors were current, reporting a quiet latest opportunity, zero
+consecutive failures, and no active coverage gap. Each scope nevertheless had
+28 recovery-marked snaps. A recovery snap retains the `recovery` reason, but the
+immutable snap does not retain the gap's start boundary; the cursor clears that
+boundary after recovery. This must be corrected before `state_at` can make
+exact historical observer-coverage claims. Exact no-change and lock-wait rates
+are also unavailable from retained history; instrumentation should be added
+only if the completed commissioning window shows that those measures are worth
+their operational cost.
+
 ### 4. Generic temporal query service
 
-- [ ] Implement `latest(scope)`.
+- [x] Implement `latest(scope)`.
 - [ ] Implement `state_at(scope, time)` with actual snap time and explicit
   observer-coverage status.
 - [ ] Implement `component_history(scope, component, start, end)`, beginning
@@ -117,6 +153,11 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-18:** Recorded the initial 15-hour-46-minute commissioning read and
+  implemented generic `latest(scope)` retrieval with actual snap time and
+  current observer coverage. The read identified one prerequisite for
+  `state_at`: persist immutable recovery-gap boundaries before making
+  historical coverage claims.
 - **2026-07-18:** Completed the bounded initial component tranche.
   `testbed:datataking` is namespace-aware; `epicprod:panda` schema v3 records
   all current in-flight job states and all current nonterminal task states by

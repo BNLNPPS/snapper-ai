@@ -21,6 +21,8 @@ commits that implement or specify it.
 - `snapper_ai/capture.py` owns aligned capture decisions, scope serialization,
   coherent registry cuts, full-snap persistence, baseline behavior, and
   coverage-gap bookkeeping.
+- `snapper_ai/queries.py` owns deterministic temporal retrieval and its typed
+  evidence results. It currently implements `latest(scope)`.
 - `DESIGN.md` is the generic semantic contract.
 
 ### Initial host: `swf-monitor`
@@ -194,11 +196,12 @@ the current payload violates its authoritative registration.
 
 ### D-008 — Actual time and coverage are part of every temporal answer
 
-**Status:** accepted; query implementation pending
+**Status:** accepted; `latest` implemented, historical queries pending
 
 **Date:** 2026-07-16
 
-**Specified in:** snapper-ai `3035970`, principally `docs/DESIGN.md`. Query
+**Specified in:** snapper-ai `3035970`, principally `docs/DESIGN.md`.
+`latest(scope)` is implemented in `snapper_ai/queries.py`; historical query
 implementation remains in Phase 4 of `PLAN.md`.
 
 `state_at` returns the latest eligible logical state together with its actual
@@ -230,6 +233,36 @@ event references, but it must preserve evidence times and availability.
 **Consequence:** semantic interpretation, anomaly hypotheses, and narrative
 generation sit above Snapper rather than altering recorded operational facts.
 
+### D-010 — Temporal retrieval returns a typed evidence result
+
+**Status:** accepted; initial query implemented
+
+**Date:** 2026-07-18
+
+**Implemented in:** `snapper_ai/queries.py`, with package-level database tests
+in `snapper_ai/tests/test_queries.py`.
+
+The generic Python service returns a frozen `StateQueryResult` envelope, not a
+bare state dictionary. Its serialization includes the scope, requested time,
+actual snap time, observation and completion times, snap identity, schema and
+capture policy, encoding, state hash, current observer coverage, and a complete
+copied state document.
+
+Coverage has explicit `covered`, `gap`, and `unknown` states. For `latest`, it
+describes the current capture cursor. A missing scope raises `SnapNotFound`, and
+an encoding that cannot yet be reconstructed raises `UnsupportedEncoding`
+rather than returning partial or misleading state.
+
+The current immutable record identifies a recovery snap but not the start of
+the recovered gap. Historical gap boundaries must be persisted before
+`state_at` is implemented; current cursor coverage must not be projected
+backward onto an earlier snap.
+
+**Consequence:** callers can consume `latest` without guessing evidence times
+or capture health. REST and MCP may wrap this result for transport, but must
+preserve these semantics. Delta reconstruction and exact external envelopes
+remain later decisions.
+
 ## Open implementation decisions
 
 These require evidence or the next implementation tranche and are intentionally
@@ -237,7 +270,7 @@ not settled here:
 
 - long-term cadence and retention;
 - whether full-snap growth warrants component-delta encoding;
-- exact Python result types and serialized API envelopes for temporal queries;
+- exact REST and MCP transport envelopes for temporal queries;
 - authorization and visibility projections for REST, MCP, and event resolvers;
 - resolver selector and availability details for health, datataking, and PanDA;
 - ordering and contracts for the remaining component catalog; and
