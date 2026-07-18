@@ -159,6 +159,10 @@ generic Snapper product contract.
 
 ## Documentation
 
+The [execution plan](docs/PLAN.md) is the authoritative roadmap and progress
+record. The [implementation record](docs/IMPLEMENTATION.md) preserves durable
+decisions and their code and integration consequences.
+
 The [technical design](docs/DESIGN.md) defines registration, publication,
 capture, snap representation, evolution, query semantics, AI evidence,
 efficiency, and the implementation boundary.

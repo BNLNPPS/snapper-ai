@@ -2,8 +2,9 @@
 
 This document is the integration contract between the generic snapper-ai
 service and its first deployments: the streaming workflow testbed and epicprod.
-It names the decisions and ownership required before bootstrap. The generic
-capture and query contract remains in [DESIGN.md](DESIGN.md).
+It names the integration decisions and ownership required for bootstrap. The
+generic capture and query contract remains in [DESIGN.md](DESIGN.md); current
+execution order and progress live only in [PLAN.md](PLAN.md).
 
 ## Integration boundary
 
@@ -135,8 +136,9 @@ identical publication without advancing the component revision.
 The historical question is: *what health did SWF assess for this scope, which
 checks determined it, and when was the oldest source check made?* Visibility is
 public, the assessment policy is `swf-system-status-v1`, and the stable event
-resolver `swf-system-status-history` points to the existing System status
-history API or MCP adapter for exact check transitions.
+resolver identifier `swf-system-status-history` is registered for exact check
+transitions. Its concrete System status history API or MCP mapping remains part
+of the event-resolver tranche.
 
 ### `datataking` v2 contract
 
@@ -189,9 +191,9 @@ assessment policy is `swf-datataking-state-v1`.
 The historical question is: *where did the recorded vertical cut intersect the
 datataking lane for each namespace, for which run, and when did each state
 begin?* Snap history provides coherent sampled evolution. The stable resolver
-`swf-testbed-system-state-events` links the component to the authoritative
-`SystemStateEvent` stream, using namespace-to-run selector translation, when an
-exact intermediate transition sequence is required.
+identifier `swf-testbed-system-state-events` is registered for the authoritative
+`SystemStateEvent` stream. Concrete resolution, including namespace-to-run
+selector translation, remains part of the event-resolver tranche.
 
 ### `panda` v3 contract
 
@@ -276,9 +278,9 @@ intentionally collapse into the next maintained state.
 public and the assessment policy is `swf-panda-activity-24h-v2`. The historical
 question is: *how much PanDA work was active, what states were its jobs and
 tasks in at each target site, and how did recent outcomes evolve?* The stable
-resolver
-`swf-panda-activity-history` supplies exact PanDA task and job context when a
-sampled aggregate requires drill-down.
+resolver identifier `swf-panda-activity-history` is registered for exact PanDA
+task and job context. Its concrete activity or action-history mapping remains
+part of the event-resolver tranche.
 
 ## Adapter and transaction wiring
 
@@ -373,6 +375,9 @@ source observation. Event-reference resolution applies the caller's normal
 authorization to the authoritative event source.
 
 ## Bootstrap sequence
+
+This is the integration acceptance sequence, not a second progress tracker.
+See [PLAN.md](PLAN.md) for completed, current, and pending work.
 
 1. Install the current-component, system-snap, and capture-cursor schema.
 2. Deploy the shared registration and publication helper with publisher
