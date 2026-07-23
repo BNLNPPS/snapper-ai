@@ -16,7 +16,12 @@ Status markers:
 
 ## Current position
 
-As of 2026-07-18, coherent capture is operating for testbed and epicprod.
+As of 2026-07-22, coherent capture has operated for five days for testbed and
+epicprod. The bounded commissioning phase is complete. The recorder is healthy,
+the stored state is useful, and full-snap growth remains modest. The next work
+is to remove scheduler and logging overhead and make the recorded history
+available through the UI, REST, and MCP before expanding the component catalog.
+
 The initial state-evolution components are live:
 
 - **System health** for the testbed and epicprod scopes (component name:
@@ -27,32 +32,41 @@ The initial state-evolution components are live:
 - **PanDA activity** for epicprod (component name: panda), with current job and
   task states and target-site discrimination.
 
-The first bounded commissioning read is recorded below. The four generic base
-queries—latest, state at, component history, and changes between—are
-implemented with actual times, provenance, schema/policy evolution, and honest
-observer coverage. The package through snapper-ai commit 385aeee and migration
-0002 are installed in the initial SWF host. The generic queries are not yet
-exposed through SWF REST or MCP adapters.
+The initial and five-day commissioning reads are recorded below. The four
+generic base queries—latest, state at, component history, and changes
+between—are implemented with actual times, provenance, schema/policy evolution,
+and honest observer coverage. The package through snapper-ai commit 385aeee and
+migration 0002 are installed in the initial SWF host. The generic queries are
+not yet exposed through SWF REST or MCP adapters.
 
-The next bounded task is to close the representative 24-hour commissioning
-read after approximately 2026-07-18 21:59 UTC. Do not expand the component
-catalog before that read. Phase 5 is the next implementation tranche after
-commissioning; it crosses into swf-monitor and must be coordinated with other
-work in the shared core repositories.
+Phase 5 is the current implementation tranche. First, the supervised worker
+must invoke capture once at each configured aligned 30-second boundary instead
+of launching a Django subprocess every 10 seconds, and routine start, result,
+completion, duplicate, quiet, and child-bootstrap messages must stop entering
+AppLog. Material captures, recoveries, failures, and manual requests remain
+durable; a bounded periodic summary may be added if it proves useful. Then the
+existing temporal query service must be exposed through a usable history UI,
+REST, and MCP. This work crosses into swf-monitor and must be coordinated with
+other work in the shared core repositories. Do not expand the component catalog
+until this retrieval tranche is complete.
 
 ### Next-session bootstrap
 
-As of 2026-07-18 16:10 UTC:
+As observed through the production products on 2026-07-22:
 
-- production is the coordinated swf-monitor v40 release at commit a9c0a7a;
-- migration 0002 is applied, and the installed snapper-ai package contains the
-  four generic temporal queries through commit 385aeee;
-- epicprod has 286 snaps and testbed has 277, both beginning at
+- epicprod had 1,532 snaps and testbed had 1,517, both beginning at
   2026-07-17 21:59:20 UTC;
-- both capture cursors evaluated the 16:10 UTC boundary with fresh heartbeats,
-  zero consecutive failures, and no open coverage gap; and
-- the production Snapper UI presents descriptive component titles and plain
-  internal names; it does not use red code styling for names or fields.
+- both capture cursors had fresh heartbeats, zero consecutive failures, and no
+  open coverage gap;
+- the latest complete state documents were approximately 9.2 KiB for epicprod
+  and 4.2 KiB for testbed;
+- the latest 100 epicprod snaps contained 96 change-bearing snaps, primarily
+  the five-minute PanDA projection, while the latest 100 testbed snaps contained
+  17 datataking changes;
+- four recent one-opportunity recovery gaps in each scope were exact, closed,
+  and coincident with supervised-worker process changes; and
+- the production UI still exposes only the latest 100 snaps, and the installed
+  generic temporal queries have no SWF REST or MCP transport adapters.
 
 Before doing new work, verify these facts because branches and runtime state
 can move. snapper-ai work stays on main. Any Phase 5 integration work belongs on
@@ -86,18 +100,21 @@ the shared checkout for another session's work. Use
 
 ### 3. Bounded commissioning
 
-- [~] Observe one representative active window, initially 24 hours.
-- [~] Measure snap and no-change rates by scope. Initial snap rates are below;
-  exact historical no-change outcomes are not currently retained.
+- [x] Observe one representative active window, initially 24 hours and closed
+  with a five-day production read.
+- [x] Measure snap and no-change behavior by scope. Snap rates and recent reason
+  distributions are recorded below; exact quiet and duplicate outcomes need not
+  enter immutable snap history.
 - [x] Measure each component's initial contribution to snap creation.
-- [~] Measure canonical row size, capture/assembly time, and lock time. Initial
-  size and assembly measurements are below; lock wait is bounded but is not
-  separately timed or retained.
-- [~] Confirm scheduler heartbeat and coverage-gap behavior throughout the
-  window. Current cursors are healthy; immutable gap boundaries are deployed,
-  and migration 0002 is applied.
-- [ ] Inspect whether raw five-minute PanDA counts provide useful temporal
-  resolution without unacceptable growth.
+- [x] Measure canonical row size and capture/assembly behavior. Initial
+  measurements and current state sizes are below. Lock wait remains bounded but
+  is not separately retained; commissioning did not justify adding that
+  instrumentation.
+- [x] Confirm scheduler heartbeat and coverage-gap behavior throughout the
+  window. Current cursors are healthy, immutable gap boundaries are deployed,
+  and observed recoveries closed honestly.
+- [x] Confirm that raw five-minute PanDA counts provide useful temporal
+  resolution without unacceptable snap growth.
 - [x] Record the initial findings here and make only evidence-driven
   corrections.
 
@@ -132,6 +149,34 @@ start. Exact no-change and lock-wait rates are also unavailable from retained
 history; instrumentation should be added only if the completed commissioning
 window shows that those measures are worth their operational cost.
 
+#### Five-day read — 2026-07-22
+
+This read covers approximately five days from the first snaps at
+2026-07-17 21:59 UTC. epicprod had 1,532 snaps and testbed had 1,517, or
+approximately 12.7 and 12.6 snaps per hour. The rate is close to the intended
+five-minute continuity baseline because most five-minute PanDA changes coincide
+with a baseline rather than creating additional snaps.
+
+The latest complete canonical state documents were approximately 9.2 KiB for
+epicprod and 4.2 KiB for testbed, well inside the registered 64 KiB per-component
+bounds. In the latest 100 snaps, epicprod had 96 change-bearing snaps, while
+testbed had 17 datataking changes. The raw five-minute PanDA projection therefore
+provides useful temporal resolution without causing a snap-growth problem.
+
+The durable action stream contained 2,741 successful material capture actions
+and four errors. Three errors were bootstrap, policy-transition, or deployment
+artifacts. One ordinary runtime capture timed out after 30 seconds on
+2026-07-20; both scopes recovered successfully on the next poll. Four recent
+recovery snaps per scope represented exact one-opportunity gaps and coincided
+with supervised-worker process changes. No gap remained open.
+
+The significant commissioning issue is outside snap persistence. The
+supervised worker launched approximately 41,900 full Django capture subprocesses
+and generated approximately 174,000 matching AppLog rows in five days. The
+10-second poll invokes capture three times per configured 30-second opportunity,
+so most executions are duplicates or quiet checks. Phase 5 must replace this
+with one invocation at each aligned boundary and material-only durable logging.
+
 ### 4. Generic temporal query service
 
 - [x] Implement `latest(scope)`.
@@ -146,10 +191,17 @@ window shows that those measures are worth their operational cost.
 - [x] Test quiet intervals, exact boundaries, schema evolution, and known
   coverage gaps.
 
-### 5. SWF REST, MCP, and event context
+### 5. Lean capture scheduling, retrieval, and event context
 
+- [ ] Invoke scheduled capture once at each configured aligned boundary; do not
+  launch duplicate polling subprocesses inside the same opportunity.
+- [ ] Keep routine scheduled start, result, completion, duplicate, quiet, and
+  child-bootstrap messages out of AppLog. Retain material captures, recoveries,
+  failures, and manual requests, with an optional bounded periodic summary.
+- [ ] Extend the UI beyond the latest 100 rows with paginated history, state at,
+  component history, and changes-between views using the generic query service.
 - [ ] Expose the generic query service through thin authenticated SWF REST
-  adapters.
+  adapters with the same typed evidence envelopes.
 - [ ] Expose the same semantics through thin MCP tools.
 - [ ] Map the stable health, datataking, and PanDA event resolver identifiers to
   authoritative services.
@@ -180,6 +232,15 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-22:** Closed bounded commissioning with a five-day production-product
+  review. Both scopes were healthy with no open gap; full-snap growth and current
+  document sizes remained modest; and five-minute PanDA observations provided
+  useful change history without increasing the baseline snap rate materially.
+  One non-bootstrap capture timeout recovered on the next poll. The review found
+  approximately 41,900 capture subprocess launches and 174,000 matching AppLog
+  rows, so Phase 5 now begins with aligned once-per-boundary scheduling and
+  material-only logging, followed by UI, REST, and MCP retrieval. Component
+  expansion remains blocked on completing that retrieval tranche.
 - **2026-07-18:** Deployed the generic package through commit 385aeee and
   migration 0002 with the standard SWF deployment script from the coordinated
   swf-monitor v40 branch. The active host release is swf-monitor commit
