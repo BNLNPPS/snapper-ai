@@ -204,8 +204,14 @@ with one invocation at each aligned boundary and material-only durable logging.
   failures, and manual requests. Deployed 2026-07-22 (swf-monitor
   dac9109); the optional periodic summary was not needed — the System
   page scheduler rows carry liveness.
-- [ ] Extend the UI beyond the latest 100 rows with paginated history, state at,
-  component history, and changes-between views using the generic query service.
+- [~] Extend the UI beyond the latest 100 rows with temporal views. The
+  report page now opens as a temporal observatory (swf-monitor af69d36,
+  2026-07-23): state lanes as horizontal bands over stepped curves of
+  measured parameters on one shared time axis, curve tick boxes, window
+  presets in the URL, recovery gaps as grey spans, and a click-driven
+  vertical cut rendering state_at with actual time and coverage.
+  Operator review, deeper pagination of the snap table, and any richer
+  changes-between presentation remain open.
 - [x] Expose the generic query service through thin SWF REST adapters with the
   same typed evidence envelopes. Deployed 2026-07-23 (swf-monitor 03b5fa6):
   `/api/snapper/<scope>/{latest,state-at,history,changes}/`, read-open per
