@@ -355,20 +355,23 @@ Each component registration declares related event sources using the generic
 event-reference contract. This integration maps stable resolver identifiers to
 concrete local services.
 
-The initial mapping should cover:
+The deployed mapping (2026-07-23) lives in
+`monitor_app.snapper_resolvers.RESOLVER_MAP`; the context REST endpoint
+(`/api/snapper/<scope>/context/`) and the `snapper_context_around` MCP
+tool attach each reference's concrete transport, and an unmapped
+resolver stays unknown rather than being claimed available:
 
-| Component | Event context | Resolver target |
+| Resolver identifier | Component | Target |
 |---|---|---|
-| System health (health) | assessed health transitions | System status history API or MCP tool |
-| Datataking state (datataking) | state transitions | testbed action or status stream |
-| Workflow activity (workflows) | workflow transitions | SWF action stream |
-| PanDA activity (panda) | task and job activity | PanDA activity or action-history adapter |
-| Production activity (production) | campaign and placement activity | epicprod and Rucio action adapters |
-| Operations activity (ops) | operator and agent actions | epicprod action stream |
+| `swf-system-status-history` | health (both scopes) | `/api/system-status/history/` (name, start, end) |
+| `swf-testbed-system-state-events` | datataking | `/api/system-state-events/` (run_number, event_type, state) |
+| `swf-panda-activity-history` | panda | `/api/panda/tasks/` plus the `panda_*` MCP tools |
 
-Each mapping defines authorization, selector translation, event-time field,
-retention semantics, and availability reporting. Stable resolver identifiers
-remain constant when deployment URLs change.
+Future components (workflow, production, and operations activity) add
+their declarations and rows here as they are contracted in Phase 6.
+Each mapping defines selector translation, event-time field, and
+availability reporting. Stable resolver identifiers remain constant
+when deployment URLs change.
 
 ## Query and visibility wiring
 

@@ -16,13 +16,15 @@ Status markers:
 
 ## Current position
 
-As of 2026-07-22, coherent capture has operated for five days for testbed and
-epicprod. The bounded commissioning phase is complete. The recorder is healthy,
-the stored state is useful, and full-snap growth remains modest. The scheduler
-and logging overhead found in commissioning is fixed and deployed: capture runs
-once per aligned boundary and only material outcomes enter the durable log. The
-next work is to make the recorded history available through the UI, REST, and
-MCP before expanding the component catalog.
+As of 2026-07-23, Phase 5 is complete. Capture runs once per aligned
+boundary with material-only logging; the four base queries plus
+`context_around` are served through read-open SWF REST and five MCP
+tools with the typed evidence envelopes intact; the three event
+resolvers map to authoritative services; and the report page opens as
+the Time history — state lanes and measured-parameter curves on one
+Eastern-time axis with a click-driven vertical cut. The next work is
+Phase 6: expanding the component catalog one contracted component at a
+time (epicprod components keyed by campaign family).
 
 The initial state-evolution components are live:
 
@@ -204,14 +206,13 @@ with one invocation at each aligned boundary and material-only durable logging.
   failures, and manual requests. Deployed 2026-07-22 (swf-monitor
   dac9109); the optional periodic summary was not needed — the System
   page scheduler rows carry liveness.
-- [~] Extend the UI beyond the latest 100 rows with temporal views. The
-  report page now opens as a temporal observatory (swf-monitor af69d36,
-  2026-07-23): state lanes as horizontal bands over stepped curves of
-  measured parameters on one shared time axis, curve tick boxes, window
-  presets in the URL, recovery gaps as grey spans, and a click-driven
-  vertical cut rendering state_at with actual time and coverage.
-  Operator review, deeper pagination of the snap table, and any richer
-  changes-between presentation remain open.
+- [x] Extend the UI beyond the latest 100 rows with temporal views. The
+  report page opens as the Time history (2026-07-23, iterated under
+  operator review): state lanes as horizontal bars with full-extent
+  hover and run-start pips over stepped curves, remembered per-user
+  curve and window state, double-click zoom, Eastern time throughout, a
+  click-driven vertical cut rendering state_at with actual time and
+  coverage plus a context link, and a paginated snap history table.
 - [x] Expose the generic query service through thin SWF REST adapters with the
   same typed evidence envelopes. Deployed 2026-07-23 (swf-monitor 03b5fa6):
   `/api/snapper/<scope>/{latest,state-at,history,changes}/`, read-open per
@@ -221,12 +222,24 @@ with one invocation at each aligned boundary and material-only durable logging.
   (swf-monitor 03b5fa6): `snapper_latest`, `snapper_state_at`,
   `snapper_component_history`, `snapper_changes_between`, with docstrings
   that teach the evidence envelope and coverage honesty.
-- [ ] Map the stable health, datataking, and PanDA event resolver identifiers to
-  authoritative services.
-- [ ] Implement `context_around` after the base queries and resolver mappings
-  work end to end.
-- [ ] Ensure AI-facing results preserve actual times, coverage, provenance, and
+- [x] Map the stable health, datataking, and PanDA event resolver identifiers to
+  authoritative services. 2026-07-23: `monitor_app.snapper_resolvers`
+  maps swf-system-status-history to the new
+  `/api/system-status/history/` read surface,
+  swf-testbed-system-state-events to the system-state-events REST, and
+  swf-panda-activity-history to the PanDA REST and MCP tools; an
+  unmapped resolver stays unknown, never claimed available.
+- [x] Implement `context_around` after the base queries and resolver mappings
+  work end to end. 2026-07-23: generic `context_around(scope, time,
+  window_seconds)` returns state at the instant, derived changes in the
+  centered window, and event references from the registered
+  declarations; the SWF REST and MCP transports attach resolver
+  transports. Package query tests cover it.
+- [x] Ensure AI-facing results preserve actual times, coverage, provenance, and
   event availability rather than presenting inferred continuity as fact.
+  The typed envelopes flow unchanged through REST and MCP; tool
+  docstrings instruct consumers on actual-time and gap honesty; context
+  references carry availability from the resolver mapping.
 
 ### 6. Expand the component catalog individually
 
@@ -250,6 +263,15 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-23 (later):** Closed Phase 5. Generic `context_around` with
+  event references and package tests; the SWF resolver mapping
+  (`monitor_app.snapper_resolvers`) attaching concrete REST and MCP
+  transports, with a new read surface for the health observation
+  stream; a context REST endpoint, a fifth MCP tool, a context link on
+  the Time history's vertical cut, and snap-table pagination. The Time
+  history itself iterated through operator review to lanes-as-bars with
+  run pips, remembered UI state, double-click zoom, and Eastern time on
+  every surface.
 - **2026-07-23:** Deployed the REST and MCP retrieval transports
   (swf-monitor 03b5fa6): four read-open REST endpoints and four MCP tools
   wrapping the generic queries, returning the typed evidence envelope

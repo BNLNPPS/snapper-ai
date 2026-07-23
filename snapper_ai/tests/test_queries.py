@@ -673,3 +673,75 @@ class ChangesBetweenQueryTests(TestCase):
                 first.snap_time,
                 delta.snap_time,
             )
+
+
+class ContextAroundTests(TestCase):
+    def setUp(self):
+        self.at = datetime(2026, 7, 18, 13, 30, tzinfo=timezone.utc)
+
+    def _snap(self, *, minutes=0, revision=None):
+        snap_time = self.at + timedelta(minutes=minutes)
+        return SystemSnap.objects.create(
+            scope="epicprod",
+            snap_time=snap_time,
+            observed_at=snap_time + timedelta(seconds=2),
+            completed_at=snap_time + timedelta(seconds=2, milliseconds=5),
+            capture_policy="epicprod-v1",
+            encoding=SystemSnap.Encoding.FULL,
+            state_hash=f"hash-{minutes}",
+            state={
+                "v": 1,
+                "scope": "epicprod",
+                "snap_time": snap_time.isoformat(),
+                "components": {
+                    "panda": {"revision": revision or minutes + 1},
+                },
+            },
+        )
+
+    def test_context_around_returns_state_changes_and_references(self):
+        from snapper_ai.models import CurrentComponent
+        from snapper_ai.queries import context_around
+
+        self._snap(minutes=-30, revision=1)
+        self._snap(minutes=0, revision=2)
+        CurrentComponent.objects.create(
+            scope="epicprod",
+            name="panda",
+            publisher_identity="test",
+            registration_hash="r1",
+            registration={
+                "event_sources": [
+                    {
+                        "name": "panda-task-job-activity",
+                        "resolver": "swf-panda-activity-history",
+                        "owner": "ePIC PanDA production",
+                        "event_kind": "panda-task-job-activity",
+                        "visibility": "public",
+                    }
+                ]
+            },
+        )
+
+        result = context_around(
+            "epicprod", self.at + timedelta(minutes=5), 3600)
+
+        serialized = result.as_dict()
+        self.assertEqual(serialized["scope"], "epicprod")
+        self.assertEqual(
+            serialized["state"]["actual_snap_time"], "2026-07-18T13:30:00Z")
+        self.assertEqual(len(serialized["references"]), 1)
+        reference = serialized["references"][0]
+        self.assertEqual(reference["resolver"], "swf-panda-activity-history")
+        self.assertEqual(reference["availability"], "unknown")
+        self.assertTrue(reference["from"] < reference["until"])
+        self.assertEqual(len(serialized["changes"]["changes"]), 1)
+
+    def test_context_around_rejects_unbounded_window(self):
+        from snapper_ai.queries import InvalidQuery, context_around
+
+        self._snap(minutes=0)
+        with self.assertRaises(InvalidQuery):
+            context_around("epicprod", self.at, 0)
+        with self.assertRaises(InvalidQuery):
+            context_around("epicprod", self.at, 10**9)

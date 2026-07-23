@@ -3,10 +3,10 @@
 import json
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone as datetime_timezone
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from typing import Any, Dict, Optional, Tuple
 
-from .models import CaptureCursor, SystemSnap
+from .models import CaptureCursor, CurrentComponent, SystemSnap
 from .services import SnapperError
 
 
@@ -884,4 +884,124 @@ def changes_between(
             snap=end_snap,
         ),
         changes=tuple(changes),
+    )
+
+
+@dataclass(frozen=True)
+class EventReference:
+    """One resolvable reference to a registered exact event stream.
+
+    The generic layer names the registered declaration and bounds event
+    time; the hosting integration maps ``resolver`` to a concrete API or
+    MCP tool and refines ``availability`` (DESIGN.md, Event-reference
+    contract).
+    """
+
+    component: str
+    source: str
+    resolver: str
+    scope: str
+    from_time: Optional[str]
+    until_time: Optional[str]
+    event_kind: str
+    owner: str
+    visibility: str
+    availability: str
+
+    def as_dict(self) -> dict:
+        return {
+            "component": self.component,
+            "source": self.source,
+            "resolver": self.resolver,
+            "scope": self.scope,
+            "from": self.from_time,
+            "until": self.until_time,
+            "event_kind": self.event_kind,
+            "owner": self.owner,
+            "visibility": self.visibility,
+            "availability": self.availability,
+        }
+
+
+@dataclass(frozen=True)
+class ContextAroundResult:
+    """Coherent state at an instant, nearby changes, and event references."""
+
+    scope: str
+    requested_at: Optional[str]
+    window_seconds: float
+    state: StateQueryResult
+    changes: "ChangesBetweenResult"
+    references: tuple
+
+    def as_dict(self) -> dict:
+        return {
+            "scope": self.scope,
+            "requested_at": self.requested_at,
+            "window_seconds": self.window_seconds,
+            "state": self.state.as_dict(),
+            "changes": self.changes.as_dict(),
+            "references": [ref.as_dict() for ref in self.references],
+        }
+
+
+def context_around(
+    scope: str,
+    time: datetime,
+    window_seconds: float = 3600.0,
+) -> ContextAroundResult:
+    """Return state at ``time``, changes in the window around it, and
+    resolvable references to the registered exact event streams.
+
+    The window is centered on the requested time. References come from
+    the active component registrations' declared event sources; their
+    availability is ``unknown`` here — the hosting integration owns the
+    resolver mapping and refines it.
+    """
+    scope = _bounded_scope(scope)
+    requested_at = _aware_time(time)
+    try:
+        window = float(window_seconds)
+    except (TypeError, ValueError):
+        raise InvalidQuery("window_seconds must be a number")
+    if not 0 < window <= 31 * 24 * 3600:
+        raise InvalidQuery("window_seconds must be positive and bounded")
+    half = timedelta(seconds=window / 2)
+    start_at = requested_at - half
+    end_at = requested_at + half
+
+    state = state_at(scope, requested_at)
+    changes = changes_between(scope, start_at, end_at)
+
+    references = []
+    registrations = (
+        CurrentComponent.objects.filter(scope=scope, active=True)
+        .order_by("name")
+        .values("name", "registration")
+    )
+    for row in registrations:
+        registration = row["registration"] or {}
+        for declaration in registration.get("event_sources") or []:
+            if not isinstance(declaration, dict):
+                continue
+            references.append(EventReference(
+                component=row["name"],
+                source=str(declaration.get("name") or ""),
+                resolver=str(declaration.get("resolver") or ""),
+                scope=scope,
+                from_time=_timestamp(start_at),
+                until_time=_timestamp(end_at),
+                event_kind=str(declaration.get("event_kind") or ""),
+                owner=str(declaration.get("owner") or ""),
+                visibility=str(declaration.get("visibility") or ""),
+                availability="unknown",
+            ))
+
+    return ContextAroundResult(
+        scope=scope,
+        requested_at=_timestamp(requested_at),
+        window_seconds=window,
+        state=state,
+        changes=changes,
+        references=tuple(references),
     )
