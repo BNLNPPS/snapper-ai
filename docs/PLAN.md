@@ -22,7 +22,8 @@ boundary with material-only logging; the four base queries plus
 tools with the typed evidence envelopes intact; the three event
 resolvers map to authoritative services; and the report page opens as
 the Time history — state lanes and measured-parameter curves on one
-Eastern-time axis with a click-driven vertical cut. The next work is
+Eastern-time axis with a click-driven vertical cut. The display design and its remaining
+landings are [TIME_HISTORY_UI.md](TIME_HISTORY_UI.md). The next work is
 Phase 6: expanding the component catalog one contracted component at a
 time (epicprod components keyed by campaign family).
 
