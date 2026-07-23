@@ -206,9 +206,15 @@ with one invocation at each aligned boundary and material-only durable logging.
   page scheduler rows carry liveness.
 - [ ] Extend the UI beyond the latest 100 rows with paginated history, state at,
   component history, and changes-between views using the generic query service.
-- [ ] Expose the generic query service through thin authenticated SWF REST
-  adapters with the same typed evidence envelopes.
-- [ ] Expose the same semantics through thin MCP tools.
+- [x] Expose the generic query service through thin SWF REST adapters with the
+  same typed evidence envelopes. Deployed 2026-07-23 (swf-monitor 03b5fa6):
+  `/api/snapper/<scope>/{latest,state-at,history,changes}/`, read-open per
+  the monitor's read-surface convention rather than authenticated — the
+  monitor gates writes and sensitive surfaces only.
+- [x] Expose the same semantics through thin MCP tools. Deployed 2026-07-23
+  (swf-monitor 03b5fa6): `snapper_latest`, `snapper_state_at`,
+  `snapper_component_history`, `snapper_changes_between`, with docstrings
+  that teach the evidence envelope and coverage honesty.
 - [ ] Map the stable health, datataking, and PanDA event resolver identifiers to
   authoritative services.
 - [ ] Implement `context_around` after the base queries and resolver mappings
@@ -238,6 +244,14 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-23:** Deployed the REST and MCP retrieval transports
+  (swf-monitor 03b5fa6): four read-open REST endpoints and four MCP tools
+  wrapping the generic queries, returning the typed evidence envelope
+  unchanged and verified against live production snaps. REST follows the
+  monitor's read-open convention for read surfaces. The same commit
+  silenced the remaining routine log flood (the status-refresh stdout
+  relay now logs only on failure). Remaining in Phase 5: the history UI
+  (consultation pending), resolver mappings, and context_around.
 - **2026-07-22 (later):** Deployed the lean scheduler and material-only
   logging (swf-monitor dac9109). The supervised worker invokes capture
   once, one second past each aligned opportunity boundary; routine
