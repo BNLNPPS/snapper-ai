@@ -18,9 +18,11 @@ Status markers:
 
 As of 2026-07-22, coherent capture has operated for five days for testbed and
 epicprod. The bounded commissioning phase is complete. The recorder is healthy,
-the stored state is useful, and full-snap growth remains modest. The next work
-is to remove scheduler and logging overhead and make the recorded history
-available through the UI, REST, and MCP before expanding the component catalog.
+the stored state is useful, and full-snap growth remains modest. The scheduler
+and logging overhead found in commissioning is fixed and deployed: capture runs
+once per aligned boundary and only material outcomes enter the durable log. The
+next work is to make the recorded history available through the UI, REST, and
+MCP before expanding the component catalog.
 
 The initial state-evolution components are live:
 
@@ -193,11 +195,15 @@ with one invocation at each aligned boundary and material-only durable logging.
 
 ### 5. Lean capture scheduling, retrieval, and event context
 
-- [ ] Invoke scheduled capture once at each configured aligned boundary; do not
+- [x] Invoke scheduled capture once at each configured aligned boundary; do not
   launch duplicate polling subprocesses inside the same opportunity.
-- [ ] Keep routine scheduled start, result, completion, duplicate, quiet, and
+  Deployed 2026-07-22 (swf-monitor dac9109): the worker sleeps to one
+  second past each wall-clock opportunity multiple and invokes once.
+- [x] Keep routine scheduled start, result, completion, duplicate, quiet, and
   child-bootstrap messages out of AppLog. Retain material captures, recoveries,
-  failures, and manual requests, with an optional bounded periodic summary.
+  failures, and manual requests. Deployed 2026-07-22 (swf-monitor
+  dac9109); the optional periodic summary was not needed — the System
+  page scheduler rows carry liveness.
 - [ ] Extend the UI beyond the latest 100 rows with paginated history, state at,
   component history, and changes-between views using the generic query service.
 - [ ] Expose the generic query service through thin authenticated SWF REST
@@ -232,6 +238,16 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-22 (later):** Deployed the lean scheduler and material-only
+  logging (swf-monitor dac9109). The supervised worker invokes capture
+  once, one second past each aligned opportunity boundary; routine
+  invocation, quiet/duplicate result, success stderr, completion, and
+  Django-bootstrap messages no longer enter AppLog. First minutes of
+  operation recorded two durable rows, both material (a change-bearing
+  capture and its completion relay), against roughly 340 in an equal
+  window before the change; cursors heartbeat on the 30-second cadence
+  with zero failures. Phase 5 continues with the retrieval tranche: UI,
+  REST, MCP, resolver mappings, then context_around.
 - **2026-07-22:** Closed bounded commissioning with a five-day production-product
   review. Both scopes were healthy with no open gap; full-snap growth and current
   document sizes remained modest; and five-minute PanDA observations provided
