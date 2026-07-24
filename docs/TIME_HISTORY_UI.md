@@ -9,22 +9,37 @@ tools' single state-color vocabulary.
 
 ## Three zones, one time axis
 
-1. **Tracks** — state lanes as horizontal bars (solid when active,
-   pastel when not), run-start pips, recovery gaps as grey spans never
-   painted over, an always-visible range slider as the horizontal
-   scroll. Lane headers expand to detail sub-lanes (health to its
-   non-ok checks).
+1. **Tracks** — set 2026-07-24 after operator review at wide windows:
+   namespace lanes are full-height bands carrying true workflow
+   activity periods. A continuous grey track says the namespace exists
+   and is idle; discrete tiles interrupt it where workflows actually
+   ran — a solid tile for the datataking window opening into a lighter
+   tile for the processing tail, assembled from the state-event record
+   where it exists and the universal run record otherwise, workflow
+   identity joined through the execution record. A run with no
+   recorded end renders hatched. Tiles keep a zoom-aware minimum
+   visual width so short runs read as blocks at any scale, with true
+   proportions returning on zoom. Continuous state lanes (health, its
+   expandable per-check sub-lanes) keep edge-to-edge bands. Recovery
+   gaps are grey spans painted beneath, never over. No pips: a tile's
+   leading edge is the run start.
 2. **Stacked curve panels** — one compact panel per family (in-flight
    jobs, tasks, job types, type-by-state; later sites and health
    counts), each with its own y-scale and legend row, sharing the
    x-axis, crosshair, and slider.
 3. **Selection panel** — never raw JSON first. Two gestures feed it:
    - **Cut (click)**: server-rendered component cards
-     (`/snapper/<scope>/cut/?time=`). A yellow health period shows a
-     yellow chip with its reason and non-ok check rows; datataking
-     shows namespace/run/state chips; panda shows headline stats with
-     deltas against the previous snap. Raw documents sit one click
-     behind; exact-event resolver links sit below.
+     (`/snapper/<scope>/cut/?time=`). Consistency is by construction:
+     the datataking card derives from the same run-record arcs the
+     lanes draw — datataking / processing / idle per namespace with
+     run and workflow — so what the bands show at the cut line is what
+     the cards say. A click on a tile's inflated minimum-width extent
+     snaps the cut into the activity itself; clicked green is green
+     below, at any zoom. Health shows chips with non-ok check rows;
+     panda shows headline stats with deltas against the previous snap.
+     Every entity reference is a link; raw documents sit behind
+     explicitly labeled audit foldouts; exact-event links land on
+     human pages.
    - **Selection (drag a range)**: the interval story —
      changes-between summarized as field-level previous → current
      rows, plus per-curve min/mean/max over the selection.
@@ -40,10 +55,11 @@ throughout (actual snap times, coverage never inferred).
 
 1. **Done (2026-07-23):** the cut as structured component cards with
    deltas and resolver links.
-2. Stacked per-family panels, shared crosshair with unified readout,
-   expandable lane headers.
-3. Range-selection aggregation and the gesture swap (drag selects;
-   shift-drag zooms; slider scrolls).
+2. **Done (2026-07-24):** stacked per-family panels with own
+   y-scales, crosshair across panels, expandable lane headers, and the
+   activity-band tracks with the consistent click-snapped cut.
+3. Dropped (operator decision 2026-07-24): drag stays zoom; no
+   selection gesture swap.
 
 ## Grafana position
 
