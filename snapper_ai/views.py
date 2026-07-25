@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from . import registry
 from .models import CaptureCursor, CurrentComponent, SystemSnap
+from .presentation import cut_chip, cut_delta
 
 
 RECENT_SNAP_LIMIT = 100
@@ -138,6 +139,8 @@ def _present_snap_component(name, payload, scope=None,
     if builder is not None:
         card = builder(data, {}, {'scope': scope,
                                   'requested_at': reference_time})
+        if provider.card_template:
+            card.setdefault('template', provider.card_template)
     return {
         'name': name,
         'title': registration.get('title') or name,
@@ -476,39 +479,6 @@ def snapper_system(request, scope):
 
 # ── The cut: structured state at an instant ──────────────────────────────
 
-CUT_STATE_COLORS = {
-    # One state-color vocabulary, mirrored by the Time history plot
-    # (_snapper_observatory.html STATE_COLORS). Keep the two in step.
-    'ok': '#2e7d32', 'healthy': '#2e7d32', 'running': '#2e7d32',
-    'warning': '#f9a825', 'error': '#c62828', 'ended': '#78909c',
-    'unknown': '#9e9e9e',
-    # Datataking activity phases, matching the lane tile colors.
-    'datataking': '#2e7d32', 'processing': '#81c784', 'idle': '#90a4ae',
-}
-CUT_FALLBACK_COLOR = '#1565c0'
-
-
-def _cut_chip(value):
-    base = str(value or 'unknown').split('/')[0].lower()
-    return {'value': str(value or 'unknown'),
-            'color': CUT_STATE_COLORS.get(base, CUT_FALLBACK_COLOR)}
-
-
-def _cut_delta(current, previous):
-    if current is None or previous is None:
-        return None
-    difference = int(current) - int(previous)
-    if difference == 0:
-        return None
-    return f'+{difference}' if difference > 0 else str(difference)
-
-
-# Public names for host card builders: one chip/delta vocabulary
-# shared by core cards and provider cards.
-cut_chip = _cut_chip
-cut_delta = _cut_delta
-
-
 def _cut_components(snap, previous_snap, scope, requested_at=None):
     state = _dict(snap.state)
     previous_state = _dict(previous_snap.state) if previous_snap else {}
@@ -530,11 +500,11 @@ def _cut_components(snap, previous_snap, scope, requested_at=None):
         if name == 'health':
             overall = _dict(data.get('overall'))
             card['kind'] = 'health'
-            card['chip'] = _cut_chip(overall.get('status'))
+            card['chip'] = cut_chip(overall.get('status'))
             card['reason'] = overall.get('reason', '')
             card['counts'] = _dict(overall.get('counts'))
             card['non_ok_checks'] = [
-                {'name': check_name, 'chip': _cut_chip(check.get('status')),
+                {'name': check_name, 'chip': cut_chip(check.get('status')),
                  'summary': check.get('summary', ''),
                  'category': check.get('category', '')}
                 for check_name, check in sorted(
@@ -549,6 +519,8 @@ def _cut_components(snap, previous_snap, scope, requested_at=None):
                 card.update(builder(data, previous_data,
                                     {'scope': scope,
                                      'requested_at': requested_at}))
+                if provider.card_template:
+                    card.setdefault('template', provider.card_template)
             else:
                 card['kind'] = 'generic'
         cards.append(card)
@@ -596,13 +568,13 @@ def snapper_cut(request, scope):
     coverage_notice = None
     if coverage.get('status') == 'gap':
         coverage_notice = {
-            'chip': _cut_chip('error'), 'label': 'recording gap',
+            'chip': cut_chip('error'), 'label': 'recording gap',
             'detail': 'Capture was down at this instant — showing the last '
                       'state recorded before the outage; the state may have '
                       'changed unseen.'}
     elif coverage.get('status') != 'covered':
         coverage_notice = {
-            'chip': _cut_chip('warning'), 'label': 'coverage unknown',
+            'chip': cut_chip('warning'), 'label': 'coverage unknown',
             'detail': 'Whether capture was observing at this instant cannot '
                       'be established — showing the last recorded state.'}
 

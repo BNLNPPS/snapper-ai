@@ -11,18 +11,11 @@ painted over. Health lanes are core: any scope's health component
 follows the shared overall/checks shape.
 """
 
-from zoneinfo import ZoneInfo
-
 from django.utils.dateparse import parse_datetime
 
-from .models import SystemSnap
 from . import registry
-
-# All plotted time strings are Eastern wall time: Plotly renders date
-# strings literally, and the app presents time in ET everywhere. The
-# series carries a true-UTC anchor (end_ms) so the page can convert a
-# clicked plot position back to a real instant.
-ET_ZONE = ZoneInfo('America/New_York')
+from .models import SystemSnap
+from .presentation import component_data, et_naive
 
 # The observatory plot draws every snap point; windows are bounded so
 # assembly stays a bounded read (12-13 snaps/hour at current cadence).
@@ -34,20 +27,6 @@ def _iso(value):
     return value.isoformat().replace('+00:00', 'Z') if value else None
 
 
-def _et_naive(value):
-    """Eastern wall-time string for plotting (no offset suffix)."""
-    if not value:
-        return None
-    return value.astimezone(ET_ZONE).strftime('%Y-%m-%dT%H:%M:%S')
-
-
-def _component_data(state, name):
-    components = state.get('components') if isinstance(state, dict) else None
-    payload = components.get(name) if isinstance(components, dict) else None
-    data = payload.get('data') if isinstance(payload, dict) else None
-    return data if isinstance(data, dict) else {}
-
-
 def _lane_entries(scope, state):
     """Continuous lane entries for one snap (health and its checks),
     keyed by lane id: the band value (drives color), hover text, and a
@@ -55,7 +34,7 @@ def _lane_entries(scope, state):
     they are assembled into discrete run periods by the series builder.
     """
     entries = {}
-    health = _component_data(state, 'health')
+    health = component_data(state, 'health')
     overall = health.get('overall') or {}
     if overall:
         status = str(overall.get('status') or 'unknown')
@@ -83,14 +62,6 @@ def _lane_entries(scope, state):
             'active': True, 'key': f'{status}|{summary}',
             'parent': 'health'}
     return entries
-
-
-def _span_text(seconds):
-    if seconds >= 5400:
-        return f'{seconds / 3600:.1f} h'
-    if seconds >= 90:
-        return f'{seconds / 60:.0f} min'
-    return f'{seconds:.0f} s'
 
 
 def _curve_label(provider, curve_id):
@@ -154,20 +125,20 @@ def observatory_series(scope, start, end):
         return entries
 
     if boundary:
-        start_naive = _et_naive(start)
+        start_naive = et_naive(start)
         for curve_id, value in state_curves(boundary['state']).items():
             add_curve_point(curve_id, start_naive, value)
         for lane_id, entry in state_lanes(boundary['state']).items():
             add_lane_point(lane_id, start_naive, entry)
 
     for row in rows:
-        time_naive = _et_naive(row['snap_time'])
+        time_naive = et_naive(row['snap_time'])
         for curve_id, value in state_curves(row['state']).items():
             add_curve_point(curve_id, time_naive, value)
         for lane_id, entry in state_lanes(row['state']).items():
             add_lane_point(lane_id, time_naive, entry)
         if row['recovered_gap_started_at'] is not None:
-            gaps.append([_et_naive(row['recovered_gap_started_at']),
+            gaps.append([et_naive(row['recovered_gap_started_at']),
                          time_naive, 'gap'])
         elif row['recovered_gap_start_unknown']:
             gaps.append([None, time_naive, 'unknown start'])
@@ -192,8 +163,8 @@ def observatory_series(scope, start, end):
         'scope': scope,
         # Plotted strings are Eastern wall time; end_ms is the true-UTC
         # anchor for converting a clicked plot position to an instant.
-        'start': _et_naive(start),
-        'end': _et_naive(end),
+        'start': et_naive(start),
+        'end': et_naive(end),
         'end_ms': int(end.timestamp() * 1000),
         'timezone': 'ET',
         'snap_count': len(rows),

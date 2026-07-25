@@ -42,6 +42,8 @@ class ScopeProvider:
     component_cards  {component_name: builder(data, previous_data,
                      ctx)} -> card dict including 'kind'. ctx carries
                      'scope' and 'requested_at' (None outside a cut).
+    card_template    Host template rendering this scope's provider
+                     cards; the core stamps it on each built card.
     annotate_references  (references) -> annotated references with
                      host page links.
     """
@@ -55,6 +57,7 @@ class ScopeProvider:
     episodic_lanes: object = None
     activity_at: object = None
     component_cards: dict = field(default_factory=dict)
+    card_template: str = ''
     annotate_references: object = None
 
 
