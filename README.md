@@ -27,6 +27,25 @@ follows it. Many other kinds of state have no recoverable history at all.
 snapper-ai records history while the present state is already known. It turns
 historical state from an inference problem into a retrieval problem.
 
+## Boundary: agnostic core, host-registered specifics
+
+The package is the whole product — store, capture, queries, series
+assembly, views, and templates — and is experiment-agnostic throughout:
+it imports no host models and knows no experiment vocabulary. A host
+application supplies the specifics by registration (`snapper_ai.registry`):
+one `ScopeProvider` per scope (curve extraction from snap state, curve
+labels and families, component card builders with a host card template,
+episodic activity lanes, reference resolution) and host-wide hooks
+(user preferences, configuration values, scheduler status, health page
+URL). Every registration is optional, with generic fallbacks — an
+unregistered component renders as a quantity table. A deployment
+outside the original host needs a `base.html` template, a
+`path('snapper/', include('snapper_ai.urls'))` mount, one provider
+registration per scope, and a feed into `snapper_ai.capture`. The swf
+platform's providers live in `swf-monitor`
+(`monitor_app/snapper_providers.py`), registered from the host
+`AppConfig.ready()`.
+
 The immediate catalyst was the ePIC E0-E1 global-state model in the streaming
 workflow testbed. Its vertical cut through concurrent state lanes is the global
 state at an instant. Following those cuts through time is the operational memory

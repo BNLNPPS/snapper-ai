@@ -15,3 +15,6 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["snapper_ai*"]
+
+[tool.setuptools.package-data]
+snapper_ai = ["templates/snapper_ai/*.html"]

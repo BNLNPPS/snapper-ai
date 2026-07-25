@@ -1,0 +1,19 @@
+{# One component card body, shared by the Time history cut and the      #}
+{# recorded-state section. Provider-built cards carry card.template —   #}
+{# a host template holding the experiment-specific markup and links —   #}
+{# and render through it; a card without one renders nothing here and   #}
+{# the surrounding surface falls back to the quantity table and audit   #}
+{# document. The chip/stat/delta styles below are the shared vocabulary #}
+{# host card templates build on.                                        #}
+{# Context: `card` (kind + fields); deltas render when present.         #}
+<style>
+.snapper-chip { display:inline-block; padding:0 .55em; border-radius:.5em;
+                color:#fff; font-weight:600; }
+.snapper-stat { text-align:center; }
+.snapper-stat .snapper-stat-value { font-size:1.5em; font-weight:600; }
+/* Deltas are movement indicators, not verdicts: neutral color — a drop
+   in a count is not "bad" and red would say it is. */
+.snapper-delta-up, .snapper-delta-down { color:#5d6b7a; font-weight:600; }
+</style>
+
+{% if card.template %}{% include card.template %}{% endif %}
