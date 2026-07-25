@@ -44,7 +44,9 @@ outside the original host needs a `base.html` template, a
 registration per scope, and a feed into `snapper_ai.capture`. The swf
 platform's providers live in `swf-monitor`
 (`monitor_app/snapper_providers.py`), registered from the host
-`AppConfig.ready()`.
+`AppConfig.ready()`. The host integration guide, with the swf
+integration as its worked example, is
+[docs/INTEGRATION.md](docs/INTEGRATION.md).
 
 The immediate catalyst was the ePIC E0-E1 global-state model in the streaming
 workflow testbed. Its vertical cut through concurrent state lanes is the global

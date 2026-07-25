@@ -22,10 +22,15 @@ commits that implement or specify it.
   coherent registry cuts, full-snap persistence, baseline behavior, and
   coverage-gap bookkeeping.
 - `snapper_ai/queries.py` owns deterministic temporal retrieval and its typed
-  evidence results. It currently implements `latest(scope)` and
-  `state_at(scope, time)`, and
-  `component_history(scope, component, start, end)`, and
-  `changes_between(scope, start, end)`.
+  evidence results: `latest`, `state_at`, `component_history`,
+  `changes_between`, and `context_around`.
+- `snapper_ai/views.py`, `snapper_ai/series.py`, `snapper_ai/urls.py`, and
+  `snapper_ai/templates/snapper_ai/` own the report, system, and cut
+  surfaces and the observatory series assembly (moved from the host
+  2026-07-25).
+- `snapper_ai/registry.py` owns the host seam: ScopeProvider registration
+  and host service hooks. `snapper_ai/presentation.py` is the public
+  vocabulary host providers build on.
 - `snapper_ai/migrations/0002_systemsnap_recovery_gap.py` makes recovered gap
   boundaries immutable and marks pre-existing recovery starts unknown.
 - `DESIGN.md` is the generic semantic contract.
@@ -43,12 +48,15 @@ commits that implement or specify it.
   database queries.
 - The supervised schedulers capture testbed and epicprod; the full System
   status refresh maintains health and PanDA current state before capture.
-- `SWF_EPICPROD_INTEGRATION.md` is the host-specific contract.
+- `monitor_app.snapper_providers` registers the epicprod and testbed
+  ScopeProviders and host hooks; `monitor_app/_snapper_cards.html`
+  renders the experiment card kinds with monitor page links.
+- `SWF_EPICPROD_INTEGRATION.md` is the host-specific contract;
+  `INTEGRATION.md` is the generic host integration guide.
 
-As of 2026-07-18 16:10 UTC, the initial host runs the generic package through
-snapper-ai commit 385aeee in the coordinated swf-monitor v40 release at commit
-a9c0a7a. Migration 0002 is applied. The four generic query functions are
-installed but have no SWF REST or MCP transport adapters yet.
+As of 2026-07-25, the initial host runs the package UI mounted at the
+project level with REST and MCP transports installed; migration 0002 is
+applied.
 
 ## Decisions
 
@@ -370,9 +378,37 @@ not settled here:
 
 - long-term cadence and retention;
 - whether full-snap growth warrants component-delta encoding;
-- exact REST and MCP transport envelopes for temporal queries;
-- authorization and visibility projections for REST, MCP, and event resolvers;
-- resolver selector and availability details for the System-health, datataking,
-  and PanDA-activity components;
+- authorization and visibility projections beyond the read-open
+  convention;
 - ordering and contracts for the remaining component catalog; and
 - whether query volume justifies derived indexes, caches, or rollups.
+
+### D-014 — The UI ships in the package behind a provider registry
+
+**Status:** accepted, implemented, and deployed in the initial SWF host
+
+**Date:** 2026-07-25
+
+**Implemented in:** snapper-ai commit c4868ed and the same-day public-API
+polish, principally `snapper_ai/views.py`, `snapper_ai/series.py`,
+`snapper_ai/registry.py`, `snapper_ai/presentation.py`,
+`snapper_ai/urls.py`, and `snapper_ai/templates/snapper_ai/`; host side
+in swf-monitor 03a6dca, principally `monitor_app/snapper_providers.py`
+and `monitor_app/_snapper_cards.html`.
+
+The report, system, and cut surfaces and the observatory series
+assembly are part of the reusable package, not the host. The core
+remains experiment-agnostic through registration: a host registers one
+ScopeProvider per scope — curve extraction from snap state, curve
+labels and families, component card builders rendered through a
+host-declared card template, episodic activity lanes, reference
+resolution — plus host-wide hooks for preferences, configuration
+values, scheduler status, and the health page URL. Every registration
+is optional with generic fallbacks; an unregistered component renders
+as a quantity table. Host provider modules import only the public
+`snapper_ai.presentation` and `snapper_ai.registry` names.
+
+**Consequence:** a deployment outside the original host needs a
+``base.html`` template, a URL mount, one provider registration per
+scope, and a feed into capture; the swf integration doubles as the
+worked example ([INTEGRATION.md](INTEGRATION.md)).

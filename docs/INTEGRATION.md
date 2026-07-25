@@ -1,0 +1,135 @@
+# Integrating snapper-ai into a host application
+
+snapper-ai is a self-contained Django application: models, capture,
+temporal queries, and the full UI (report, system, and cut surfaces).
+A host supplies four things — a database, a URL mount, a data feed, and
+its presentation specifics by registration. This document is the
+generic integration guide; the swf platform integration is the worked
+example throughout (its contract is
+[SWF_EPICPROD_INTEGRATION.md](SWF_EPICPROD_INTEGRATION.md), its
+provider module `monitor_app/snapper_providers.py` in swf-monitor).
+
+## 1. Install
+
+```python
+INSTALLED_APPS = [
+    ...,
+    'snapper_ai',
+]
+```
+
+Run migrations. The package creates its snapper-prefixed tables on the
+default connection; there is no second database or standalone service.
+
+```python
+# project urls.py
+path('snapper/', include('snapper_ai.urls')),
+```
+
+Mount at the project level (route names live in the `snapper_ai`
+namespace). The templates extend a `base.html` the host must provide —
+any block-structured base with a `content` block works.
+
+## 2. Feed it
+
+Subsystem owners publish bounded current-state projections through
+`snapper_ai.services` (`publish_component`,
+`report_component_unchanged`), and a supervised scheduler invokes
+`snapper_ai.capture` once per aligned boundary per scope. The semantic
+contract — registration, curation, coherence, coverage — is
+[DESIGN.md](DESIGN.md). In the swf host, the component maintainers are
+`monitor_app.snapper_health`, `snapper_datataking`, and
+`snapper_panda`, publishing after their authoritative refreshes.
+
+With nothing else, the UI already works: scopes appear when registered
+(step 3), curves are absent until a provider extracts them, and every
+component renders as a generic quantity table with its audit document.
+
+## 3. Register providers
+
+Presentation specifics arrive through `snapper_ai.registry`, called
+from the host's `AppConfig.ready()`:
+
+```python
+from snapper_ai.presentation import component_data, cut_chip, cut_delta
+from snapper_ai.registry import ScopeProvider, register, register_hooks
+
+
+def _curve_values(state):
+    """Snap state -> {curve_id: number} for the observatory curves."""
+    jobs = component_data(state, 'myjobs')
+    return {'jobs_total': int(jobs.get('total') or 0)}
+
+
+def _jobs_card(data, previous_data, ctx):
+    """Component card: pure data; the core stamps card_template."""
+    return {'kind': 'myjobs',
+            'headline': [{'label': 'jobs', 'value': data.get('total'),
+                          'delta': cut_delta(data.get('total'),
+                                             previous_data.get('total'))}]}
+
+
+def register_snapper_providers():
+    register(ScopeProvider(
+        scope='mysystem',
+        label='My System',
+        curve_values=_curve_values,
+        curve_label=lambda cid: {'jobs_total': 'jobs total'}.get(cid),
+        curve_groups=({'name': 'Jobs', 'prefixes': ['job_'],
+                       'ids': ['jobs_total']},),
+        component_cards={'myjobs': _jobs_card},
+        card_template='myhost/_snapper_cards.html',
+    ))
+    register_hooks(
+        prefs_get=...,        # (username, scope) -> dict
+        prefs_set=...,        # (username, scope, dict)
+        config_get=...,       # (key, default) -> value
+        scheduler_status=...,  # (scope) -> row for the system tab
+        health_url=...,        # () -> host health page URL
+    )
+```
+
+Everything is optional. The fallbacks: an unregistered hook disables
+its feature quietly (no remembered preferences, unlinked health rows,
+default configuration values); a component without a card builder
+renders as a quantity table; a curve id without a label labels itself.
+
+The provider surface, in full (`snapper_ai/registry.py` is the
+authority):
+
+| Field | Role |
+|---|---|
+| `curve_values` | snap state → numeric curves for the Time history |
+| `lane_entries` | extra continuous lanes beyond the core health lanes |
+| `curve_label` | curve id → display label |
+| `curve_groups` | curve family rows of the observatory legend |
+| `episodic_lanes` | discrete activity lanes from the host's own records |
+| `activity_at` | instant → activity truth, for cards that must agree with the lanes |
+| `component_cards` | component name → card builder (data, previous, ctx) |
+| `card_template` | host template rendering this scope's cards |
+| `annotate_references` | event references → references with host links |
+
+Card builders return pure data with a `kind`; the host card template
+renders the kinds it knows and carries whatever host page links belong
+there. The shared chip, delta, and time vocabulary comes from
+`snapper_ai.presentation` — host modules import only public names from
+`presentation` and `registry`.
+
+## 4. Own the transports you want
+
+REST and MCP transports for the temporal queries are host territory by
+design: the generic queries return typed evidence envelopes
+(`snapper_ai.queries`), and the host wraps them under its own
+authentication and URL conventions. The swf host serves them read-open
+at `/api/snapper/<scope>/...` and as five MCP tools, preserving the
+envelopes unchanged.
+
+## Checklist
+
+- [ ] `INSTALLED_APPS` + migrations
+- [ ] `path('snapper/', include('snapper_ai.urls'))` and a `base.html`
+- [ ] One or more component publishers and a supervised capture
+      scheduler per scope
+- [ ] One `ScopeProvider` registration per scope, hooks as wanted
+- [ ] A host card template for any registered card kinds
+- [ ] Optional REST/MCP wrappers over `snapper_ai.queries`

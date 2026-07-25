@@ -373,6 +373,28 @@ Each mapping defines selector translation, event-time field, and
 availability reporting. Stable resolver identifiers remain constant
 when deployment URLs change.
 
+## Presentation integration
+
+Since 2026-07-25 the Snapper UI ships in the package and the swf host
+supplies its presentation specifics by registration
+([INTEGRATION.md](INTEGRATION.md) is the generic guide):
+
+- `swf_monitor_project/urls.py` mounts `snapper_ai.urls` at `snapper/`,
+  a project-level peer of the other installed applications.
+- `monitor_app/snapper_providers.py` registers the epicprod and testbed
+  ScopeProviders — curve extraction from the panda and workflow
+  components, curve labels and families, the panda / workflow /
+  datataking card builders, and the testbed run-arc activity lanes —
+  and the host hooks: UserPreference-backed preferences, SysConfig
+  values, scheduler status rows, and the System page URL. Registration
+  runs in `MonitorAppConfig.ready()`.
+- `monitor_app/templates/monitor_app/_snapper_cards.html` renders the
+  provider card kinds with their links into monitor surfaces; the
+  provider declares it as its card template.
+- `monitor_app/snapper_resolvers.py` remains the event-reference
+  resolver mapping and is registered per scope as the reference
+  annotator.
+
 ## Query and visibility wiring
 
 The integration assigns every registered quantity and event source a public,

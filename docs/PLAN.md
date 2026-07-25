@@ -16,16 +16,22 @@ Status markers:
 
 ## Current position
 
-As of 2026-07-23, Phase 5 is complete. Capture runs once per aligned
-boundary with material-only logging; the four base queries plus
-`context_around` are served through read-open SWF REST and five MCP
-tools with the typed evidence envelopes intact; the three event
-resolvers map to authoritative services; and the report page opens as
-the Time history — state lanes and measured-parameter curves on one
-Eastern-time axis with a click-driven vertical cut. The display design and its remaining
-landings are [TIME_HISTORY_UI.md](TIME_HISTORY_UI.md). The next work is
-Phase 6: expanding the component catalog one contracted component at a
-time (epicprod components keyed by campaign family).
+As of 2026-07-25, Phase 5 is complete and the package carries its own
+UI. The report page opens as the Time history — state lanes and
+measured-parameter curves on one Eastern-time axis with a click-driven
+vertical cut, stacked per-family curve panels, window-step arrows
+through the recorded history, and all view state in the URL. The four
+base queries plus `context_around` are served through read-open SWF
+REST and five MCP tools with the typed evidence envelopes intact, and
+the three event resolvers map to authoritative services.
+
+On 2026-07-25 the entire UI — views, series assembly, templates —
+moved from the host into this package behind a provider registry
+(`snapper_ai.registry`): hosts register scopes, curve vocabularies,
+component cards, and service hooks, and the core stays
+experiment-agnostic. The host integration guide is
+[INTEGRATION.md](INTEGRATION.md); the display design is
+[TIME_HISTORY_UI.md](TIME_HISTORY_UI.md).
 
 The initial state-evolution components are live:
 
@@ -37,47 +43,9 @@ The initial state-evolution components are live:
 - **PanDA activity** for epicprod (component name: panda), with current job and
   task states and target-site discrimination.
 
-The initial and five-day commissioning reads are recorded below. The four
-generic base queries—latest, state at, component history, and changes
-between—are implemented with actual times, provenance, schema/policy evolution,
-and honest observer coverage. The package through snapper-ai commit 385aeee and
-migration 0002 are installed in the initial SWF host. The generic queries are
-not yet exposed through SWF REST or MCP adapters.
-
-Phase 5 is the current implementation tranche. First, the supervised worker
-must invoke capture once at each configured aligned 30-second boundary instead
-of launching a Django subprocess every 10 seconds, and routine start, result,
-completion, duplicate, quiet, and child-bootstrap messages must stop entering
-AppLog. Material captures, recoveries, failures, and manual requests remain
-durable; a bounded periodic summary may be added if it proves useful. Then the
-existing temporal query service must be exposed through a usable history UI,
-REST, and MCP. This work crosses into swf-monitor and must be coordinated with
-other work in the shared core repositories. Do not expand the component catalog
-until this retrieval tranche is complete.
-
-### Next-session bootstrap
-
-As observed through the production products on 2026-07-22:
-
-- epicprod had 1,532 snaps and testbed had 1,517, both beginning at
-  2026-07-17 21:59:20 UTC;
-- both capture cursors had fresh heartbeats, zero consecutive failures, and no
-  open coverage gap;
-- the latest complete state documents were approximately 9.2 KiB for epicprod
-  and 4.2 KiB for testbed;
-- the latest 100 epicprod snaps contained 96 change-bearing snaps, primarily
-  the five-minute PanDA projection, while the latest 100 testbed snaps contained
-  17 datataking changes;
-- four recent one-opportunity recovery gaps in each scope were exact, closed,
-  and coincident with supervised-worker process changes; and
-- the production UI still exposes only the latest 100 snaps, and the installed
-  generic temporal queries have no SWF REST or MCP transport adapters.
-
-Before doing new work, verify these facts because branches and runtime state
-can move. snapper-ai work stays on main. Any Phase 5 integration work belongs on
-the current coordinated infra/baseline-vNN branch in swf-monitor, after checking
-the shared checkout for another session's work. Use
-[DEVELOPMENT.md](DEVELOPMENT.md) for the branch and deployment procedure.
+The next work is Phase 6: expanding the component catalog one
+contracted component at a time (epicprod components keyed by campaign
+family).
 
 ## Ordered plan
 
@@ -264,6 +232,22 @@ alarm behavior, and event resolver before implementation.
 
 ## Progress log
 
+- **2026-07-25:** The UI moved into the package (snapper-ai c4868ed and
+  the API polish that followed): views, series assembly, templates, URL
+  routes, and self-contained template tags, behind the new
+  `snapper_ai.registry` provider seam and `snapper_ai.presentation`
+  public vocabulary. The swf host kept exactly the experiment-specific
+  half (`monitor_app/snapper_providers.py`, host card template, service
+  hooks). Same day, the report window gained step-arrows through the
+  recorded history (arrows absent only at 'now' and the earliest snap)
+  and the curve labels dropped redundant in-flight qualifiers.
+- **2026-07-24:** Time history landing 2 under operator review
+  (swf-monitor side): stacked per-family curve panels with independent
+  y-scales and a shared crosshair; testbed namespace lanes as
+  full-height idle tracks with discrete run-activity tiles derived from
+  the run record; the drilldown contract (every entity reference a
+  link, raw documents behind labeled audit foldouts); and repair of
+  stale historical run/execution state uncovered by the display.
 - **2026-07-23 (later):** Closed Phase 5. Generic `context_around` with
   event references and package tests; the SWF resolver mapping
   (`monitor_app.snapper_resolvers`) attaching concrete REST and MCP

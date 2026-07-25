@@ -60,6 +60,12 @@ throughout (actual snap times, coverage never inferred).
    activity-band tracks with the consistent click-snapped cut.
 3. Dropped (operator decision 2026-07-24): drag stays zoom; no
    selection gesture swap.
+4. **Done (2026-07-25):** window step-arrows through the recorded
+   history — an arrow is absent only at a true edge, 'now' or the
+   earliest snap; stepping loads the adjacent range server-side and
+   the custom badge names the range. Same day the display moved into
+   the snapper_ai package behind the provider registry; curve families
+   and labels are provider data ([INTEGRATION.md](INTEGRATION.md)).
 
 ## Grafana position
 

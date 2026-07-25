@@ -577,9 +577,15 @@ applications, and AIs.
 
 snapper-ai is a generic, factorized Django application in its own repository.
 Its core knows scopes, components, registrations, JSON state, versions, hashes,
-capture policy, and temporal retrieval. Domain knowledge for SWF, PanDA,
-testbed state machines, epicprod campaigns, and monitor pages stays in
-adapters.
+capture policy, temporal retrieval, and the presentation surfaces built on
+them: the report, system, and cut views and the observatory series assembly
+ship in the package. Domain knowledge for SWF, PanDA, testbed state machines,
+epicprod campaigns, and monitor pages stays in host adapters, registered
+through the provider seam (`snapper_ai.registry`): one ScopeProvider per
+scope for curve extraction, labels and families, component cards, episodic
+lanes, and reference resolution, plus host-wide service hooks. Providers
+build on the public `snapper_ai.presentation` vocabulary; every registration
+is optional with generic fallbacks.
 
 The package is independent of any one hosting project. A deployment supplies
 the Django settings, PostgreSQL connection, route mounting, authentication,
