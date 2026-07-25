@@ -7,6 +7,21 @@ room. Prior art: Perfetto's track-plus-selection-panel model, Grafana's
 state-timeline and shared-crosshair discipline, control-room strip
 tools' single state-color vocabulary.
 
+The delivered display in both scopes, served publicly:
+[epicprod](https://epic-devcloud.org/prod/snapper/epicprod/report/?window=24h) ·
+[testbed](https://epic-devcloud.org/prod/snapper/testbed/report/?window=7d).
+
+[![The epicprod report page](snapper-epicprod.png)](https://epic-devcloud.org/prod/snapper/epicprod/report/?window=24h)
+
+*epicprod: the health lane and stacked curve panels — in-flight jobs and
+tasks by state — with per-curve selection controls, over a 24-hour window.*
+
+[![The testbed report page](snapper-testbed.png)](https://epic-devcloud.org/prod/snapper/testbed/report/?window=7d)
+
+*testbed: full-height namespace activity bands carrying workflow datataking
+and processing tiles, with STF task and workflow-execution curve selections
+and the health lane, over a seven-day window.*
+
 ## Three zones, one time axis
 
 1. **Tracks** — set 2026-07-24 after operator review at wide windows:

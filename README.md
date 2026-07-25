@@ -165,6 +165,23 @@ tasks by state, running jobs and cores, active task types, sites, and recent
 outcomes. Recording that maintained now supplies concurrency history that is
 otherwise expensive or impossible to recover later.
 
+The report page for each scope, as deployed on the SWF monitor and served
+publicly:
+[epicprod](https://epic-devcloud.org/prod/snapper/epicprod/report/?window=24h) ·
+[testbed](https://epic-devcloud.org/prod/snapper/testbed/report/?window=7d).
+
+[![The epicprod report page](docs/snapper-epicprod.png)](https://epic-devcloud.org/prod/snapper/epicprod/report/?window=24h)
+
+*The epicprod report page: a 24-hour window of PanDA activity. Stacked curve
+panels show in-flight jobs and tasks by state, with per-type and type-by-state
+curve selections and the health lane above the panels.*
+
+[![The testbed report page](docs/snapper-testbed.png)](https://epic-devcloud.org/prod/snapper/testbed/report/?window=7d)
+
+*The testbed report page: a seven-day window of per-namespace activity lanes
+carrying workflow datataking and processing periods, with STF task and
+workflow-execution curve selections and the health lane.*
+
 ## Implementation
 
 snapper-ai is packaged as a reusable Django application backed by PostgreSQL.
