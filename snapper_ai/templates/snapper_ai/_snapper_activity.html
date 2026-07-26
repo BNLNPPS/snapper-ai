@@ -1,0 +1,8 @@
+{# One keyed activity's detail card — the Time history's numbered-bar  #}
+{# selection panel. The provider resolves the key; the host card       #}
+{# template renders the story.                                         #}
+{% if error %}
+<div class="text-muted">{{ error }}</div>
+{% else %}
+{% include 'snapper_ai/_snapper_component_body.html' %}
+{% endif %}

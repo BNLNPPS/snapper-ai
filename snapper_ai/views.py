@@ -272,11 +272,15 @@ def snapper_report(request, scope, snap_id=None):
     observation_delay = None
     if selected_snap is not None:
         state = _dict(selected_snap.state)
+        # Health is deliberately absent here: its detail pops up under
+        # the Time history on a health-lane click, so an always-on
+        # health card below would restate it.
         components = [
             _present_snap_component(name, payload, scope=scope,
                                     reference_time=selected_snap.snap_time)
             for name, payload in sorted(
                 _dict(state.get('components')).items())
+            if name != 'health'
         ]
         observation_delay = (
             selected_snap.observed_at - selected_snap.snap_time
@@ -527,6 +531,36 @@ def _cut_components(snap, previous_snap, scope, requested_at=None):
     return cards
 
 
+def snapper_activity(request, scope):
+    """One keyed episodic activity's detail card — the Time history's
+    numbered-bar selection panel. The provider resolves the key to a
+    card; the host card template renders the story."""
+    import logging
+
+    scope = _validated_scope(scope)
+    provider = registry.get(scope)
+    key = (request.GET.get('key') or '').strip()
+    card = None
+    error = ''
+    if not key:
+        error = 'key is required'
+    elif provider is None or provider.activity_card is None:
+        error = 'this scope has no activity detail provider'
+    else:
+        try:
+            card = provider.activity_card(key)
+        except Exception as e:                              # noqa: BLE001
+            logging.getLogger(__name__).error(
+                'activity card failed for %s %r: %s', scope, key, e)
+            error = f'activity lookup failed: {e}'
+        if card is None and not error:
+            error = 'no recorded activity matches this key'
+        if card is not None and provider.card_template:
+            card.setdefault('template', provider.card_template)
+    return render(request, 'snapper_ai/_snapper_activity.html',
+                  {'card': card, 'error': error})
+
+
 def snapper_cut(request, scope):
     """Server-rendered state cut: structured component cards at an
     instant, with deltas against the previous snap, exact-event context
@@ -581,6 +615,12 @@ def snapper_cut(request, scope):
     cards = (_cut_components(snap, previous_snap, scope,
                              requested_at=result.requested_at)
              if snap else [])
+    # ?component= narrows the cut to one component's card — the health
+    # lane's pop-up detail uses this compact form.
+    component_filter = (request.GET.get('component') or '').strip()
+    if component_filter:
+        cards = [c for c in cards if c.get('name') == component_filter]
+        references = []
     for card in cards:
         assessed = parse_datetime(str(card.get('assessed_at') or ''))
         card['assessed_age_text'] = (

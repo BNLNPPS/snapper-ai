@@ -34,7 +34,22 @@ and the health lane, over a seven-day window.*
    identity joined through the execution record. A run with no
    recorded end renders hatched. Tiles keep a zoom-aware minimum
    visual width so short runs read as blocks at any scale, with true
-   proportions returning on zoom. Continuous state lanes (health, its
+   proportions returning on zoom; the plot enhances the truth into
+   legibility (set 2026-07-26) — the minimum is a legible block, never
+   a sliver. Keyed activities visible in the view are numbered newest
+   first (transparent markers above the tiles), the numbers re-derived
+   on every zoom or namespace filter; a numbered story table sits
+   immediately below the plot. Clicking a bar selects every numbered
+   activity at that instant or very nearly (overlaps select together);
+   selected activities expand their stories in place as subrows under
+   their numbers — one home for the story, so the cut's component
+   cards stay lean. Clicking a row toggles its expansion. Namespace
+   tick-boxes (default all on) choose which lanes get the number
+   treatment; only numbered bars carry markers — the table defines
+   what the numbers mean. A health-lane click toggles the health
+   detail immediately below the plot at the clicked instant (no cut
+   fires); the recorded-state section below the Time history omits
+   the health card for the same reason — one home per story. Continuous state lanes (health, its
    expandable per-check sub-lanes) keep edge-to-edge bands. Recovery
    gaps are grey spans painted beneath, never over. No pips: a tile's
    leading edge is the run start.

@@ -54,7 +54,7 @@
       <span class="badge bg-secondary">{{ observatory_range_label }}</span>
       {% endif %}
     </span>
-    <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> snaps · times ET · click: state cut · double-click: zoom in ×2 · drag: zoom</span>
+    <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> snaps · times ET · click: state cut · click-drag a time range: zoom to it · double-click: zoom in ×2</span>
   </div>
   <div class="card-body">
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
@@ -66,6 +66,7 @@
       </span>
       <span id="snapper-state-key" class="d-flex flex-wrap column-gap-2 row-gap-1 text-muted"></span>
     </div>
+    <div id="snapper-lane-filters" class="mb-2"></div>
     <div id="snapper-observatory-controls" class="mb-2"></div>
     {# style-based visibility: Bootstrap's d-flex !important would override the hidden attribute #}
     <div id="snapper-zoom-bar" class="mb-1 align-items-center gap-2" style="display:none">
@@ -100,6 +101,8 @@
            style="height:12px; background:#1565c0; border-radius:6px;
                   position:absolute; top:0; min-width:6px;"></div>
     </div>
+    <div id="snapper-health-detail" class="mt-2" hidden></div>
+    <div id="snapper-activity-table" class="mt-2"></div>
     <div id="snapper-observatory-cut" class="mt-3" hidden></div>
   </div>
 </div>
@@ -120,6 +123,28 @@
   const controls = document.getElementById('snapper-observatory-controls');
   const stateKeyEl = document.getElementById('snapper-state-key');
   const clearBtn = document.getElementById('snapper-clear-all');
+  // Numbered activities: the bars visible in the active view, most
+  // recent first — the numbers are dynamic and track zoom/filter.
+  const activityTableDiv = document.getElementById('snapper-activity-table');
+  const activityUrl = '{% url "snapper_ai:snapper_activity" scope=scope %}';
+  const activityCardCache = {};
+  const ACTIVITY_NUMBER_MAX = 15;
+  let visibleActivities = [];
+  let activityNumberByKey = {};
+  let selectedActivityKeys = new Set();
+  // Namespace tick filters: default all on; only ticked lanes get the
+  // number treatment (markers, table rows, click selection).
+  const laneFilterOff = new Set();
+  const laneFiltersDiv = document.getElementById('snapper-lane-filters');
+  // A scope without curves has no curve selection to switch: the
+  // all-on/all-off controls would be dead buttons.
+  if (!Object.keys(data.curves || {}).length) {
+    ['snapper-curves-all-on', 'snapper-curves-all-off'].forEach(
+      function (id) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+  }
   const pageWindow = '{{ observatory_window|escapejs }}';
   const defaultWindow = '{{ observatory_default_window|escapejs }}';
   // Every UI state element lives in the URL; the window is stamped in
@@ -244,6 +269,9 @@
   // rendered view span — a minutes-long run stays visible at a 7-day
   // zoom. Recomputed (with a re-render) when the view span changes.
   let minBarMs = 0, renderedSpan = 0;
+  // Flag annotations for episodic activity tiles, rebuilt with the
+  // traces on every render (zoom included).
+  let laneFlagAnnotations = [];
   const seenStates = new Set();
   // The vertical cut line, as a true instant; confirmed is the last cut
   // actually taken (a provisional line from a click that turns into a
@@ -267,6 +295,7 @@
   function buildTraces() {
     const traces = [];
     seenStates.clear();
+    laneFlagAnnotations = [];
 
     // Lane segments as horizontal bars: solid when active, light pastel
     // fill with a colored border otherwise. Bars skip hover; a dense
@@ -305,6 +334,10 @@
         // proportions return on zoom — the plot re-renders when the
         // view span changes). A period with no recorded end is the
         // same block hatched.
+        // Number markers: a keyed tile in the numbered set gets its
+        // dynamic number above the tile — the key into the numbered
+        // table below the plot. Unnumbered tiles carry no marker: the
+        // table defines what the numbers mean.
         traces.push({
           type: 'bar', orientation: 'h',
           y: [label], x: [Date.parse(data.end) - Date.parse(data.start)],
@@ -333,6 +366,18 @@
           });
           addHoverSpan(t0, Math.max(t1, t0 + minBarMs),
                        escapeHtml(lane.label) + ': ' + escapeHtml(seg.hover));
+          if (seg.key) {
+            const number = activityNumberByKey[String(seg.key)];
+            if (number) {
+              laneFlagAnnotations.push({
+                xref: 'x', x: toNaive(t0), xanchor: 'left',
+                yref: 'y2', y: label, yanchor: 'bottom', yshift: 14,
+                showarrow: false,
+                text: '<b>' + number + '</b>',
+                font: {size: 14, color: '#1b5e20'},
+              });
+            }
+          }
         });
       } else {
         // Continuous lane (health and its checks): the state always
@@ -467,7 +512,16 @@
       }
     }
     renderedSpan = r1 - r0;
-    minBarMs = renderedSpan / 150;
+    // The plot enhances the truth into legibility: no activity tile
+    // renders below a legible minimum width, whatever its true span.
+    minBarMs = renderedSpan / 60;
+    // Dynamic numbering: the activities visible in this view, most
+    // recent first; the numbers re-derive on every zoom or filter.
+    visibleActivities = collectVisibleActivities(r0, r1);
+    activityNumberByKey = {};
+    visibleActivities.forEach(function (a) {
+      if (a.number) activityNumberByKey[a.key] = a.number;
+    });
     const traces = buildTraces();
 
     // Vertical geometry in pixels, then normalized to axis domains:
@@ -505,7 +559,7 @@
       hovermode: 'closest',
       // The floater belongs on the tile, not hours away from it.
       hoverdistance: 8,
-      annotations: [],
+      annotations: laneFlagAnnotations.slice(),
     };
     panels.forEach(function (panel, index) {
       const topPx = lanePx + laneGapPx + index * (panelPx + panelGapPx)
@@ -537,6 +591,7 @@
     Plotly.react(plotDiv, traces, layout,
                  {responsive: true, displayModeBar: false,
                   doubleClick: false, showTips: false});
+    renderActivityTable();
     if (!viewTrue) lastRange = fullRange.slice();
     renderControls();
     wireLaneToggles();
@@ -760,6 +815,243 @@
       }
     }
     return best === null ? timeBasisMs : best;
+  }
+
+  // ── Numbered activities: collection, table, and selection ──────────
+
+  function collectVisibleActivities(r0, r1) {
+    // Group keyed segments into arcs (a run's tiles share a key), keep
+    // the ones overlapping the view, newest first, numbered up to the
+    // legible cap — beyond it the table says how many more are in view.
+    const byId = {};
+    laneIds.forEach(function (laneId) {
+      if (laneFilterOff.has(laneId)) return;
+      const lane = data.lanes[laneId];
+      if (!lane || !lane.segments) return;
+      lane.segments.forEach(function (seg) {
+        if (!seg.key) return;
+        const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
+        const id = laneId + '|' + seg.key;
+        const arc = byId[id] || (byId[id] = {
+          key: String(seg.key), lane: lane.label,
+          t0: t0, t0s: seg.t0, t1: t1,
+          flag: seg.flag || '', summary: seg.summary || '',
+        });
+        if (t0 < arc.t0) { arc.t0 = t0; arc.t0s = seg.t0; }
+        if (t1 > arc.t1) arc.t1 = t1;
+        if (!arc.flag && seg.flag) arc.flag = seg.flag;
+        if (!arc.summary && seg.summary) arc.summary = seg.summary;
+      });
+    });
+    const acts = Object.values(byId).filter(function (a) {
+      return a.t1 >= r0 && a.t0 <= r1;
+    });
+    acts.sort(function (a, b) { return b.t0 - a.t0; });
+    acts.forEach(function (a, i) {
+      a.number = i < ACTIVITY_NUMBER_MAX ? i + 1 : null;
+    });
+    return acts;
+  }
+
+  function activityDur(a) {
+    const s = Math.max(0, Math.round((a.t1 - a.t0) / 1000));
+    if (s < 90) return s + 's';
+    if (s < 5400) return Math.round(s / 60) + 'm';
+    return (s / 3600).toFixed(1) + 'h';
+  }
+
+  function renderActivityTable() {
+    if (!activityTableDiv) return;
+    if (!visibleActivities.length) {
+      activityTableDiv.innerHTML = '';
+      return;
+    }
+    const rows = visibleActivities.filter(a => a.number !== null);
+    const more = visibleActivities.length - rows.length;
+    let html = '<table class="table table-sm table-striped w-auto mb-1">'
+      + '<tbody>';
+    rows.forEach(function (a) {
+      html += '<tr class="snapper-activity-row'
+        + (selectedActivityKeys.has(a.key) ? ' table-primary' : '')
+        + '" data-activity-key="' + escapeHtml(a.key)
+        + '" style="cursor:pointer">'
+        + '<td><strong>' + a.number + '</strong></td>'
+        + '<td>' + escapeHtml(a.lane) + '</td>'
+        + '<td>' + escapeHtml(a.flag || a.key) + '</td>'
+        + '<td>' + escapeHtml(a.summary || '') + '</td>'
+        + '<td class="text-nowrap">'
+        + escapeHtml((a.t0s || '').slice(5, 16).replace('T', ' ')) + ' ET</td>'
+        + '<td class="text-nowrap">' + escapeHtml(activityDur(a)) + '</td>'
+        + '</tr>';
+      // Consolidated detail: a selected activity expands in place as a
+      // subrow under its number — one home for the story.
+      if (selectedActivityKeys.has(a.key)) {
+        html += '<tr class="snapper-activity-expand"><td></td>'
+          + '<td colspan="5"><div class="snapper-activity-card-slot"'
+          + ' data-activity-key="' + escapeHtml(a.key) + '"></div></td></tr>';
+      }
+    });
+    html += '</tbody></table>';
+    if (more > 0) {
+      html += '<div class="text-muted small">+' + more
+        + ' earlier activit' + (more === 1 ? 'y' : 'ies')
+        + ' in view — zoom in to number them</div>';
+    }
+    activityTableDiv.innerHTML = html;
+    activityTableDiv.querySelectorAll('.snapper-activity-row')
+      .forEach(function (tr) {
+        tr.addEventListener('click', function () {
+          const key = String(tr.dataset.activityKey);
+          if (selectedActivityKeys.has(key)) {
+            selectedActivityKeys.delete(key);
+          } else {
+            selectedActivityKeys.add(key);
+          }
+          renderActivityTable();
+        });
+      });
+    fillActivityExpansions();
+  }
+
+  function fillActivityExpansions() {
+    activityTableDiv.querySelectorAll('.snapper-activity-card-slot')
+      .forEach(function (slot) {
+        const key = slot.dataset.activityKey;
+        if (activityCardCache[key] !== undefined) {
+          slot.innerHTML = activityCardCache[key];
+          return;
+        }
+        slot.innerHTML = '<div class="text-muted">Loading…</div>';
+        fetch(activityUrl + '?key=' + encodeURIComponent(key))
+          .then(function (r) { return r.text(); })
+          .then(function (htmlText) {
+            activityCardCache[key] = htmlText;
+            slot.innerHTML = htmlText;
+          }, function (err) {
+            slot.innerHTML =
+              '<div class="text-danger">Activity detail failed: '
+              + escapeHtml(String(err)) + '</div>';
+          });
+      });
+  }
+
+  function selectActivities(keys) {
+    selectedActivityKeys = new Set(keys.map(String));
+    renderActivityTable();
+  }
+
+  function findActivitiesAt(timeBasisMs) {
+    // Every numbered activity whose visible extent contains the
+    // clicked instant — or very nearly does (a quarter of the legible
+    // width): overlapping events at one vertical time all select.
+    const tol = minBarMs / 4;
+    const keys = [];
+    laneIds.forEach(function (laneId) {
+      if (laneFilterOff.has(laneId)) return;
+      const lane = data.lanes[laneId];
+      if (!lane || !lane.segments) return;
+      lane.segments.forEach(function (seg) {
+        if (!seg.key) return;
+        const key = String(seg.key);
+        if (keys.indexOf(key) !== -1) return;
+        if (!activityNumberByKey[key]) return;
+        const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
+        if (timeBasisMs >= t0 - tol
+            && timeBasisMs <= Math.max(t1, t0 + minBarMs) + tol) {
+          keys.push(key);
+        }
+      });
+    });
+    return keys;
+  }
+
+  function buildLaneFilters() {
+    if (!laneFiltersDiv) return;
+    const ids = Object.keys(data.lanes).filter(function (id) {
+      return data.lanes[id].segments;
+    }).sort(function (a, b) {
+      return data.lanes[a].label.localeCompare(data.lanes[b].label);
+    });
+    if (!ids.length) { laneFiltersDiv.innerHTML = ''; return; }
+    let html = '<span class="me-2"><strong>Namespaces:</strong></span>'
+      + '<button type="button" id="snapper-lanes-all-on"'
+      + ' class="btn btn-sm btn-secondary me-1">All on</button>'
+      + '<button type="button" id="snapper-lanes-all-off"'
+      + ' class="btn btn-sm btn-secondary me-3">All off</button>';
+    ids.forEach(function (id) {
+      html += '<label class="me-3" style="cursor:pointer">'
+        + '<input type="checkbox" class="form-check-input snapper-lane-tick"'
+        + ' data-lane-id="' + escapeHtml(id) + '"'
+        + (laneFilterOff.has(id) ? '' : ' checked')
+        + '> ' + escapeHtml(data.lanes[id].label) + '</label>';
+    });
+    laneFiltersDiv.innerHTML = html;
+    laneFiltersDiv.querySelectorAll('.snapper-lane-tick')
+      .forEach(function (tick) {
+        tick.addEventListener('change', function () {
+          if (tick.checked) laneFilterOff.delete(tick.dataset.laneId);
+          else laneFilterOff.add(tick.dataset.laneId);
+          rerenderView();
+        });
+      });
+    document.getElementById('snapper-lanes-all-on')
+      .addEventListener('click', function () {
+        laneFilterOff.clear();
+        buildLaneFilters();
+        rerenderView();
+      });
+    document.getElementById('snapper-lanes-all-off')
+      .addEventListener('click', function () {
+        ids.forEach(function (id) { laneFilterOff.add(id); });
+        buildLaneFilters();
+        rerenderView();
+      });
+  }
+
+  function rerenderView() {
+    suppressPush = true;
+    render(currentRange().map(ms => ms + basisCorrection));
+    setTimeout(function () {
+      lastRange = currentRange();
+      suppressPush = false;
+    }, 60);
+  }
+
+  function laneAtY(event) {
+    // Which lane band a plot click falls in: category axes place the
+    // first lane at the bottom.
+    const ya = plotDiv._fullLayout && plotDiv._fullLayout.yaxis2;
+    if (!ya || !laneIds.length) return null;
+    const bb = plotDiv.getBoundingClientRect();
+    const py = event.clientY - bb.top - ya._offset;
+    if (py < 0 || py > ya._length) return null;
+    const fromTop = Math.floor((py / ya._length) * laneIds.length);
+    const index = laneIds.length - 1 - fromTop;
+    return laneIds[Math.max(0, Math.min(laneIds.length - 1, index))];
+  }
+
+  const healthDetailDiv = document.getElementById('snapper-health-detail');
+  function toggleHealthDetail(trueMs) {
+    if (!healthDetailDiv) return;
+    if (!healthDetailDiv.hidden) {
+      healthDetailDiv.hidden = true;
+      healthDetailDiv.innerHTML = '';
+      return;
+    }
+    healthDetailDiv.hidden = false;
+    healthDetailDiv.innerHTML =
+      '<div class="text-muted">Loading health…</div>';
+    fetch(cutUrl + '?time='
+          + encodeURIComponent(new Date(trueMs).toISOString())
+          + '&component=health')
+      .then(function (r) { return r.text(); })
+      .then(function (htmlText) {
+        healthDetailDiv.innerHTML = htmlText;
+      }, function (err) {
+        healthDetailDiv.innerHTML =
+          '<div class="text-danger">Health detail failed: '
+          + escapeHtml(String(err)) + '</div>';
+      });
   }
 
   // The vertical cut: single-click anywhere on the plot area (drags
@@ -1006,10 +1298,23 @@
       return;
     }
     lastClick = {at: now, x: event.clientX};
+    // A click on the health lane (or a check sub-lane) toggles the
+    // health detail right below the plot instead of cutting; another
+    // health click dismisses it.
+    const clickedLane = laneAtY(event);
+    if (clickedLane === 'health'
+        || String(clickedLane || '').indexOf('check:') === 0) {
+      toggleHealthDetail(time + basisCorrection);
+      return;
+    }
     // Line at the clicked instant; showCut resolves the state to the
     // activity under it. Do not pre-snap the line — it must stay where
     // the cursor is.
     cutTrueMs = time + basisCorrection;
+    // A click landing on a numbered bar also selects it: highlight its
+    // table row and present its detail card, alongside the cut.
+    const hitActivityKeys = findActivitiesAt(time);
+    if (hitActivityKeys.length) selectActivities(hitActivityKeys);
     applyShapes();
     updateClearAll();
     clearTimeout(cutTimer);
@@ -1018,6 +1323,7 @@
     }, 480);
   }, true);
 
+  buildLaneFilters();
   render(null);
   plotDiv.on('plotly_relayout', updateZoomBar);
   // Zoom-aware run bars: when the view span changes materially, rebuild
@@ -1071,6 +1377,7 @@
     refresh: function (text) {
       dataText = text;
       data = JSON.parse(text);
+      buildLaneFilters();
       const viewTrue = viewIsZoomed()
           ? currentRange().map(ms => ms + basisCorrection) : null;
       suppressPush = true;

@@ -154,9 +154,13 @@ def observatory_series(scope, start, end):
     # Episodic activity lanes from the host's canonical activity
     # record: discrete activity with identity, over a grey idle track.
     if provider is not None and provider.episodic_lanes is not None:
+        # Category axes place the first-inserted lane at the BOTTOM;
+        # reverse-alpha insertion reads alphabetical top-down on the
+        # plot, with the earlier-inserted health lanes beneath.
         for name, segments in sorted(
                 provider.episodic_lanes(start, end,
-                                        dangle_seconds).items()):
+                                        dangle_seconds).items(),
+                reverse=True):
             lanes[f'ns:{name}'] = {'label': name, 'segments': segments}
 
     return {

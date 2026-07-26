@@ -39,6 +39,9 @@ class ScopeProvider:
     activity_at      (instant) -> per-lane activity truth at an
                      instant, for card builders that must agree with
                      the lanes.
+    activity_card    (key) -> card dict for one keyed episodic
+                     activity (the Time history's numbered-bar detail
+                     panel), or None when the key resolves to nothing.
     component_cards  {component_name: builder(data, previous_data,
                      ctx)} -> card dict including 'kind'. ctx carries
                      'scope' and 'requested_at' (None outside a cut).
@@ -56,6 +59,7 @@ class ScopeProvider:
     curve_groups: tuple = ()
     episodic_lanes: object = None
     activity_at: object = None
+    activity_card: object = None
     component_cards: dict = field(default_factory=dict)
     card_template: str = ''
     annotate_references: object = None
