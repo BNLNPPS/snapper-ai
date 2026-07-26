@@ -36,30 +36,36 @@ and the health lane, over a seven-day window.*
    visual width so short runs read as blocks at any scale, with true
    proportions returning on zoom; the plot enhances the truth into
    legibility (set 2026-07-26) — the minimum is a legible block, never
-   a sliver. Keyed activities visible in the view are numbered by time
-   range (transparent markers above the tiles): the displayed interval
-   divides into 20 equal ranges and each occupied range takes the next
-   number, newest first, re-derived on every zoom or lane filter. A
-   number IS a time range, decoupled from any single event — events in
-   the same range share it, across lanes too, so numbers are never
-   overprinted and never wasted on a burst. The click model is the
-   system's unchanged basis on every scope: a click IS a vertical
-   time slice — the red line lands at the clicked instant, the URL
-   carries it (?cut=, selection alongside as ?sel=) — and everything
-   below the plot renders what the slice crosses. A numbered story
-   table sits immediately below; on a scope with activity lanes it
-   replaces the state-CARD panel only: every activity at or very near
-   the sliced instant resolves together — numbered hits expand their
-   stories in place as subrows, unnumbered hits (unticked lane) pop
-   in above the table, never silent. Clicking a row toggles its
-   expansion. Lane tick-boxes sit beside the lane
-   names over the plot margin (default all on, All on/off beside
-   Clear all) and choose which lanes get the number treatment. A
-   health-lane click toggles the health detail immediately below the
-   plot at the clicked instant — a component-narrowed cut that builds
-   only the health card; the recorded-state section omits the health
-   card for the same reason — one home per story. Scopes without
-   activity lanes (epicprod) keep the classic click-cut. Continuous state lanes (health, its
+   a sliver. The goal is twofold and the layout serves it directly
+   (set 2026-07-26): fast drill into what's happening at a time, and
+   fast big-picture overview. Three stacked surfaces, one job each,
+   inside the one unchanged click model — a click IS a vertical time
+   slice, the red line lands at the clicked instant and the URL
+   carries it (?cut=). First the plot: lanes and the cut, no markers.
+   Second a thin notice slot directly under the plot: the health card
+   when the slice is taken on the health lane (a component-narrowed
+   cut, ?component=, that builds only that card), the empty-slice
+   notice otherwise when the slice crosses nothing — never silent —
+   and the classic state cards on scopes without activity lanes
+   (epicprod). Third the overview table in its OWN scroll pane: the
+   at-a-glance inventory of the window, newest first, time leftmost
+   with elapsed length, and the detail home — a slice highlights and
+   expands the crossed events' story subentries and scrolls that
+   section flush to the pane top, immediately below the plot, the
+   position a pop-in would occupy; scroll-past-end tail padding makes
+   this hold down to the very last row. The plot never leaves the
+   screen, so a click's consequences — line, highlight, expansion,
+   scroll — are all simultaneously visible. A row click is
+   event-scoped: it toggles that one story subentry. Lane
+   tick-boxes beside the lane names define the shown truth (default
+   all on, All on/off beside Clear all, URL ?hide=): unticked lanes
+   are hidden from the table AND the slice panel — reviewing one
+   operator's activity must not be polluted by another's — while
+   their bars stay on the plot. The recorded-state section omits the
+   health card; the slice panel is its home. There are no numbers:
+   the slice panel's fixed position removed their job (bridging plot
+   clicks to table rows), and with it the numbered/unnumbered
+   asymmetry. Continuous state lanes (health, its
    expandable per-check sub-lanes) keep edge-to-edge bands. Recovery
    gaps are grey spans painted beneath, never over. No pips: a tile's
    leading edge is the run start.
