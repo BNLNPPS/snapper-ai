@@ -74,8 +74,9 @@
       <span>
         <button type="button" id="snapper-curves-all-on" class="btn btn-sm btn-secondary">All on</button>
         <button type="button" id="snapper-curves-all-off" class="btn btn-sm btn-secondary">All off</button>
-        <button type="button" id="snapper-clear-all" class="btn btn-sm btn-secondary"
-                title="Reset everything: window, zoom, cut, and curve selection back to defaults">Clear all</button>
+        {% comment %} Clear all parked 2026-07-26: its reset-to-default
+        window surprise reads as data loss; role to be rethought.
+        {% endcomment %}
       </span>
       <span id="snapper-state-key" class="d-flex flex-wrap column-gap-2 row-gap-1 text-muted"></span>
       <span id="snapper-gesture-help" class="text-body" style="display:inline-block; border:1px solid #9fb4c7; border-radius:.6em; background:#f2f7fb; padding:.15em .8em;"><strong>click</strong>: time cut · <strong>click-drag</strong>: time range · <strong>double-click</strong>: zoom 2x</span>
@@ -936,6 +937,9 @@
   // Clear all is live only when there is something to clear: a zoom, a
   // cut, ticked-off curves, or a non-default window.
   function updateClearAll() {
+    // Button parked (markup commented out); keep the wiring nullsafe
+    // for its return.
+    if (!clearBtn) return;
     const dirty = viewIsZoomed() || cutTrueMs !== null
         || curveIds.some(id => curvesOff.has(id))
         || lanesOpen.size > 0
@@ -948,7 +952,7 @@
   }
   // Clear all: window, zoom, cut, and curve selection back to defaults —
   // remembered preferences included — then load the bare page.
-  clearBtn.addEventListener('click', function () {
+  if (clearBtn) clearBtn.addEventListener('click', function () {
     try { localStorage.removeItem(storeKey); } catch (e) { }
     const finish = function () {
       window.location = window.location.pathname;
@@ -1350,9 +1354,11 @@
   }
 
   function buildLaneRow() {
-    // The horizontal lane tick row: the tick defines the shown truth
-    // (plot, table, and slice alike). Efficient in what is shown,
-    // flexible in deciding what is not — namespaces will multiply.
+    // The horizontal lane tick row lists EVERY namespace — what
+    // exists is information in itself. The tick states presence in
+    // the view: a namespace with nothing in the window renders
+    // unticked, muted, and inert. The tick defines the shown truth
+    // (plot, table, and slice alike).
     if (!laneRowDiv) return;
     const ids = episodicLaneIdList().sort(function (a, b) {
       return data.lanes[a].label.localeCompare(data.lanes[b].label);
@@ -1364,13 +1370,17 @@
       + '<button type="button" id="snapper-lanes-all-off"'
       + ' class="btn btn-sm btn-secondary me-3">All off</button>';
     ids.forEach(function (id) {
-      // Names only: the tick row is horizontally space-constrained.
-      // The color map lives at the plot's lane labels, where the
-      // colors are used.
-      html += '<label class="me-3" style="cursor:pointer">'
+      // Names only: the tick row is horizontally space-constrained;
+      // the lanes themselves carry the colors.
+      const active = (data.lanes[id].segments || []).length > 0;
+      html += '<label class="me-3'
+        + (active ? '' : ' text-muted') + '" style="cursor:'
+        + (active ? 'pointer' : 'default') + '"'
+        + (active ? '' : ' title="No activity in this window"') + '>'
         + '<input type="checkbox" class="form-check-input snapper-lane-tick"'
         + ' data-lane-id="' + escapeHtml(id) + '"'
-        + (laneFilterOff.has(id) ? '' : ' checked')
+        + (active ? '' : ' disabled')
+        + (active && !laneFilterOff.has(id) ? ' checked' : '')
         + '> ' + escapeHtml(data.lanes[id].label) + '</label>';
     });
     laneRowDiv.innerHTML = html;
