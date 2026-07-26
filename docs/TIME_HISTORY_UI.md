@@ -50,13 +50,13 @@ and the health lane, over a seven-day window.*
    (epicprod). Third the overview table, FULL length — never an inner
    scroll pane: the at-a-glance inventory of the window, newest
    first, time leftmost with elapsed length, and the detail home. The
-   plot card is sticky at the page top; a slice highlights and
-   expands the crossed events' story subentries and page-scrolls that
-   section flush beneath the plot — the position a pop-in would
-   occupy — with bottom fill making this hold down to the very last
-   row, and the page scrollbar as the more-below cue. The plot never
-   leaves the screen, so a click's consequences — line, highlight,
-   expansion, scroll — are all simultaneously visible. A row click is
+   page scrolls freely — nothing pins except the slim Time history
+   strip (window controls and Now), which stays in reach anywhere
+   down the table. A slice highlights and expands the crossed events'
+   story subentries and page-scrolls that section flush beneath the
+   pinned strip — the position a pop-in would occupy — with bottom
+   fill making this hold down to the very last row, and the page
+   scrollbar as the more-below cue. A row click is
    event-scoped: it toggles that one story subentry. Color cues:
    greens belong to health; events are blue — the datataking tile,
    its lighter processing tail, and the table's highlight share the

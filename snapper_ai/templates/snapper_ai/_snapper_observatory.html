@@ -6,14 +6,6 @@
 #snapper-observatory-plot .drag {
   cursor: crosshair !important;
 }
-/* The plot card sticks to the top while the full-length table
-   page-scrolls beneath it: a sliced section always lands just below
-   the plot, and the page scrollbar is the more-below cue. */
-#snapper-observatory-card {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-}
 /* Event highlight in the table: the same blue family as the event
    tiles (greens belong to health). */
 #snapper-activity-table .table-primary > td {
@@ -47,7 +39,11 @@
   row-gap: .1rem;
 }
 </style>
-<div class="card mb-3" id="snapper-observatory-card">
+{# Only this slim strip pins: the window controls and Now stay in    #}
+{# reach anywhere down the table, and a click positions the sliced   #}
+{# section just below it. The plot and its controls scroll freely.   #}
+<div id="snapper-th-bar" class="card mb-2"
+     style="position:sticky; top:0; z-index:45;">
   <div class="card-header d-flex align-items-center flex-wrap gap-3">
     <strong>Time history</strong>
     <span>
@@ -72,6 +68,8 @@
             class="btn btn-sm btn-outline-success ms-auto"
             title="Slice at now, home the view, and keep tracking now as the page updates; click again to stop tracking and keep the slice">Now</button>
   </div>
+</div>
+<div class="card mb-3" id="snapper-observatory-card">
   <div class="card-body">
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
       <span>
@@ -154,11 +152,9 @@
   const activityUrl = '{% url "snapper_ai:snapper_activity" scope=scope %}';
   const activityCardCache = {};
   let visibleActivities = [];
-  // The keys the current slice crosses — derived from the cut, never
-  // independent state (the slice IS the selection).
-  let currentSliceKeys = new Set();
-  // Rows showing their story subentry: set by a slice (the crossed
-  // events), adjusted by single-row toggles.
+  // Rows showing their story subentry — set by a slice (the crossed
+  // events), adjusted by single-row toggles. Open IS highlighted:
+  // one state, one color.
   let expandedKeys = new Set();
   let pendingSliceLane = null;
   // Lane tick filters (boxes beside the lane names): the tick defines
@@ -323,7 +319,17 @@
 
   function cutShapeList() {
     if (cutTrueMs === null) return [];
-    const basisMs = cutTrueMs - basisCorrection;
+    let basisMs = cutTrueMs - basisCorrection;
+    // A cut at the window edge loses half its 2px width to plot
+    // clipping (Now slices at the exact right edge): nudge the LINE
+    // inward by exactly one pixel's worth of time so it renders
+    // whole — the cut time itself is untouched.
+    const xa = plotDiv._fullLayout && plotDiv._fullLayout.xaxis;
+    if (renderedSpan && xa && xa._length) {
+      const onePx = renderedSpan / xa._length;
+      basisMs = Math.min(basisMs, fullRange[1] - onePx);
+      basisMs = Math.max(basisMs, fullRange[0] + onePx);
+    }
     return [{
       type: 'line', xref: 'x', yref: 'paper',
       x0: toNaive(basisMs), x1: toNaive(basisMs), y0: 0, y1: 1,
@@ -899,7 +905,7 @@
       + '<tbody>';
     rows.forEach(function (a) {
       html += '<tr class="snapper-activity-row'
-        + (currentSliceKeys.has(a.key) ? ' table-primary' : '')
+        + (expandedKeys.has(a.key) ? ' table-primary' : '')
         + '" data-activity-key="' + escapeHtml(a.key)
         + '" style="cursor:pointer">'
         + '<td class="text-nowrap">'
@@ -920,19 +926,40 @@
     html += '</tbody></table>';
     activityTableDiv.innerHTML = html;
     // Bottom fill: enough page runway that even the last section can
-    // land flush beneath the sticky plot card.
-    const card = document.getElementById('snapper-observatory-card');
+    // land flush beneath the pinned Time history strip.
+    const bar = document.getElementById('snapper-th-bar');
     activityTableDiv.style.marginBottom = Math.max(
-        0, window.innerHeight - (card ? card.offsetHeight : 0) - 120)
+        0, window.innerHeight - (bar ? bar.offsetHeight : 0) - 120)
         + 'px';
     activityTableDiv.querySelectorAll('.snapper-activity-row')
       .forEach(function (tr) {
         tr.addEventListener('click', function () {
-          // A row click is event-scoped: toggle this story subentry.
+          // A row click is event-scoped, open or close ONLY. Opening
+          // highlights the row (open IS highlighted) and moves the
+          // slice time to the event's middle; closing leaves the
+          // slice where it is.
           dropTrackNow();
           const key = String(tr.dataset.activityKey);
-          if (expandedKeys.has(key)) expandedKeys.delete(key);
-          else expandedKeys.add(key);
+          if (expandedKeys.has(key)) {
+            expandedKeys.delete(key);
+            renderActivityTable();
+            return;
+          }
+          expandedKeys.add(key);
+          const arc = visibleActivities.find(function (x) {
+            return x.key === key;
+          });
+          if (arc) {
+            cutTrueMs = confirmedCutTrueMs =
+                Math.round((arc.t0 + arc.t1) / 2) + basisCorrection;
+            applyShapes();
+            updateClearAll();
+            stampCutUrl(new Date(cutTrueMs).toISOString());
+            if (cutPanel && !cutPanel.hidden) {
+              cutPanel.hidden = true;
+              cutPanel.innerHTML = '';
+            }
+          }
           renderActivityTable();
         });
       });
@@ -940,19 +967,19 @@
   }
 
   function scrollTableToSlice() {
-    // Bring the sliced section flush beneath the sticky plot card —
-    // the position a pop-in would occupy.
+    // Bring the sliced section flush beneath the pinned Time history
+    // strip — the position a pop-in would occupy. Only the strip
+    // pins; the plot scrolls freely like everything else.
     if (!activityTableDiv) return;
     const first = activityTableDiv.querySelector('.table-primary');
     if (!first) return;
-    const card = document.getElementById('snapper-observatory-card');
+    const bar = document.getElementById('snapper-th-bar');
     function delta() {
-      const cardBottom = card
-          ? card.getBoundingClientRect().bottom : 0;
-      return first.getBoundingClientRect().top - cardBottom - 6;
+      const barBottom = bar ? bar.getBoundingClientRect().bottom : 0;
+      return first.getBoundingClientRect().top - barBottom - 6;
     }
     window.scrollBy(0, delta());
-    // Sticky engagement moves the card's bottom; correct once.
+    // Sticky engagement moves the strip's bottom; correct once.
     requestAnimationFrame(function () {
       const d2 = delta();
       if (Math.abs(d2) > 4) window.scrollBy(0, d2);
@@ -994,7 +1021,6 @@
     // silent.
     const basisMs = Date.parse(timeIso) - basisCorrection;
     const hits = findActivitiesAt(basisMs);
-    currentSliceKeys = new Set(hits);
     expandedKeys = new Set(hits);
     renderActivityTable();
     scrollTableToSlice();
