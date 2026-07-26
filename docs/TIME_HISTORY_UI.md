@@ -47,17 +47,18 @@ and the health lane, over a seven-day window.*
    cut, ?component=, that builds only that card), the empty-slice
    notice otherwise when the slice crosses nothing — never silent —
    and the classic state cards on scopes without activity lanes
-   (epicprod). Third the overview table, FULL length — never an inner
-   scroll pane: the at-a-glance inventory of the window, newest
-   first, time leftmost with elapsed length, and the detail home. The
-   page scrolls freely — nothing pins except the slim Time history
-   strip (window controls and Now), which stays in reach anywhere
-   down the table. A slice highlights and expands the crossed events'
-   story subentries and page-scrolls that section flush beneath the
-   pinned strip — the position a pop-in would occupy — with bottom
-   fill making this hold down to the very last row, and the page
-   scrollbar as the more-below cue. A row click is
-   event-scoped: it toggles that one story subentry. Color cues:
+   (epicprod). Third the overview table, in its own scroll pane
+   sized to the full table height: the at-a-glance inventory of the
+   window, newest first, time leftmost with elapsed length, and the
+   detail home. The whole table is visible on the page — page
+   scrolling browses it and never clips it — and nothing pins except
+   the slim Time history strip (window controls and Now), which
+   stays in reach anywhere down the table. A slice highlights and
+   expands the crossed events' story subentries and scrolls the pane
+   — never the page — so that section lands flush at the pane top,
+   immediately below the plot, the position a pop-in would occupy;
+   in-pane bottom fill makes this hold down to the very last row. A
+   row click is event-scoped: it toggles that one story subentry. Color cues:
    greens belong to health; events are blue — the datataking tile,
    its lighter processing tail, and the table's highlight share the
    blue family. A horizontal lane tick row above the plot, carrying

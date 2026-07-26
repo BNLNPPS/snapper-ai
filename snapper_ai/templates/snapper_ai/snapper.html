@@ -85,8 +85,9 @@
 
 <div class="container-fluid mt-0 snapper-page">
     <header class="snapper-header">
-        <h1>Snapper</h1>
-        <p>Operational state snapshot history for SWF systems</p>
+        <h1>Snapper<span class="text-muted fs-5 fw-normal"
+              style="margin-left:2.2em">Operational state snapshot
+              history for SWF systems</span></h1>
     </header>
 
     <div class="snapper-selectors" aria-label="Snapper scope and view">
@@ -538,14 +539,22 @@
     };
     const tick = () => {
         if (Date.now() < nextAt || document.hidden) return;
-        if (rest) {
+        if (rest || window.snapperObservatory) {
+            // In-place refresh: the observatory swap and the rest swap
+            // are each null-guarded, so either surface alone is fine.
             softRefresh();
         } else {
+            // Plain-reload fallback (no refreshable surface): disarm
+            // the ticker first. A reload leaves this page ticking
+            // while the new document loads; a 1s tick during a
+            // multi-second render aborts and restarts the navigation
+            // forever — the reload-abort storm. One reload only.
+            window.clearInterval(timer);
             window.location.reload();
         }
     };
     updateCountdown();
-    window.setInterval(tick, 1000);
+    const timer = window.setInterval(tick, 1000);
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) tick();
     });
