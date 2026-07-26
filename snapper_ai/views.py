@@ -483,12 +483,15 @@ def snapper_system(request, scope):
 
 # ── The cut: structured state at an instant ──────────────────────────────
 
-def _cut_components(snap, previous_snap, scope, requested_at=None):
+def _cut_components(snap, previous_snap, scope, requested_at=None,
+                    only=None):
     state = _dict(snap.state)
     previous_state = _dict(previous_snap.state) if previous_snap else {}
     provider = registry.get(scope)
     cards = []
     for name, payload in sorted(_dict(state.get('components')).items()):
+        if only and name != only:
+            continue
         payload = _dict(payload)
         data = _dict(payload.get('data'))
         previous_payload = _dict(
@@ -586,15 +589,22 @@ def snapper_cut(request, scope):
                      .filter(scope=scope, snap_time__lt=snap.snap_time)
                      .order_by('-snap_time').first()) if snap else None
 
+    # ?component= narrows the cut to one component's card — the health
+    # lane's pop-up detail uses this compact form. The narrowing gates
+    # the WORK, not just the output: no reference scan, no other
+    # component's card build.
+    component_filter = (request.GET.get('component') or '').strip()
+
     references = []
-    try:
-        from .queries import context_around
-        context = context_around(scope, requested, 3600).as_dict()
-        references = context['references']
-        if provider and provider.annotate_references is not None:
-            references = provider.annotate_references(references)
-    except Exception:                                        # noqa: BLE001
-        pass  # references are enrichment; the cut renders without them
+    if not component_filter:
+        try:
+            from .queries import context_around
+            context = context_around(scope, requested, 3600).as_dict()
+            references = context['references']
+            if provider and provider.annotate_references is not None:
+                references = provider.annotate_references(references)
+        except Exception:                                    # noqa: BLE001
+            pass  # references are enrichment; the cut renders without them
 
     # Attention economy: one absolute time, everything else relative to
     # it; coverage is mentioned only when it is NOT clean, in plain words.
@@ -613,14 +623,9 @@ def snapper_cut(request, scope):
                       'be established — showing the last recorded state.'}
 
     cards = (_cut_components(snap, previous_snap, scope,
-                             requested_at=result.requested_at)
+                             requested_at=result.requested_at,
+                             only=component_filter or None)
              if snap else [])
-    # ?component= narrows the cut to one component's card — the health
-    # lane's pop-up detail uses this compact form.
-    component_filter = (request.GET.get('component') or '').strip()
-    if component_filter:
-        cards = [c for c in cards if c.get('name') == component_filter]
-        references = []
     for card in cards:
         assessed = parse_datetime(str(card.get('assessed_at') or ''))
         card['assessed_age_text'] = (

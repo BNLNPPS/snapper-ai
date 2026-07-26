@@ -36,20 +36,30 @@ and the health lane, over a seven-day window.*
    visual width so short runs read as blocks at any scale, with true
    proportions returning on zoom; the plot enhances the truth into
    legibility (set 2026-07-26) — the minimum is a legible block, never
-   a sliver. Keyed activities visible in the view are numbered newest
-   first (transparent markers above the tiles), the numbers re-derived
-   on every zoom or namespace filter; a numbered story table sits
-   immediately below the plot. Clicking a bar selects every numbered
-   activity at that instant or very nearly (overlaps select together);
-   selected activities expand their stories in place as subrows under
-   their numbers — one home for the story, so the cut's component
-   cards stay lean. Clicking a row toggles its expansion. Namespace
-   tick-boxes (default all on) choose which lanes get the number
-   treatment; only numbered bars carry markers — the table defines
-   what the numbers mean. A health-lane click toggles the health
-   detail immediately below the plot at the clicked instant (no cut
-   fires); the recorded-state section below the Time history omits
-   the health card for the same reason — one home per story. Continuous state lanes (health, its
+   a sliver. Keyed activities visible in the view are numbered by time
+   range (transparent markers above the tiles): the displayed interval
+   divides into 20 equal ranges and each occupied range takes the next
+   number, newest first, re-derived on every zoom or lane filter. A
+   number IS a time range, decoupled from any single event — events in
+   the same range share it, across lanes too, so numbers are never
+   overprinted and never wasted on a burst. The click model is the
+   system's unchanged basis on every scope: a click IS a vertical
+   time slice — the red line lands at the clicked instant, the URL
+   carries it (?cut=, selection alongside as ?sel=) — and everything
+   below the plot renders what the slice crosses. A numbered story
+   table sits immediately below; on a scope with activity lanes it
+   replaces the state-CARD panel only: every activity at or very near
+   the sliced instant resolves together — numbered hits expand their
+   stories in place as subrows, unnumbered hits (unticked lane) pop
+   in above the table, never silent. Clicking a row toggles its
+   expansion. Lane tick-boxes sit beside the lane
+   names over the plot margin (default all on, All on/off beside
+   Clear all) and choose which lanes get the number treatment. A
+   health-lane click toggles the health detail immediately below the
+   plot at the clicked instant — a component-narrowed cut that builds
+   only the health card; the recorded-state section omits the health
+   card for the same reason — one home per story. Scopes without
+   activity lanes (epicprod) keep the classic click-cut. Continuous state lanes (health, its
    expandable per-check sub-lanes) keep edge-to-edge bands. Recovery
    gaps are grey spans painted beneath, never over. No pips: a tile's
    leading edge is the run start.

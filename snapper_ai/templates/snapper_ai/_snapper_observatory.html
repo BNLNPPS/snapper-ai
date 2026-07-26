@@ -6,6 +6,11 @@
 #snapper-observatory-plot .drag {
   cursor: crosshair !important;
 }
+/* Numbered activity table: a heavier line opens each number cluster,
+   so the rowspanned number visibly owns its events. */
+#snapper-activity-table .snapper-cluster-first > td {
+  border-top: 2px solid #9fb4c7;
+}
 /* Curve tick boxes as a table: one full-width row per curve family,
    thin border lines, a fixed label column. */
 #snapper-observatory-controls {
@@ -54,7 +59,7 @@
       <span class="badge bg-secondary">{{ observatory_range_label }}</span>
       {% endif %}
     </span>
-    <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> snaps · times ET · click: state cut · click-drag a time range: zoom to it · double-click: zoom in ×2</span>
+    <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> snaps</span>
   </div>
   <div class="card-body">
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
@@ -63,10 +68,11 @@
         <button type="button" id="snapper-curves-all-off" class="btn btn-sm btn-secondary">All off</button>
         <button type="button" id="snapper-clear-all" class="btn btn-sm btn-secondary"
                 title="Reset everything: window, zoom, cut, and curve selection back to defaults">Clear all</button>
+        <button type="button" id="snapper-lanes-all-on" class="btn btn-sm btn-secondary" hidden>All on</button>
+        <button type="button" id="snapper-lanes-all-off" class="btn btn-sm btn-secondary" hidden>All off</button>
       </span>
       <span id="snapper-state-key" class="d-flex flex-wrap column-gap-2 row-gap-1 text-muted"></span>
     </div>
-    <div id="snapper-lane-filters" class="mb-2"></div>
     <div id="snapper-observatory-controls" class="mb-2"></div>
     {# style-based visibility: Bootstrap's d-flex !important would override the hidden attribute #}
     <div id="snapper-zoom-bar" class="mb-1 align-items-center gap-2" style="display:none">
@@ -77,7 +83,12 @@
       <button type="button" id="snapper-zoom-reset" class="btn btn-sm btn-secondary">Reset to full window</button>
     </div>
     <div style="position:relative">
-      <div id="snapper-observatory-plot" style="min-height:260px"></div>
+      <div class="mb-2"><span id="snapper-gesture-help" class="text-body" style="display:inline-block; border:1px solid #9fb4c7; border-radius:.6em; background:#f2f7fb; padding:.3em .8em;"><strong>click</strong>: select time cut · <strong>click-drag</strong>: select time range · <strong>double-click</strong>: zoom 2x</span></div>
+      <div style="position:relative">
+        <div id="snapper-observatory-plot" style="min-height:260px"></div>
+        {# Lane tick-boxes live beside the lane names, over the plot's left margin. #}
+        <div id="snapper-lane-ticks" style="position:absolute; left:0; top:0; width:110px; height:100%; pointer-events:none"></div>
+      </div>
       {# Edge pan arrows: shown when the view can shift that way. #}
       <button type="button" id="snapper-pan-left-edge" hidden
               title="Shift view earlier"
@@ -102,6 +113,7 @@
                   position:absolute; top:0; min-width:6px;"></div>
     </div>
     <div id="snapper-health-detail" class="mt-2" hidden></div>
+    <div id="snapper-activity-popin" class="mt-2" hidden></div>
     <div id="snapper-activity-table" class="mt-2"></div>
     <div id="snapper-observatory-cut" class="mt-3" hidden></div>
   </div>
@@ -128,14 +140,21 @@
   const activityTableDiv = document.getElementById('snapper-activity-table');
   const activityUrl = '{% url "snapper_ai:snapper_activity" scope=scope %}';
   const activityCardCache = {};
-  const ACTIVITY_NUMBER_MAX = 15;
+  const ACTIVITY_NUMBER_MAX = 20;
   let visibleActivities = [];
   let activityNumberByKey = {};
+  let activityMarkers = [];
   let selectedActivityKeys = new Set();
-  // Namespace tick filters: default all on; only ticked lanes get the
-  // number treatment (markers, table rows, click selection).
+  // Lane tick filters (boxes beside the lane names): default all on;
+  // only ticked lanes get the number treatment.
   const laneFilterOff = new Set();
-  const laneFiltersDiv = document.getElementById('snapper-lane-filters');
+  const laneTicksDiv = document.getElementById('snapper-lane-ticks');
+  const activityPopinDiv = document.getElementById('snapper-activity-popin');
+  function isActivityScope() {
+    return Object.keys(data.lanes).some(function (id) {
+      return !!data.lanes[id].segments;
+    });
+  }
   // A scope without curves has no curve selection to switch: the
   // all-on/all-off controls would be dead buttons.
   if (!Object.keys(data.curves || {}).length) {
@@ -295,7 +314,6 @@
   function buildTraces() {
     const traces = [];
     seenStates.clear();
-    laneFlagAnnotations = [];
 
     // Lane segments as horizontal bars: solid when active, light pastel
     // fill with a colored border otherwise. Bars skip hover; a dense
@@ -334,10 +352,8 @@
         // proportions return on zoom — the plot re-renders when the
         // view span changes). A period with no recorded end is the
         // same block hatched.
-        // Number markers: a keyed tile in the numbered set gets its
-        // dynamic number above the tile — the key into the numbered
-        // table below the plot. Unnumbered tiles carry no marker: the
-        // table defines what the numbers mean.
+        // Number markers are built per cluster from activityMarkers in
+        // render(); segments draw nothing here.
         traces.push({
           type: 'bar', orientation: 'h',
           y: [label], x: [Date.parse(data.end) - Date.parse(data.start)],
@@ -366,18 +382,6 @@
           });
           addHoverSpan(t0, Math.max(t1, t0 + minBarMs),
                        escapeHtml(lane.label) + ': ' + escapeHtml(seg.hover));
-          if (seg.key) {
-            const number = activityNumberByKey[String(seg.key)];
-            if (number) {
-              laneFlagAnnotations.push({
-                xref: 'x', x: toNaive(t0), xanchor: 'left',
-                yref: 'y2', y: label, yanchor: 'bottom', yshift: 14,
-                showarrow: false,
-                text: '<b>' + number + '</b>',
-                font: {size: 14, color: '#1b5e20'},
-              });
-            }
-          }
         });
       } else {
         // Continuous lane (health and its checks): the state always
@@ -523,6 +527,13 @@
       if (a.number) activityNumberByKey[a.key] = a.number;
     });
     const traces = buildTraces();
+    // Cluster number markers, one per cluster per lane, transparent.
+    laneFlagAnnotations = activityMarkers.map(function (m) {
+      return {xref: 'x', x: m.t0s, xanchor: 'left',
+              yref: 'y2', y: m.lane, yanchor: 'bottom', yshift: 14,
+              showarrow: false, text: '<b>' + m.number + '</b>',
+              font: {size: 14, color: '#1b5e20'}};
+    });
 
     // Vertical geometry in pixels, then normalized to axis domains:
     // the lane band on top, one fixed-height panel per family below.
@@ -592,6 +603,7 @@
                  {responsive: true, displayModeBar: false,
                   doubleClick: false, showTips: false});
     renderActivityTable();
+    positionLaneTicks();
     if (!viewTrue) lastRange = fullRange.slice();
     renderControls();
     wireLaneToggles();
@@ -753,6 +765,7 @@
     const dirty = viewIsZoomed() || cutTrueMs !== null
         || curveIds.some(id => curvesOff.has(id))
         || lanesOpen.size > 0
+        || selectedActivityKeys.size > 0
         || pageWindow !== defaultWindow;
     clearBtn.disabled = !dirty;
     clearBtn.title = dirty
@@ -847,9 +860,33 @@
       return a.t1 >= r0 && a.t0 <= r1;
     });
     acts.sort(function (a, b) { return b.t0 - a.t0; });
-    acts.forEach(function (a, i) {
-      a.number = i < ACTIVITY_NUMBER_MAX ? i + 1 : null;
+    // Range numbering: the displayed interval divides into
+    // ACTIVITY_NUMBER_MAX equal ranges and each occupied range takes
+    // the next number, newest range first — a number IS a time range,
+    // so every visible event is numbered, bursts share a number by
+    // construction, and nothing overprints.
+    const binMs = (r1 - r0) / ACTIVITY_NUMBER_MAX;
+    const occupied = [];
+    acts.forEach(function (a) {
+      a.bin = Math.min(ACTIVITY_NUMBER_MAX - 1,
+                       Math.max(0, Math.floor((a.t0 - r0) / binMs)));
+      if (occupied.indexOf(a.bin) === -1) occupied.push(a.bin);
     });
+    occupied.sort(function (x, y) { return y - x; });
+    const numberByBin = {};
+    occupied.forEach(function (b, i) { numberByBin[b] = i + 1; });
+    acts.forEach(function (a) { a.number = numberByBin[a.bin]; });
+    // One marker per cluster per lane, at that lane's earliest member.
+    const markerAt = {};
+    acts.forEach(function (a) {
+      if (!a.number) return;
+      const mk = a.number + '|' + a.lane;
+      if (!markerAt[mk] || a.t0 < markerAt[mk].t0) {
+        markerAt[mk] = {number: a.number, lane: a.lane,
+                        t0: a.t0, t0s: a.t0s};
+      }
+    });
+    activityMarkers = Object.values(markerAt);
     return acts;
   }
 
@@ -866,37 +903,51 @@
       activityTableDiv.innerHTML = '';
       return;
     }
-    const rows = visibleActivities.filter(a => a.number !== null);
-    const more = visibleActivities.length - rows.length;
+    const rows = visibleActivities;
+    // The number column spans its whole cluster — every event sharing
+    // the number, plus their expanded detail subrows.
+    const clusters = [];
+    rows.forEach(function (a) {
+      const last = clusters[clusters.length - 1];
+      if (last && last.number === a.number) last.members.push(a);
+      else clusters.push({number: a.number, members: [a]});
+    });
     let html = '<table class="table table-sm table-striped w-auto mb-1">'
       + '<tbody>';
-    rows.forEach(function (a) {
-      html += '<tr class="snapper-activity-row'
-        + (selectedActivityKeys.has(a.key) ? ' table-primary' : '')
-        + '" data-activity-key="' + escapeHtml(a.key)
-        + '" style="cursor:pointer">'
-        + '<td><strong>' + a.number + '</strong></td>'
-        + '<td>' + escapeHtml(a.lane) + '</td>'
-        + '<td>' + escapeHtml(a.flag || a.key) + '</td>'
-        + '<td>' + escapeHtml(a.summary || '') + '</td>'
-        + '<td class="text-nowrap">'
-        + escapeHtml((a.t0s || '').slice(5, 16).replace('T', ' ')) + ' ET</td>'
-        + '<td class="text-nowrap">' + escapeHtml(activityDur(a)) + '</td>'
-        + '</tr>';
-      // Consolidated detail: a selected activity expands in place as a
-      // subrow under its number — one home for the story.
-      if (selectedActivityKeys.has(a.key)) {
-        html += '<tr class="snapper-activity-expand"><td></td>'
-          + '<td colspan="5"><div class="snapper-activity-card-slot"'
-          + ' data-activity-key="' + escapeHtml(a.key) + '"></div></td></tr>';
-      }
+    clusters.forEach(function (cl) {
+      const span = cl.members.length + cl.members.filter(function (m) {
+        return selectedActivityKeys.has(m.key);
+      }).length;
+      cl.members.forEach(function (a, i) {
+        html += '<tr class="snapper-activity-row'
+          + (i === 0 ? ' snapper-cluster-first' : '')
+          + (selectedActivityKeys.has(a.key) ? ' table-primary' : '')
+          + '" data-activity-key="' + escapeHtml(a.key)
+          + '" style="cursor:pointer">'
+          + (i === 0
+             ? '<td rowspan="' + span + '"'
+               + ' class="align-middle text-center"><strong>'
+               + cl.number + '</strong></td>'
+             : '')
+          + '<td>' + escapeHtml(a.lane) + '</td>'
+          + '<td>' + escapeHtml(a.flag || a.key) + '</td>'
+          + '<td>' + escapeHtml(a.summary || '') + '</td>'
+          + '<td class="text-nowrap">'
+          + escapeHtml((a.t0s || '').slice(5, 16).replace('T', ' '))
+          + ' ET</td>'
+          + '<td class="text-nowrap">' + escapeHtml(activityDur(a))
+          + '</td>'
+          + '</tr>';
+        // Consolidated detail: a selected activity expands in place as
+        // a subrow inside its cluster's span — one home for the story.
+        if (selectedActivityKeys.has(a.key)) {
+          html += '<tr class="snapper-activity-expand">'
+            + '<td colspan="5"><div data-activity-slot="'
+            + escapeHtml(a.key) + '"></div></td></tr>';
+        }
+      });
     });
     html += '</tbody></table>';
-    if (more > 0) {
-      html += '<div class="text-muted small">+' + more
-        + ' earlier activit' + (more === 1 ? 'y' : 'ies')
-        + ' in view — zoom in to number them</div>';
-    }
     activityTableDiv.innerHTML = html;
     activityTableDiv.querySelectorAll('.snapper-activity-row')
       .forEach(function (tr) {
@@ -908,15 +959,50 @@
             selectedActivityKeys.add(key);
           }
           renderActivityTable();
+          updateSelUrl();
         });
       });
-    fillActivityExpansions();
+    fillActivitySlots(activityTableDiv);
   }
 
-  function fillActivityExpansions() {
-    activityTableDiv.querySelectorAll('.snapper-activity-card-slot')
+  function selectActivities(keys) {
+    selectedActivityKeys = new Set(keys.map(String));
+    renderActivityTable();
+    updateSelUrl();
+  }
+
+  function findActivitiesAt(timeBasisMs) {
+    // Every keyed activity whose visible extent contains the clicked
+    // instant — or very nearly does (a quarter of the legible width):
+    // overlapping events at one vertical time all resolve. Numbered
+    // hits expand in the table; unnumbered hits pop in above it —
+    // never silent.
+    const tol = minBarMs / 4;
+    const hits = {numbered: [], unnumbered: []};
+    laneIds.forEach(function (laneId) {
+      const lane = data.lanes[laneId];
+      if (!lane || !lane.segments) return;
+      lane.segments.forEach(function (seg) {
+        if (!seg.key) return;
+        const key = String(seg.key);
+        if (hits.numbered.indexOf(key) !== -1
+            || hits.unnumbered.indexOf(key) !== -1) return;
+        const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
+        if (timeBasisMs >= t0 - tol
+            && timeBasisMs <= Math.max(t1, t0 + minBarMs) + tol) {
+          const numbered = !laneFilterOff.has(laneId)
+              && !!activityNumberByKey[key];
+          (numbered ? hits.numbered : hits.unnumbered).push(key);
+        }
+      });
+    });
+    return hits;
+  }
+
+  function fillActivitySlots(container) {
+    container.querySelectorAll('[data-activity-slot]')
       .forEach(function (slot) {
-        const key = slot.dataset.activityKey;
+        const key = slot.dataset.activitySlot;
         if (activityCardCache[key] !== undefined) {
           slot.innerHTML = activityCardCache[key];
           return;
@@ -935,58 +1021,61 @@
       });
   }
 
-  function selectActivities(keys) {
-    selectedActivityKeys = new Set(keys.map(String));
-    renderActivityTable();
-  }
-
-  function findActivitiesAt(timeBasisMs) {
-    // Every numbered activity whose visible extent contains the
-    // clicked instant — or very nearly does (a quarter of the legible
-    // width): overlapping events at one vertical time all select.
-    const tol = minBarMs / 4;
-    const keys = [];
-    laneIds.forEach(function (laneId) {
-      if (laneFilterOff.has(laneId)) return;
-      const lane = data.lanes[laneId];
-      if (!lane || !lane.segments) return;
-      lane.segments.forEach(function (seg) {
-        if (!seg.key) return;
-        const key = String(seg.key);
-        if (keys.indexOf(key) !== -1) return;
-        if (!activityNumberByKey[key]) return;
-        const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
-        if (timeBasisMs >= t0 - tol
-            && timeBasisMs <= Math.max(t1, t0 + minBarMs) + tol) {
-          keys.push(key);
-        }
+  function showActivityPopin(keys) {
+    // The pop-in above the table serves clicks on unnumbered bars
+    // (unticked lane or beyond the number cap) — the click is never
+    // silent just because there is no number.
+    if (!activityPopinDiv) return;
+    activityPopinDiv.hidden = false;
+    activityPopinDiv.innerHTML =
+      '<div class="d-flex justify-content-between align-items-start">'
+      + '<div class="text-muted mb-1">Activity at the clicked time'
+      + ' (not in the numbered table)</div>'
+      + '<button type="button" class="btn-close" aria-label="Close">'
+      + '</button></div>'
+      + keys.map(function (k) {
+          return '<div class="mb-2" data-activity-slot="'
+            + escapeHtml(k) + '"></div>';
+        }).join('');
+    activityPopinDiv.querySelector('.btn-close')
+      .addEventListener('click', function () {
+        activityPopinDiv.hidden = true;
+        activityPopinDiv.innerHTML = '';
       });
-    });
-    return keys;
+    fillActivitySlots(activityPopinDiv);
   }
 
-  function buildLaneFilters() {
-    if (!laneFiltersDiv) return;
-    const ids = Object.keys(data.lanes).filter(function (id) {
-      return data.lanes[id].segments;
-    }).sort(function (a, b) {
-      return data.lanes[a].label.localeCompare(data.lanes[b].label);
+  function episodicLaneIdList() {
+    return Object.keys(data.lanes).filter(function (id) {
+      return !!data.lanes[id].segments;
     });
-    if (!ids.length) { laneFiltersDiv.innerHTML = ''; return; }
-    let html = '<span class="me-2"><strong>Namespaces:</strong></span>'
-      + '<button type="button" id="snapper-lanes-all-on"'
-      + ' class="btn btn-sm btn-secondary me-1">All on</button>'
-      + '<button type="button" id="snapper-lanes-all-off"'
-      + ' class="btn btn-sm btn-secondary me-3">All off</button>';
+  }
+
+  function positionLaneTicks() {
+    // Tick boxes live beside the lane names, over the plot's left
+    // margin — no extra control row above the plot.
+    if (!laneTicksDiv) return;
+    const ya = plotDiv._fullLayout && plotDiv._fullLayout.yaxis2;
+    const ids = laneIds.filter(function (id) {
+      return data.lanes[id] && data.lanes[id].segments;
+    });
+    if (!ya || !ids.length) { laneTicksDiv.innerHTML = ''; return; }
+    let html = '';
     ids.forEach(function (id) {
-      html += '<label class="me-3" style="cursor:pointer">'
-        + '<input type="checkbox" class="form-check-input snapper-lane-tick"'
+      const idx = laneIds.indexOf(id);
+      const centerPx = ya._offset
+          + ya._length * ((laneIds.length - 1 - idx) + 0.5)
+            / laneIds.length;
+      html += '<input type="checkbox"'
+        + ' class="form-check-input snapper-lane-tick"'
         + ' data-lane-id="' + escapeHtml(id) + '"'
         + (laneFilterOff.has(id) ? '' : ' checked')
-        + '> ' + escapeHtml(data.lanes[id].label) + '</label>';
+        + ' title="Number this lane\'s activity"'
+        + ' style="position:absolute; left:2px; top:'
+        + Math.round(centerPx - 8) + 'px; pointer-events:auto">';
     });
-    laneFiltersDiv.innerHTML = html;
-    laneFiltersDiv.querySelectorAll('.snapper-lane-tick')
+    laneTicksDiv.innerHTML = html;
+    laneTicksDiv.querySelectorAll('.snapper-lane-tick')
       .forEach(function (tick) {
         tick.addEventListener('change', function () {
           if (tick.checked) laneFilterOff.delete(tick.dataset.laneId);
@@ -994,18 +1083,23 @@
           rerenderView();
         });
       });
-    document.getElementById('snapper-lanes-all-on')
-      .addEventListener('click', function () {
-        laneFilterOff.clear();
-        buildLaneFilters();
-        rerenderView();
+  }
+
+  function wireLaneAllButtons() {
+    const on = document.getElementById('snapper-lanes-all-on');
+    const off = document.getElementById('snapper-lanes-all-off');
+    if (!on || !off || !episodicLaneIdList().length) return;
+    on.hidden = off.hidden = false;
+    on.addEventListener('click', function () {
+      laneFilterOff.clear();
+      rerenderView();
+    });
+    off.addEventListener('click', function () {
+      episodicLaneIdList().forEach(function (id) {
+        laneFilterOff.add(id);
       });
-    document.getElementById('snapper-lanes-all-off')
-      .addEventListener('click', function () {
-        ids.forEach(function (id) { laneFilterOff.add(id); });
-        buildLaneFilters();
-        rerenderView();
-      });
+      rerenderView();
+    });
   }
 
   function rerenderView() {
@@ -1070,6 +1164,12 @@
     cutTrueMs = confirmedCutTrueMs = Date.parse(timeIso);
     applyShapes();
     updateClearAll();
+    stampCutUrl(timeIso);
+    if (isActivityScope()) {
+      // Activity scopes retired only the state-card panel; the cut
+      // itself — line, URL, semantics — is identical everywhere.
+      return;
+    }
     const lookupIso = new Date(
         snapToActivity(cutTrueMs - basisCorrection) + basisCorrection
     ).toISOString();
@@ -1078,11 +1178,27 @@
       .then(function (fragment) {
         cutPanel.hidden = false;
         cutPanel.innerHTML = fragment;
-        const url = new URL(window.location.href);
-        url.searchParams.set('cut', timeIso);
-        stampWindow(url);
-        history.replaceState(null, '', url);
       });
+  }
+
+  function stampCutUrl(timeIso) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('cut', timeIso);
+    stampWindow(url);
+    history.replaceState(null, '', url);
+  }
+
+  function updateSelUrl() {
+    // Event selection is view state: bookmarkable like the cut.
+    const url = new URL(window.location.href);
+    if (selectedActivityKeys.size) {
+      url.searchParams.set('sel',
+          Array.from(selectedActivityKeys).join(','));
+    } else {
+      url.searchParams.delete('sel');
+    }
+    stampWindow(url);
+    history.replaceState(null, '', url);
   }
 
   // Zoom controls: nothing shows until the view is narrower than the
@@ -1298,23 +1414,21 @@
       return;
     }
     lastClick = {at: now, x: event.clientX};
-    // A click on the health lane (or a check sub-lane) toggles the
-    // health detail right below the plot instead of cutting; another
-    // health click dismisses it.
+    // ONE click model, unchanged on every scope: the line lands at the
+    // clicked instant and showCut stamps the cut. The presentation
+    // layers hang off it — bar stories and health detail here, the
+    // state cards on scopes that render them. Do not pre-snap the
+    // line — it must stay where the cursor is.
     const clickedLane = laneAtY(event);
     if (clickedLane === 'health'
         || String(clickedLane || '').indexOf('check:') === 0) {
       toggleHealthDetail(time + basisCorrection);
-      return;
+    } else if (isActivityScope()) {
+      const hits = findActivitiesAt(time);
+      if (hits.numbered.length) selectActivities(hits.numbered);
+      if (hits.unnumbered.length) showActivityPopin(hits.unnumbered);
     }
-    // Line at the clicked instant; showCut resolves the state to the
-    // activity under it. Do not pre-snap the line — it must stay where
-    // the cursor is.
     cutTrueMs = time + basisCorrection;
-    // A click landing on a numbered bar also selects it: highlight its
-    // table row and present its detail card, alongside the cut.
-    const hitActivityKeys = findActivitiesAt(time);
-    if (hitActivityKeys.length) selectActivities(hitActivityKeys);
     applyShapes();
     updateClearAll();
     clearTimeout(cutTimer);
@@ -1323,7 +1437,16 @@
     }, 480);
   }, true);
 
-  buildLaneFilters();
+  wireLaneAllButtons();
+  if (isActivityScope()) {
+    const gestures = document.getElementById('snapper-gesture-help');
+    if (gestures) {
+      gestures.innerHTML = '<strong>click a bar</strong>: its story · '
+        + '<strong>click health</strong>: health detail · '
+        + '<strong>click-drag</strong>: select time range · '
+        + '<strong>double-click</strong>: zoom 2x';
+    }
+  }
   render(null);
   plotDiv.on('plotly_relayout', updateZoomBar);
   // Zoom-aware run bars: when the view span changes materially, rebuild
@@ -1364,10 +1487,16 @@
     }
   }
 
-  // A URL-carried cut restores the line at its saved instant; showCut
-  // resolves its state to the activity under it, exactly like a click.
+  // A URL-carried cut restores exactly like a click: showCut lands the
+  // line and stamps the URL on every scope, and renders the state
+  // cards where the scope has them. A URL-carried selection restores
+  // its expanded stories.
   const initialCut = '{{ observatory_cut|escapejs }}';
   if (initialCut) showCut(initialCut);
+  const initialSel = new URL(window.location.href).searchParams.get('sel');
+  if (initialSel && isActivityScope()) {
+    selectActivities(initialSel.split(',').filter(Boolean));
+  }
 
   // The page-level 60-second soft refresh hands new observatory data in
   // here; the plot updates in place, preserving zoom, cut, and curve
@@ -1377,7 +1506,6 @@
     refresh: function (text) {
       dataText = text;
       data = JSON.parse(text);
-      buildLaneFilters();
       const viewTrue = viewIsZoomed()
           ? currentRange().map(ms => ms + basisCorrection) : null;
       suppressPush = true;
