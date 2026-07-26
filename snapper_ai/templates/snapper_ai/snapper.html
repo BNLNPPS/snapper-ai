@@ -107,6 +107,9 @@
             <a class="btn btn-sm {% if active_tab == 'report' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
                href="{% url 'snapper_ai:snapper_report' scope=scope %}"
                {% if active_tab == 'report' %}aria-current="page"{% endif %}>Report</a>
+            <a class="btn btn-sm {% if active_tab == 'snaps' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
+               href="{% url 'snapper_ai:snapper_snaps' scope=scope %}"
+               {% if active_tab == 'snaps' %}aria-current="page"{% endif %}>Snap history</a>
             <a class="btn btn-sm {% if active_tab == 'system' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
                href="{% url 'snapper_ai:snapper_system' scope=scope %}"
                {% if active_tab == 'system' %}aria-current="page"{% endif %}>System</a>
@@ -117,7 +120,11 @@
     </div>
 
     {% if active_tab == 'report' %}
+        {# The report is the Time history alone: the snap record and   #}
+        {# its audit documents live on the Snap history tab — one home #}
+        {# per story.                                                  #}
         {% include 'snapper_ai/_snapper_observatory.html' %}
+    {% elif active_tab == 'snaps' %}
         <div id="snapper-report-rest">
         {% if not selected_snap %}
             <div class="alert alert-info">No snaps have been recorded for {{ scope_label }}.</div>
@@ -276,7 +283,7 @@
                         {% for row in snap_rows %}
                             <tr{% if selected_snap and row.id == selected_snap.id %} class="table-active"{% endif %}>
                                 <td data-order="{{ row.snap_time|date:'c' }}">
-                                    <a href="{% url 'snapper_ai:snapper_report_snap' scope=scope snap_id=row.id %}">{{ row.snap_time|fmt_dt }}</a>
+                                    <a href="{% url 'snapper_ai:snapper_snaps_detail' scope=scope snap_id=row.id %}">{{ row.snap_time|fmt_dt }}</a>
                                 </td>
                                 <td>{{ row.reasons }}</td>
                                 <td>{{ row.changed_components }}</td>

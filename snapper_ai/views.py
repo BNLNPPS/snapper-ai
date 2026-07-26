@@ -263,6 +263,35 @@ def snapper_report(request, scope, snap_id=None):
     observatory_range_label = (
         f"{window_start.astimezone(_et).strftime('%m-%d %H:%M')}"
         f" – {window_end.astimezone(_et).strftime('%m-%d %H:%M')} ET")
+    return render(request, 'snapper_ai/snapper.html', {
+        'active_tab': 'report',
+        'scope': scope,
+        'scope_label': _scope_label(scope),
+        'scope_options': _scope_options(scope),
+        'observatory': observatory,
+        'observatory_window': window_key,
+        'observatory_windows': list(WINDOW_HOURS),
+        'observatory_default_window': DEFAULT_WINDOW,
+        'observatory_cut': (request.GET.get('cut') or '').strip(),
+        'observatory_prefs': user_prefs,
+        'observatory_prev_url': observatory_prev_url,
+        'observatory_next_url': observatory_next_url,
+        'observatory_range_label': observatory_range_label,
+        'observatory_groups': list(
+            (registry.get(scope).curve_groups or ())
+            if registry.get(scope) else ()),
+        'health_url': _health_url(),
+    })
+
+
+def snapper_snaps(request, scope, snap_id=None):
+    """The snap record: recorded state of one snap (latest by default,
+    any snap by id) with its components and audit documents, and the
+    paginated snap history. The archival surface — the Time history is
+    the operational one and links here from its header."""
+    scope = _validated_scope(scope)
+    snaps = SystemSnap.objects.filter(scope=scope).order_by('-snap_time')
+    latest_snap = snaps.first()
     if snap_id is None:
         selected_snap = latest_snap
     else:
@@ -272,15 +301,11 @@ def snapper_report(request, scope, snap_id=None):
     observation_delay = None
     if selected_snap is not None:
         state = _dict(selected_snap.state)
-        # Health is deliberately absent here: its detail pops up under
-        # the Time history on a health-lane click, so an always-on
-        # health card below would restate it.
         components = [
             _present_snap_component(name, payload, scope=scope,
                                     reference_time=selected_snap.snap_time)
             for name, payload in sorted(
                 _dict(state.get('components')).items())
-            if name != 'health'
         ]
         observation_delay = (
             selected_snap.observed_at - selected_snap.snap_time
@@ -301,7 +326,7 @@ def snapper_report(request, scope, snap_id=None):
     return render(request, 'snapper_ai/snapper.html', {
         'snap_page': snap_page,
         'snap_pager_query': f'{pager_query}&' if pager_query else '',
-        'active_tab': 'report',
+        'active_tab': 'snaps',
         'scope': scope,
         'scope_label': _scope_label(scope),
         'scope_options': _scope_options(scope),
@@ -314,18 +339,6 @@ def snapper_report(request, scope, snap_id=None):
         'snap_rows': [_snap_row(snap) for snap in recent],
         'snap_count': snaps.count(),
         'recent_snap_limit': RECENT_SNAP_LIMIT,
-        'observatory': observatory,
-        'observatory_window': window_key,
-        'observatory_windows': list(WINDOW_HOURS),
-        'observatory_default_window': DEFAULT_WINDOW,
-        'observatory_cut': (request.GET.get('cut') or '').strip(),
-        'observatory_prefs': user_prefs,
-        'observatory_prev_url': observatory_prev_url,
-        'observatory_next_url': observatory_next_url,
-        'observatory_range_label': observatory_range_label,
-        'observatory_groups': list(
-            (registry.get(scope).curve_groups or ())
-            if registry.get(scope) else ()),
         'health_url': _health_url(),
     })
 

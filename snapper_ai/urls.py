@@ -22,7 +22,12 @@ urlpatterns = [
     path('<str:scope>/cut/', views.snapper_cut, name='snapper_cut'),
     path('<str:scope>/activity/', views.snapper_activity,
          name='snapper_activity'),
-    path('<str:scope>/report/<uuid:snap_id>/', views.snapper_report,
+    path('<str:scope>/snaps/', views.snapper_snaps,
+         name='snapper_snaps'),
+    path('<str:scope>/snaps/<uuid:snap_id>/', views.snapper_snaps,
+         name='snapper_snaps_detail'),
+    # Legacy pinned-report links land on the snap record.
+    path('<str:scope>/report/<uuid:snap_id>/', views.snapper_snaps,
          name='snapper_report_snap'),
     path('<str:scope>/system/', views.snapper_system,
          name='snapper_system'),

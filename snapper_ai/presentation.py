@@ -16,11 +16,12 @@ ET_ZONE = ZoneInfo('America/New_York')
 # One state-color vocabulary, mirrored by the Time history plot
 # (_snapper_observatory.html STATE_COLORS). Keep the two in step.
 CUT_STATE_COLORS = {
-    'ok': '#2e7d32', 'healthy': '#2e7d32', 'running': '#2e7d32',
+    # Color cues: greens belong to health; events are blue.
+    'ok': '#2e7d32', 'healthy': '#2e7d32', 'running': '#1565c0',
     'warning': '#f9a825', 'error': '#c62828', 'ended': '#78909c',
     'unknown': '#9e9e9e',
     # Datataking activity phases, matching the lane tile colors.
-    'datataking': '#2e7d32', 'processing': '#81c784', 'idle': '#90a4ae',
+    'datataking': '#1565c0', 'processing': '#8ab6e8', 'idle': '#90a4ae',
 }
 CUT_FALLBACK_COLOR = '#1565c0'
 

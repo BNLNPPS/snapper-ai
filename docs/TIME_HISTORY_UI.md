@@ -47,25 +47,38 @@ and the health lane, over a seven-day window.*
    cut, ?component=, that builds only that card), the empty-slice
    notice otherwise when the slice crosses nothing — never silent —
    and the classic state cards on scopes without activity lanes
-   (epicprod). Third the overview table in its OWN scroll pane: the
-   at-a-glance inventory of the window, newest first, time leftmost
-   with elapsed length, and the detail home — a slice highlights and
-   expands the crossed events' story subentries and scrolls that
-   section flush to the pane top, immediately below the plot, the
-   position a pop-in would occupy; scroll-past-end tail padding makes
-   this hold down to the very last row. The plot never leaves the
-   screen, so a click's consequences — line, highlight, expansion,
-   scroll — are all simultaneously visible. A row click is
-   event-scoped: it toggles that one story subentry. Lane
-   tick-boxes beside the lane names define the shown truth (default
-   all on, All on/off beside Clear all, URL ?hide=): unticked lanes
-   are hidden from the table AND the slice panel — reviewing one
-   operator's activity must not be polluted by another's — while
-   their bars stay on the plot. The recorded-state section omits the
-   health card; the slice panel is its home. There are no numbers:
-   the slice panel's fixed position removed their job (bridging plot
-   clicks to table rows), and with it the numbered/unnumbered
-   asymmetry. Continuous state lanes (health, its
+   (epicprod). Third the overview table, FULL length — never an inner
+   scroll pane: the at-a-glance inventory of the window, newest
+   first, time leftmost with elapsed length, and the detail home. The
+   plot card is sticky at the page top; a slice highlights and
+   expands the crossed events' story subentries and page-scrolls that
+   section flush beneath the plot — the position a pop-in would
+   occupy — with bottom fill making this hold down to the very last
+   row, and the page scrollbar as the more-below cue. The plot never
+   leaves the screen, so a click's consequences — line, highlight,
+   expansion, scroll — are all simultaneously visible. A row click is
+   event-scoped: it toggles that one story subentry. Color cues:
+   greens belong to health; events are blue — the datataking tile,
+   its lighter processing tail, and the table's highlight share the
+   blue family. A horizontal lane tick row above the plot, carrying
+   its own All on/off, defines the shown truth everywhere (default
+   all on, URL ?hide=): an unticked lane disappears from the PLOT, the table, and
+   the slice alike — reviewing one operator's activity must not be
+   polluted by another's — and the plot reclaims its vertical room.
+   Namespaces will multiply (subdetectors, calibrations and their
+   kin; eventually a hierarchy): be efficient in what is shown,
+   flexible in deciding what is not. A Now button in the card header
+   slices at the window's end, homes a zoomed view to it, and stays
+   in track-now — re-homing and re-slicing as the page updates —
+   until toggled off (the slice then stays fixed) or the user clicks
+   or pans elsewhere. The report page
+   is the Time history alone: the snap record (recorded state,
+   component and snap audit documents, paginated history) lives on
+   its own Snap history tab — one home per story. State values in
+   story tables render with the application's standard state fills.
+   There are no numbers: the table's pop-in position removed their
+   job (bridging plot clicks to table rows), and with it the
+   numbered/unnumbered asymmetry. Continuous state lanes (health, its
    expandable per-check sub-lanes) keep edge-to-edge bands. Recovery
    gaps are grey spans painted beneath, never over. No pips: a tile's
    leading edge is the run start.

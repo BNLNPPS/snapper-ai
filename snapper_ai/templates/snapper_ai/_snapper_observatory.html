@@ -6,6 +6,19 @@
 #snapper-observatory-plot .drag {
   cursor: crosshair !important;
 }
+/* The plot card sticks to the top while the full-length table
+   page-scrolls beneath it: a sliced section always lands just below
+   the plot, and the page scrollbar is the more-below cue. */
+#snapper-observatory-card {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+/* Event highlight in the table: the same blue family as the event
+   tiles (greens belong to health). */
+#snapper-activity-table .table-primary > td {
+  background-color: #d7e7fb;
+}
 /* Curve tick boxes as a table: one full-width row per curve family,
    thin border lines, a fixed label column. */
 #snapper-observatory-controls {
@@ -34,7 +47,7 @@
   row-gap: .1rem;
 }
 </style>
-<div class="card mb-3">
+<div class="card mb-3" id="snapper-observatory-card">
   <div class="card-header d-flex align-items-center flex-wrap gap-3">
     <strong>Time history</strong>
     <span>
@@ -55,6 +68,9 @@
       {% endif %}
     </span>
     <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> snaps</span>
+    <button type="button" id="snapper-now-btn"
+            class="btn btn-sm btn-outline-success ms-auto"
+            title="Slice at now, home the view, and keep tracking now as the page updates; click again to stop tracking and keep the slice">Now</button>
   </div>
   <div class="card-body">
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
@@ -63,8 +79,6 @@
         <button type="button" id="snapper-curves-all-off" class="btn btn-sm btn-secondary">All off</button>
         <button type="button" id="snapper-clear-all" class="btn btn-sm btn-secondary"
                 title="Reset everything: window, zoom, cut, and curve selection back to defaults">Clear all</button>
-        <button type="button" id="snapper-lanes-all-on" class="btn btn-sm btn-secondary" hidden>All on</button>
-        <button type="button" id="snapper-lanes-all-off" class="btn btn-sm btn-secondary" hidden>All off</button>
       </span>
       <span id="snapper-state-key" class="d-flex flex-wrap column-gap-2 row-gap-1 text-muted"></span>
     </div>
@@ -79,11 +93,12 @@
     </div>
     <div style="position:relative">
       <div class="mb-2"><span id="snapper-gesture-help" class="text-body" style="display:inline-block; border:1px solid #9fb4c7; border-radius:.6em; background:#f2f7fb; padding:.3em .8em;"><strong>click</strong>: select time cut · <strong>click-drag</strong>: select time range · <strong>double-click</strong>: zoom 2x</span></div>
-      <div style="position:relative">
-        <div id="snapper-observatory-plot" style="min-height:260px"></div>
-        {# Lane tick-boxes live beside the lane names, over the plot's left margin. #}
-        <div id="snapper-lane-ticks" style="position:absolute; left:0; top:0; width:110px; height:100%; pointer-events:none"></div>
-      </div>
+      {# Lane ticks: the tick defines the shown truth — an unticked    #}
+      {# lane disappears from plot, table, and slice, reclaiming       #}
+      {# vertical room. Efficient in what is shown, flexible in what   #}
+      {# is not.                                                       #}
+      <div id="snapper-lane-row" class="mb-1"></div>
+      <div id="snapper-observatory-plot" style="min-height:260px"></div>
       {# Edge pan arrows: shown when the view can shift that way. #}
       <button type="button" id="snapper-pan-left-edge" hidden
               title="Shift view earlier"
@@ -107,15 +122,15 @@
            style="height:12px; background:#1565c0; border-radius:6px;
                   position:absolute; top:0; min-width:6px;"></div>
     </div>
-    <div id="snapper-observatory-cut" class="mt-3" hidden></div>
-    {# The overview table is its own scroll pane: a plot click scrolls  #}
-    {# the sliced section flush to the pane top — immediately below    #}
-    {# the plot, same as if it were popped in — and tail padding lets  #}
-    {# even the last section reach the top.                            #}
-    <div id="snapper-activity-table" class="mt-3"
-         style="max-height:55vh; overflow-y:auto"></div>
   </div>
 </div>
+
+{# Below the sticky card: the notice/health slot and the full-length  #}
+{# overview table. The sticky plot plus bottom fill lets a plot click #}
+{# scroll any sliced section — down to the very last — flush beneath  #}
+{# the plot.                                                          #}
+<div id="snapper-observatory-cut" class="mt-3" hidden></div>
+<div id="snapper-activity-table" class="mt-3"></div>
 
 {{ observatory|json_script:"snapper-observatory-data" }}
 {{ observatory_prefs|json_script:"snapper-observatory-prefs" }}
@@ -154,7 +169,12 @@
   (new URL(window.location.href).searchParams.get('hide') || '')
     .split(',').filter(Boolean)
     .forEach(function (n) { laneFilterOff.add('ns:' + n); });
-  const laneTicksDiv = document.getElementById('snapper-lane-ticks');
+  const laneRowDiv = document.getElementById('snapper-lane-row');
+  // Track-now: the Now button slices at the window's end and keeps
+  // the view and slice pinned there across the 60 s refreshes until
+  // the user navigates elsewhere.
+  let trackNow = false;
+  const nowBtn = document.getElementById('snapper-now-btn');
   function isActivityScope() {
     return Object.keys(data.lanes).some(function (id) {
       return !!data.lanes[id].segments;
@@ -249,13 +269,14 @@
   // segments fill with a light pastel of the same color. Color
   // assignments persist across data refreshes.
   const STATE_COLORS = {
-    ok: '#2e7d32', healthy: '#2e7d32', running: '#2e7d32',
-    run: '#2e7d32',
+    // Color cues: greens belong to health; EVENTS are blue — the
+    // datataking window solid blue, the processing tail lighter, and
+    // the table row highlight the same blue family.
+    ok: '#2e7d32', healthy: '#2e7d32',
+    running: '#1565c0', run: '#1565c0',
     warning: '#f9a825', error: '#c62828', ended: '#78909c',
     unknown: '#9e9e9e',
-    // Workflow activity on the namespace lanes: the datataking window
-    // solid green, the processing tail lighter.
-    processing: '#81c784',
+    processing: '#8ab6e8',
     completed: '#1565c0', failed: '#c62828', terminated: '#ef6c00',
     pending: '#9e9e9e',
   };
@@ -459,6 +480,9 @@
     laneLabelById = {};
     Object.keys(data.lanes).forEach(function (id) {
       if (data.lanes[id].parent) return;
+      // The tick defines the shown truth, on the plot too: an
+      // unticked lane vanishes and its vertical room is reclaimed.
+      if (data.lanes[id].segments && laneFilterOff.has(id)) return;
       laneIds.push(id);
       const kids = parentKids[id] || [];
       if (kids.length) {
@@ -592,7 +616,6 @@
                  {responsive: true, displayModeBar: false,
                   doubleClick: false, showTips: false});
     renderActivityTable();
-    positionLaneTicks();
     if (!viewTrue) lastRange = fullRange.slice();
     renderControls();
     wireLaneToggles();
@@ -896,16 +919,17 @@
     });
     html += '</tbody></table>';
     activityTableDiv.innerHTML = html;
-    // Scroll-past-end padding: even the last section can reach the
-    // pane top, so "immediately below the plot" holds to the bottom.
-    const spacer = document.createElement('div');
-    spacer.style.height =
-        Math.max(0, activityTableDiv.clientHeight - 50) + 'px';
-    activityTableDiv.appendChild(spacer);
+    // Bottom fill: enough page runway that even the last section can
+    // land flush beneath the sticky plot card.
+    const card = document.getElementById('snapper-observatory-card');
+    activityTableDiv.style.marginBottom = Math.max(
+        0, window.innerHeight - (card ? card.offsetHeight : 0) - 120)
+        + 'px';
     activityTableDiv.querySelectorAll('.snapper-activity-row')
       .forEach(function (tr) {
         tr.addEventListener('click', function () {
           // A row click is event-scoped: toggle this story subentry.
+          dropTrackNow();
           const key = String(tr.dataset.activityKey);
           if (expandedKeys.has(key)) expandedKeys.delete(key);
           else expandedKeys.add(key);
@@ -916,14 +940,23 @@
   }
 
   function scrollTableToSlice() {
-    // Bring the sliced section flush to the pane top — the same
-    // position a pop-in would occupy, immediately below the plot.
+    // Bring the sliced section flush beneath the sticky plot card —
+    // the position a pop-in would occupy.
     if (!activityTableDiv) return;
     const first = activityTableDiv.querySelector('.table-primary');
     if (!first) return;
-    const paneRect = activityTableDiv.getBoundingClientRect();
-    const rowRect = first.getBoundingClientRect();
-    activityTableDiv.scrollTop += rowRect.top - paneRect.top;
+    const card = document.getElementById('snapper-observatory-card');
+    function delta() {
+      const cardBottom = card
+          ? card.getBoundingClientRect().bottom : 0;
+      return first.getBoundingClientRect().top - cardBottom - 6;
+    }
+    window.scrollBy(0, delta());
+    // Sticky engagement moves the card's bottom; correct once.
+    requestAnimationFrame(function () {
+      const d2 = delta();
+      if (Math.abs(d2) > 4) window.scrollBy(0, d2);
+    });
   }
 
   function findActivitiesAt(timeBasisMs) {
@@ -1023,31 +1056,29 @@
     });
   }
 
-  function positionLaneTicks() {
-    // Tick boxes live beside the lane names, over the plot's left
-    // margin — no extra control row above the plot.
-    if (!laneTicksDiv) return;
-    const ya = plotDiv._fullLayout && plotDiv._fullLayout.yaxis2;
-    const ids = laneIds.filter(function (id) {
-      return data.lanes[id] && data.lanes[id].segments;
+  function buildLaneRow() {
+    // The horizontal lane tick row: the tick defines the shown truth
+    // (plot, table, and slice alike). Efficient in what is shown,
+    // flexible in deciding what is not — namespaces will multiply.
+    if (!laneRowDiv) return;
+    const ids = episodicLaneIdList().sort(function (a, b) {
+      return data.lanes[a].label.localeCompare(data.lanes[b].label);
     });
-    if (!ya || !ids.length) { laneTicksDiv.innerHTML = ''; return; }
-    let html = '';
+    if (!ids.length) { laneRowDiv.innerHTML = ''; return; }
+    let html = '<span class="me-2 fw-semibold">Namespaces:</span>'
+      + '<button type="button" id="snapper-lanes-all-on"'
+      + ' class="btn btn-sm btn-secondary me-1">All on</button>'
+      + '<button type="button" id="snapper-lanes-all-off"'
+      + ' class="btn btn-sm btn-secondary me-3">All off</button>';
     ids.forEach(function (id) {
-      const idx = laneIds.indexOf(id);
-      const centerPx = ya._offset
-          + ya._length * ((laneIds.length - 1 - idx) + 0.5)
-            / laneIds.length;
-      html += '<input type="checkbox"'
-        + ' class="form-check-input snapper-lane-tick"'
+      html += '<label class="me-3" style="cursor:pointer">'
+        + '<input type="checkbox" class="form-check-input snapper-lane-tick"'
         + ' data-lane-id="' + escapeHtml(id) + '"'
         + (laneFilterOff.has(id) ? '' : ' checked')
-        + ' title="Number this lane\'s activity"'
-        + ' style="position:absolute; left:2px; top:'
-        + Math.round(centerPx - 8) + 'px; pointer-events:auto">';
+        + '> ' + escapeHtml(data.lanes[id].label) + '</label>';
     });
-    laneTicksDiv.innerHTML = html;
-    laneTicksDiv.querySelectorAll('.snapper-lane-tick')
+    laneRowDiv.innerHTML = html;
+    laneRowDiv.querySelectorAll('.snapper-lane-tick')
       .forEach(function (tick) {
         tick.addEventListener('change', function () {
           if (tick.checked) laneFilterOff.delete(tick.dataset.laneId);
@@ -1056,25 +1087,51 @@
           rerenderView();
         });
       });
+    document.getElementById('snapper-lanes-all-on')
+      .addEventListener('click', function () {
+        laneFilterOff.clear();
+        stampHideUrl();
+        buildLaneRow();
+        rerenderView();
+      });
+    document.getElementById('snapper-lanes-all-off')
+      .addEventListener('click', function () {
+        ids.forEach(function (id) { laneFilterOff.add(id); });
+        stampHideUrl();
+        buildLaneRow();
+        rerenderView();
+      });
   }
 
-  function wireLaneAllButtons() {
-    const on = document.getElementById('snapper-lanes-all-on');
-    const off = document.getElementById('snapper-lanes-all-off');
-    if (!on || !off || !episodicLaneIdList().length) return;
-    on.hidden = off.hidden = false;
-    on.addEventListener('click', function () {
-      laneFilterOff.clear();
-      stampHideUrl();
-      rerenderView();
-    });
-    off.addEventListener('click', function () {
-      episodicLaneIdList().forEach(function (id) {
-        laneFilterOff.add(id);
-      });
-      stampHideUrl();
-      rerenderView();
-    });
+  function goNow() {
+    // Slice at the window's end and home the view to it; stay in
+    // track-now until the user navigates elsewhere.
+    trackNow = true;
+    if (nowBtn) {
+      nowBtn.textContent = 'tracking now';
+      nowBtn.classList.add('active');
+    }
+    if (viewIsZoomed()) {
+      const view = currentRange();
+      const span = view[1] - view[0];
+      suppressPush = true;
+      setRange([fullRange[1] - span, fullRange[1]]);
+      setTimeout(function () {
+        lastRange = currentRange();
+        suppressPush = false;
+      }, 60);
+    }
+    pendingSliceLane = null;
+    showCut(new Date(data.end_ms).toISOString());
+  }
+
+  function dropTrackNow() {
+    if (!trackNow) return;
+    trackNow = false;
+    if (nowBtn) {
+      nowBtn.textContent = 'Now';
+      nowBtn.classList.remove('active');
+    }
   }
 
   function rerenderView() {
@@ -1189,6 +1246,9 @@
       lastRange = view.slice();
     }
     const zoomed = viewIsZoomed();
+    // Panning away from the window's end ends track-now: the user is
+    // looking at the past, not the evolving present.
+    if (trackNow && view[1] < fullRange[1] - 60000) dropTrackNow();
     // The zoomed view lives in the URL (?view=start,end true-UTC ISO):
     // bookmarkable, shareable, and restored across reloads for free.
     const url = new URL(window.location.href);
@@ -1366,6 +1426,7 @@
       return;
     }
     lastClick = {at: now, x: event.clientX};
+    dropTrackNow();
     // ONE click model, unchanged on every scope: the line lands at the
     // clicked instant and showCut renders the slice — story cards and
     // (from the health lane) the health card on activity scopes, the
@@ -1381,7 +1442,15 @@
     }, 480);
   }, true);
 
-  wireLaneAllButtons();
+  buildLaneRow();
+  if (nowBtn) {
+    nowBtn.addEventListener('click', function () {
+      // Toggle: engaging slices at now and tracks it; disengaging
+      // leaves the slice fixed where it is.
+      if (trackNow) dropTrackNow();
+      else goNow();
+    });
+  }
   render(null);
   plotDiv.on('plotly_relayout', updateZoomBar);
   // Zoom-aware run bars: when the view span changes materially, rebuild
@@ -1436,6 +1505,7 @@
     refresh: function (text) {
       dataText = text;
       data = JSON.parse(text);
+      buildLaneRow();
       const viewTrue = viewIsZoomed()
           ? currentRange().map(ms => ms + basisCorrection) : null;
       suppressPush = true;
@@ -1444,6 +1514,9 @@
         lastRange = currentRange();
         suppressPush = false;
         updateZoomBar();
+        // Track-now follows the evolving page: re-home and re-slice
+        // at the new window end.
+        if (trackNow) goNow();
       }, 100);
     },
   };
