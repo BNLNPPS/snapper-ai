@@ -19,8 +19,8 @@ tasks by state — with per-curve selection controls, over a 24-hour window.*
 [![The testbed report page](snapper-testbed.png)](https://epic-devcloud.org/prod/snapper/testbed/report/?window=7d)
 
 *testbed: full-height namespace activity bands carrying workflow datataking
-and processing tiles, with STF task and workflow-execution curve selections
-and the health lane, over a seven-day window.*
+and processing tiles, the health lane, and the time cut's per-run component
+cards below the tracks, over a seven-day window.*
 
 ## Three zones, one time axis
 

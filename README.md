@@ -179,8 +179,8 @@ curve selections and the health lane above the panels.*
 [![The testbed report page](docs/snapper-testbed.png)](https://epic-devcloud.org/prod/snapper/testbed/report/?window=7d)
 
 *The testbed report page: a seven-day window of per-namespace activity lanes
-carrying workflow datataking and processing periods, with STF task and
-workflow-execution curve selections and the health lane.*
+carrying workflow datataking and processing tiles, with the health lane and,
+below the tracks, the time cut rendered as per-run component cards.*
 
 ## Implementation
 
