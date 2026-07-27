@@ -126,6 +126,10 @@ throughout (actual snap times, coverage never inferred).
    the custom badge names the range. Same day the display moved into
    the snapper_ai package behind the provider registry; curve families
    and labels are provider data ([INTEGRATION.md](INTEGRATION.md)).
+5. **Done (2026-07-27):** embeddable curves-only panels for host
+   pages — matching colors, a click opening this display; first host
+   is the SWF monitor's PanDA activity page ([INTEGRATION.md
+   §4](INTEGRATION.md), README).
 
 ## Grafana position
 

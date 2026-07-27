@@ -182,6 +182,24 @@ curve selections and the health lane above the panels.*
 carrying workflow datataking and processing tiles, with the health lane and,
 below the tracks, the time cut rendered as per-run component cards.*
 
+### Embedded panels on host pages
+
+Any host page can embed a scope's curve families as a compact, read-only
+rendering of the same recorded history: the report page's stacked panels
+without lanes, controls, or preferences, with matching curve colors and
+coverage-gap spans, and a click anywhere on the plot opening the full
+report page at the matching window. The host supplies one context call
+and one template include
+([docs/INTEGRATION.md](docs/INTEGRATION.md)). The SWF monitor's
+[PanDA activity overview](https://epic-devcloud.org/prod/panda/activity/?days=7)
+embeds the epicprod jobs and tasks families over the page's own
+time-window selection:
+
+[![The embedded jobs and tasks panels on the PanDA activity page](docs/snapper-embed.png)](https://epic-devcloud.org/prod/panda/activity/?days=7)
+
+*The epicprod jobs and tasks curve families embedded on the PanDA
+activity overview, following the page's selected window.*
+
 ## Implementation
 
 snapper-ai is packaged as a reusable Django application backed by PostgreSQL.
