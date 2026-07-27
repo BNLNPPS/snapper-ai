@@ -229,11 +229,14 @@
   }
 
   // Remembered UI state: signed-in server prefs first, then this
-  // browser's local storage; default is every curve on.
+  // browser's local storage; default is every curve on. A ?families=
+  // URL preset overrides both once the family definitions exist below.
   let localPrefs = {};
   try {
     localPrefs = JSON.parse(localStorage.getItem(storeKey) || '{}');
   } catch (e) { localPrefs = {}; }
+  const familiesParam = (new URL(window.location.href)
+      .searchParams.get('families') || '');
   const curvesOff = new Set(
       (serverPrefs.curves_off && serverPrefs.curves_off.length
           ? serverPrefs.curves_off : localPrefs.curves_off) || []);
@@ -245,6 +248,9 @@
 
   let saveTimer = null;
   function persistPrefs() {
+    // A ?families= preset is a one-shot focused link; it must never
+    // overwrite the visitor's remembered curve selection.
+    if (familiesParam) return;
     const payload = {curves_off: Array.from(curvesOff),
                      lanes_open: Array.from(lanesOpen),
                      window: pageWindow};
@@ -567,7 +573,8 @@
         mode: 'lines',
         line: {shape: 'hv', width: 2.5, color: curveColor[curveId]},
         name: curve.label,
-        yaxis: curveAxis[curveId] || 'y',
+        yaxis: (curveAxis[curveId] && curveAxis[curveId] !== 'hidden')
+            ? curveAxis[curveId] : 'y',
         visible: curvesOff.has(curveId) ? 'legendonly' : true,
         showlegend: false,
         hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
@@ -624,9 +631,12 @@
       }
     });
 
-    // One compact panel per curve family present in this scope, each
-    // with its own y-scale; the first family rides axis y, the rest
-    // y3, y4, ... (y2 stays the lanes' category axis).
+    // One compact panel per curve family with at least one VISIBLE
+    // curve — the tick defines the shown truth for panel space too; a
+    // family ticked fully off (or outside a ?families= preset)
+    // reclaims its vertical room. Each panel has its own y-scale; the
+    // first family rides axis y, the rest y3, y4, ... (y2 stays the
+    // lanes' category axis).
     panels = [];
     curveAxis = {};
     GROUPS.concat([{name: 'Other', match: function () { return true; }}])
@@ -634,7 +644,10 @@
       const members = curveIds.filter(function (id) {
         return !curveAxis[id] && group.match(id);
       });
-      if (!members.length) return;
+      members.forEach(function (id) { curveAxis[id] = 'hidden'; });
+      if (!members.some(function (id) { return !curvesOff.has(id); })) {
+        return;
+      }
       const traceAxis = panels.length ? 'y' + (panels.length + 2) : 'y';
       members.forEach(function (id) { curveAxis[id] = traceAxis; });
       panels.push({name: group.name, traceAxis: traceAxis,
@@ -809,9 +822,45 @@
     }
     return 'Other';
   }
+  // ?families= preset (comma-separated family names): only the named
+  // families' curves show, overriding remembered preferences — the
+  // durable link form for a focused view, e.g. one campaign's
+  // delivery family. The window links carry the preset along.
+  if (familiesParam) {
+    const wanted = familiesParam.split(',').map(function (s) {
+      return s.trim();
+    }).filter(Boolean);
+    curvesOff.clear();
+    Object.keys(data.curves).forEach(function (id) {
+      if (wanted.indexOf(groupName(id)) < 0) curvesOff.add(id);
+    });
+    document.querySelectorAll('#snapper-th-bar a[href^="?window="]')
+      .forEach(function (link) {
+        const url = new URL(link.href, window.location.href);
+        url.searchParams.set('families', familiesParam);
+        link.href = url.pathname + url.search;
+      });
+  }
   function setCurve(index, on) {
     Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
                    [curveTraceStart + index]);
+  }
+  function syncPanels() {
+    // A family crossing empty <-> populated re-renders so its panel
+    // space follows the tick truth; the zoomed view is preserved.
+    const visibleFamilies = new Set();
+    curveIds.forEach(function (id) {
+      if (!curvesOff.has(id)) visibleFamilies.add(groupName(id));
+    });
+    const current = new Set(panels.map(function (p) { return p.name; }));
+    let differ = visibleFamilies.size !== current.size;
+    visibleFamilies.forEach(function (name) {
+      if (!current.has(name)) differ = true;
+    });
+    if (differ) {
+      rerenderView();
+      renderControls();
+    }
   }
   function setGroup(name, on) {
     (groupMembers[name] || []).forEach(function (curveId) {
@@ -822,6 +871,7 @@
       setCurve(curveIds.indexOf(curveId), on);
     });
     persistPrefs();
+    syncPanels();
   }
   function renderControls() {
     controls.innerHTML = '';
@@ -861,6 +911,7 @@
           else curvesOff.add(curveId);
           setCurve(index, e.target.checked);
           persistPrefs();
+          syncPanels();
         });
       });
       row.appendChild(boxes);
@@ -928,6 +979,7 @@
       setCurve(index, on);
     });
     persistPrefs();
+    syncPanels();
   }
   document.getElementById('snapper-curves-all-on')
       .addEventListener('click', function () { setAll(true); });

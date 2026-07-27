@@ -35,15 +35,38 @@ def _health_url():
     return hook() if hook else None
 
 
-def _scope_options(scope):
-    return [
-        {
+def _scope_options(scope, active_query=''):
+    """Scope switcher entries: each scope, followed by its provider's
+    preset tabs (report-page links with a fixed query string). A preset
+    is active when the current querystring carries its families value."""
+    from urllib.parse import parse_qs
+
+    active_families = (parse_qs(active_query).get('families') or [''])[0]
+    options = []
+    for name in registry.scopes():
+        options.append({
             'name': name,
             'label': _scope_label(name),
-            'active': name == scope,
-        }
-        for name in registry.scopes()
-    ]
+            'active': name == scope and not active_families,
+        })
+        provider = registry.get(name)
+        presets = provider.preset_links if provider else ()
+        if callable(presets):
+            try:
+                presets = presets()
+            except Exception:                                # noqa: BLE001
+                presets = ()
+        for preset in presets or ():
+            preset_families = (parse_qs(preset.get('query') or '')
+                               .get('families') or [''])[0]
+            options.append({
+                'name': name,
+                'label': preset.get('label') or 'preset',
+                'query': preset.get('query') or '',
+                'active': (name == scope and bool(active_families)
+                           and preset_families == active_families),
+            })
+    return options
 
 
 def _dict(value):
@@ -267,7 +290,8 @@ def snapper_report(request, scope, snap_id=None):
         'active_tab': 'report',
         'scope': scope,
         'scope_label': _scope_label(scope),
-        'scope_options': _scope_options(scope),
+        'scope_options': _scope_options(
+            scope, request.META.get('QUERY_STRING', '')),
         'observatory': observatory,
         'observatory_window': window_key,
         'observatory_windows': list(WINDOW_HOURS),

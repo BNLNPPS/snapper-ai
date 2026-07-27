@@ -63,6 +63,12 @@ class ScopeProvider:
     component_cards: dict = field(default_factory=dict)
     card_template: str = ''
     annotate_references: object = None
+    # Preset tabs rendered after this scope in the scope switcher:
+    # {'label', 'query'} dicts linking to the scope's report page with
+    # the query string (e.g. a families= focused view). The host
+    # supplies them; a callable is invoked at render time so presets
+    # can track host state such as the producing campaigns.
+    preset_links: object = ()
 
 
 _REGISTRY = {}

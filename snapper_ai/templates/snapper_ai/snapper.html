@@ -93,7 +93,11 @@
     <div class="snapper-selectors" aria-label="Snapper scope and view">
         <div class="btn-group" role="group" aria-label="Snapper scope">
             {% for option in scope_options %}
-                {% if active_tab == 'report' %}
+                {% if option.query %}
+                    <a class="btn btn-sm {% if option.active %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
+                       href="{% url 'snapper_ai:snapper_report' scope=option.name %}?{{ option.query }}"
+                       {% if option.active %}aria-current="page"{% endif %}>{{ option.label }}</a>
+                {% elif active_tab == 'report' %}
                     <a class="btn btn-sm {% if option.active %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
                        href="{% url 'snapper_ai:snapper_report' scope=option.name %}"
                        {% if option.active %}aria-current="page"{% endif %}>{{ option.label }}</a>
