@@ -15,6 +15,37 @@ from datetime import timedelta
 # embeds never reach past the observatory's own largest named window.
 MAX_EMBED_DAYS = 30
 
+# The embed has no zoom, so a curve needs no more points than the plot
+# has pixels; beyond this cap the payload and render cost buy nothing.
+MAX_POINTS_PER_CURVE = 500
+
+
+def _downsample(points, cap=MAX_POINTS_PER_CURVE):
+    """Bucketed min-max downsampling to at most ~cap points. Each
+    bucket keeps its extreme-value points in time order, so the visual
+    envelope — every spike — survives at any rendering width."""
+    if len(points) <= cap:
+        return points
+    buckets = max(cap // 2 - 1, 1)
+    size = len(points) / buckets
+    out = [points[0]]
+    for index in range(buckets):
+        lo = int(index * size)
+        hi = max(int((index + 1) * size), lo + 1)
+        chunk = points[lo:hi]
+        if not chunk:
+            continue
+        low = min(chunk, key=lambda p: p[1])
+        high = max(chunk, key=lambda p: p[1])
+        keep = [low] if low is high else sorted(
+            [low, high], key=lambda p: p[0])
+        for point in keep:
+            if point is not out[-1]:
+                out.append(point)
+    if points[-1] is not out[-1]:
+        out.append(points[-1])
+    return out
+
 
 def _family_matcher(group):
     prefixes = tuple(group.get('prefixes') or ())
@@ -87,8 +118,12 @@ def embed_context(scope, start, end, families):
         assigned.update(ids)
         panels.append({'name': name, 'ids': ids})
 
-    curves = {curve_id: series['curves'][curve_id]
-              for panel in panels for curve_id in panel['ids']}
+    curves = {}
+    for panel in panels:
+        for curve_id in panel['ids']:
+            curve = series['curves'][curve_id]
+            curves[curve_id] = {'label': curve['label'],
+                                'points': _downsample(curve['points'])}
     report_url = _report_url(scope, start, end, timezone.now())
     return {
         'scope': scope,

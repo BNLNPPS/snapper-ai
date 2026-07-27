@@ -135,7 +135,10 @@ context['snapper_embed'] = embed_context(
 
 `families` names entries of the provider's `curve_groups`, one panel
 each in the order given. The window is clamped to the most recent 30
-days (`embed.MAX_EMBED_DAYS`) with a visible note. Coverage gaps paint
+days (`embed.MAX_EMBED_DAYS`) with a visible note, and each curve is
+downsampled to at most `embed.MAX_POINTS_PER_CURVE` points by bucketed
+min-max, which preserves the visual envelope in a display without
+zoom. Coverage gaps paint
 as the same grey spans as the report page, and curve colors match the
 report page (assigned over the scope's full curve list). A click
 anywhere on the plot opens the scope's report page with the matching
