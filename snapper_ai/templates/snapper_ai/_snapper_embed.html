@@ -9,7 +9,7 @@ history. The curve key above the plot is a static legend.
 <p class="text-danger mb-0">Snapper state history unavailable: {{ embed.error }}</p>
 {% elif not embed.has_points %}
 <p class="text-muted mb-0">No recorded state in this window.
-  <a href="{{ embed.report_url }}">Open the {{ embed.label }} Time history</a>.</p>
+  <a href="{% url 'snapper_ai:snapper_report' scope=embed.scope %}?{{ embed.report_query }}">Open the {{ embed.label }} Time history</a>.</p>
 {% else %}
 {% if embed.clamp_note %}
 <p class="text-muted mb-1">{{ embed.clamp_note }}</p>
@@ -31,6 +31,8 @@ history. The curve key above the plot is a static legend.
       document.getElementById('{{ embed.data_dom_id }}').textContent);
   const plotDiv = document.getElementById('{{ embed.dom_id }}');
   const keyDiv = document.getElementById('{{ embed.dom_id }}-key');
+  {# Path resolved at render time — a cached context must never bake a script-prefix path. #}
+  const reportUrl = '{% url "snapper_ai:snapper_report" scope=embed.scope %}?{{ embed.report_query|escapejs }}';
 
   // The observatory template's curve palette, verbatim: colors are
   // assigned by position in the scope's FULL sorted curve list, so a
@@ -152,7 +154,7 @@ history. The curve key above the plot is a static legend.
                    {responsive: true, displayModeBar: false,
                     doubleClick: false, showTips: false});
     plotDiv.addEventListener('click', function () {
-      window.location = data.report_url;
+      window.location = reportUrl;
     });
   }
 

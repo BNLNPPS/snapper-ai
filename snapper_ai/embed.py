@@ -57,23 +57,24 @@ def _family_matcher(group):
     return match
 
 
-def _report_url(scope, start, end, now):
-    """The report-page target: the named rolling window when the span
-    matches one exactly and the window ends at now, the explicit range
-    otherwise."""
+def _report_query(start, end, now):
+    """Query string for the report-page link: the named rolling window
+    when the span matches one exactly and the window ends at now, the
+    explicit range otherwise. Only the QUERY is stored: the path is
+    resolved by the partial at render time ({% url %}), because a
+    context built outside request context (cached-product background
+    rebuilds) has no script prefix and reverse() there bakes a dead
+    path."""
     from urllib.parse import urlencode
-
-    from django.urls import reverse
 
     from .series import WINDOW_HOURS
 
-    url = reverse('snapper_ai:snapper_report', kwargs={'scope': scope})
     span_hours = (end - start).total_seconds() / 3600.0
     named = next((key for key, hours in WINDOW_HOURS.items()
                   if abs(hours - span_hours) < 0.01), None)
     if named and abs((now - end).total_seconds()) < 300:
-        return f'{url}?{urlencode({"window": named})}'
-    return f'{url}?{urlencode({"start": start.isoformat(), "end": end.isoformat()})}'
+        return urlencode({'window': named})
+    return urlencode({'start': start.isoformat(), 'end': end.isoformat()})
 
 
 def embed_context(scope, start, end, families):
@@ -124,7 +125,6 @@ def embed_context(scope, start, end, families):
             curve = series['curves'][curve_id]
             curves[curve_id] = {'label': curve['label'],
                                 'points': _downsample(curve['points'])}
-    report_url = _report_url(scope, start, end, timezone.now())
     return {
         'scope': scope,
         'label': provider.label or scope,
@@ -137,9 +137,8 @@ def embed_context(scope, start, end, families):
             'all_curve_ids': all_curve_ids,
             'panels': panels,
             'gaps': series['gaps'],
-            'report_url': report_url,
         },
-        'report_url': report_url,
+        'report_query': _report_query(start, end, timezone.now()),
         'clamp_note': clamp_note,
         'has_points': any(curve['points'] for curve in curves.values()),
         'error': '',
