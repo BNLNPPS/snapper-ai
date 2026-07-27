@@ -279,16 +279,31 @@ def snapper_report(request, scope, snap_id=None):
                          else provider.focus_view)
         except Exception:                                    # noqa: BLE001
             focus_def = None
+    focus_selected = []
     if focus_def:
-        selected = (request.GET.get(focus_def.get('param') or 'focus')
-                    or '').strip()
-        if selected:
+        raw = (request.GET.get(focus_def.get('param') or 'focus')
+               or '').strip()
+        if raw:
             options = focus_def.get('options') or []
-            focus_option = next(
-                (o for o in options if o.get('value') == selected),
-                next((o for o in options
-                      if o.get('value') == focus_def.get('default')),
-                     options[0] if options else None))
+            by_value = {o.get('value'): o for o in options}
+            focus_selected = [v for v in
+                              (s.strip() for s in raw.split(','))
+                              if v in by_value]
+            if not focus_selected and options:
+                default = by_value.get(focus_def.get('default'))
+                focus_selected = [(default or options[0]).get('value')]
+            chosen = [by_value[v] for v in focus_selected]
+            # One or several options at once: families union, window
+            # floored at the earliest start.
+            starts = [o.get('start') for o in chosen if o.get('start')]
+            focus_option = {
+                'value': ','.join(focus_selected),
+                'families': [f for o in chosen
+                             for f in (o.get('families') or ())],
+                'component': chosen[0].get('component') or '',
+                'collapse_below': chosen[0].get('collapse_below'),
+                'start': min(starts) if starts else None,
+            }
 
     user_prefs = _snapper_prefs(request, scope)
     now = timezone.now()
@@ -352,6 +367,16 @@ def snapper_report(request, scope, snap_id=None):
                     'points': sorted(other_points.items()),
                 }
         param = focus_def.get('param') or 'focus'
+        default = focus_def.get('default') or ''
+
+        def _toggle_url(value):
+            # A tick toggles membership; the last member cannot untick
+            # (the empty selection falls back to the default).
+            after = [v for v in focus_selected if v != value]
+            if value not in focus_selected:
+                after = focus_selected + [value]
+            return f"?{param}={','.join(after) if after else default}"
+
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
             'param': param,
@@ -359,8 +384,8 @@ def snapper_report(request, scope, snap_id=None):
             'groups': groups,
             'options': [
                 {'value': o.get('value'), 'label': o.get('label'),
-                 'active': o.get('value') == focus_option.get('value'),
-                 'url': f"?{param}={o.get('value')}"}
+                 'active': o.get('value') in focus_selected,
+                 'url': _toggle_url(o.get('value'))}
                 for o in (focus_def.get('options') or ())],
         }
 
