@@ -319,6 +319,38 @@ def snapper_report(request, scope, snap_id=None):
         # The focused record carries its own provenance; the scope's
         # capture-coverage shading belongs to the scope view.
         observatory['gaps'] = []
+        # Fold the long tail of a stacked family: members below the
+        # collapse fraction of the family total merge into one 'other'
+        # band (id suffix zz_other, drawn atop the stack). Hundreds of
+        # invisible slivers otherwise cost real browsers dearly; the
+        # fold is stated, never silent.
+        collapse = float(focus_option.get('collapse_below') or 0)
+        if collapse > 0:
+            for group in groups:
+                if not group.get('stacked'):
+                    continue
+                prefix = (group.get('prefixes') or [''])[0]
+                members = {
+                    curve_id: sum(p[1] for p in curve['points'])
+                    for curve_id, curve in observatory['curves'].items()
+                    if curve_id.startswith(prefix)}
+                family_total = sum(members.values())
+                if not family_total:
+                    continue
+                folded = [curve_id for curve_id, total in members.items()
+                          if total < collapse * family_total]
+                if len(folded) < 2:
+                    continue
+                other_points = {}
+                for curve_id in folded:
+                    for x, y in observatory['curves'][curve_id]['points']:
+                        other_points[x] = other_points.get(x, 0) + y
+                    del observatory['curves'][curve_id]
+                observatory['curves'][f'{prefix}zz_other'] = {
+                    'label': (f'{len(folded)} configurations, each '
+                              f'below {collapse:.0%} of the total'),
+                    'points': sorted(other_points.items()),
+                }
         param = focus_def.get('param') or 'focus'
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
@@ -703,15 +735,32 @@ def snapper_cut(request, scope):
         return render(request, 'snapper_ai/_snapper_cut.html',
                       {'error': str(e)})
     snap = SystemSnap.objects.filter(id=result.snap_id).first()
-    previous_snap = (SystemSnap.objects
-                     .filter(scope=scope, snap_time__lt=snap.snap_time)
-                     .order_by('-snap_time').first()) if snap else None
 
     # ?component= narrows the cut to one component's card — the health
     # lane's pop-up detail uses this compact form. The narrowing gates
     # the WORK, not just the output: no reference scan, no other
-    # component's card build.
+    # component's card build. A component cut also resolves to the
+    # latest snap CARRYING that component (e.g. a daily record's snap),
+    # not merely the latest snap; the previous snap for deltas is the
+    # previous one carrying it.
     component_filter = (request.GET.get('component') or '').strip()
+    if component_filter and snap is not None and component_filter not in (
+            (snap.state or {}).get('components') or {}):
+        snap = (SystemSnap.objects
+                .filter(scope=scope, snap_time__lte=result.requested_at,
+                        state__components__has_key=component_filter)
+                .order_by('-snap_time').first()) or snap
+    if component_filter and snap is not None:
+        previous_snap = (
+            SystemSnap.objects
+            .filter(scope=scope, snap_time__lt=snap.snap_time,
+                    state__components__has_key=component_filter)
+            .order_by('-snap_time').first())
+    else:
+        previous_snap = (SystemSnap.objects
+                         .filter(scope=scope,
+                                 snap_time__lt=snap.snap_time)
+                         .order_by('-snap_time').first()) if snap else None
 
     references = []
     if not component_filter:
@@ -750,12 +799,13 @@ def snapper_cut(request, scope):
             _age_text((result.requested_at - assessed).total_seconds())
             if assessed and assessed.tzinfo else None)
 
+    actual_snap_time = snap.snap_time if snap is not None else result.snap_time
     return render(request, 'snapper_ai/_snapper_cut.html', {
         'scope': scope,
         'requested_at': result.requested_at,
-        'actual_snap_time': result.snap_time,
+        'actual_snap_time': actual_snap_time,
         'snap_age_text': _age_text(
-            (result.requested_at - result.snap_time).total_seconds()),
+            (result.requested_at - actual_snap_time).total_seconds()),
         'coverage': coverage,
         'coverage_notice': coverage_notice,
         'previous_age_text': (

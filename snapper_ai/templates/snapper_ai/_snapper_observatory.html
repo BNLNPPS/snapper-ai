@@ -383,6 +383,7 @@
   // Everything derived from `data`, rebuilt by render() so the 60-second
   // soft refresh can update the plot in place with no page reload.
   let laneIds = [], curveIds = [], curveColor = {}, curveTraceStart = 0;
+  let curveTraceIndex = {};
   let gapShapes = [], fullRange = [0, 0], groupMembers = {};
   let laneLabelById = {}, parentKids = {}, curveAxis = {}, panels = [];
   // Minimum on-screen bar length for episodic run periods, in ms of the
@@ -562,16 +563,78 @@
       });
     });
 
-    // Curves: stepped lines with fixed colors shared by the tick
-    // boxes, each on its family panel's own y-axis. A stacked family
-    // renders as stacked step areas instead — the per-member quilt —
-    // with zero-filled gaps so staggered first appearances stack
-    // correctly.
+    // Curves, each on its family panel's own y-axis. Stacked families
+    // (the per-member quilt) are stacked HERE — running sums drawn as
+    // consecutive tonexty fills, bottom-up — because Plotly's
+    // stackgroup pipeline degrades to plain lines and stalls under
+    // react(). Members of a stacked family show and hide together
+    // (the family toggle); each fill hovers with its own member value.
     curveTraceStart = traces.length;
+    curveTraceIndex = {};
+    const stackedFamilies = {};
     curveIds.forEach(function (curveId) {
-      const curve = data.curves[curveId];
       const def = groupDef(curveId);
-      const trace = {
+      if (def && def.stacked) {
+        (stackedFamilies[def.name] = stackedFamilies[def.name] || [])
+            .push(curveId);
+      }
+    });
+    Object.keys(stackedFamilies).forEach(function (familyName) {
+      const members = stackedFamilies[familyName];
+      const xSeen = {};
+      members.forEach(function (id) {
+        data.curves[id].points.forEach(function (p) { xSeen[p[0]] = 1; });
+      });
+      const unionX = Object.keys(xSeen).sort();
+      const running = unionX.map(function () { return 0; });
+      const familyOff = members.every(function (id) {
+        return curvesOff.has(id);
+      });
+      members.forEach(function (id, memberIndex) {
+        const values = {};
+        data.curves[id].points.forEach(function (p) {
+          values[p[0]] = +p[1] || 0;
+        });
+        const tops = [], own = [];
+        unionX.forEach(function (x, xi) {
+          running[xi] += (values[x] || 0);
+          tops.push(running[xi]);
+          own.push(values[x] || 0);
+        });
+        curveTraceIndex[id] = traces.length;
+        traces.push({
+          x: unionX, y: tops, customdata: own,
+          mode: 'lines',
+          line: {shape: 'hv', width: 0.5, color: curveColor[id]},
+          fill: memberIndex === 0 ? 'tozeroy' : 'tonexty',
+          fillcolor: curveColor[id],
+          name: data.curves[id].label,
+          yaxis: (curveAxis[id] && curveAxis[id] !== 'hidden')
+              ? curveAxis[id] : 'y',
+          visible: familyOff ? 'legendonly' : true,
+          showlegend: false,
+          hovertemplate: data.curves[id].label
+              + ': <b>%{customdata}</b><br>%{x}<extra></extra>',
+        });
+      });
+    });
+    // Family totals draw beneath their siblings: where a total and a
+    // subcategory coincide (early days, one dominant group), the
+    // subcategory owns the pixel and the hover floater — the total
+    // never masquerades as the identity of what the eye sees.
+    const flatIds = curveIds.filter(function (id) {
+      const def = groupDef(id);
+      return !(def && def.stacked);
+    }).sort(function (a, b) {
+      const aTotal = a.indexOf('__total') >= 0 ? 0 : 1;
+      const bTotal = b.indexOf('__total') >= 0 ? 0 : 1;
+      return (aTotal - bTotal)
+          || (a < b ? -1 : a > b ? 1 : 0);
+    });
+    flatIds.forEach(function (curveId) {
+      const curve = data.curves[curveId];
+      curveTraceIndex[curveId] = traces.length;
+      traces.push({
         x: curve.points.map(p => p[0]),
         y: curve.points.map(p => p[1]),
         mode: 'lines',
@@ -582,15 +645,7 @@
         visible: curvesOff.has(curveId) ? 'legendonly' : true,
         showlegend: false,
         hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
-      };
-      if (def && def.stacked) {
-        trace.stackgroup = def.name;
-        trace.stackgaps = 'infer zero';
-        trace.line = {shape: 'hv', width: 0.5,
-                      color: curveColor[curveId]};
-        trace.fillcolor = curveColor[curveId];
-      }
-      traces.push(trace);
+      });
     });
     failTriangleTraces().forEach(function (t) { traces.push(t); });
     return traces;
@@ -605,7 +660,9 @@
     fullRange = [Date.parse(data.start), Date.parse(data.end)];
     curveColor = {};
     curveIds.forEach(function (curveId, index) {
-      curveColor[curveId] = PALETTE[index % PALETTE.length];
+      // The folded long-tail band is always neutral grey.
+      curveColor[curveId] = curveId.indexOf('zz_other') >= 0
+          ? '#9e9e9e' : PALETTE[index % PALETTE.length];
     });
 
     // Lane order: base lanes as delivered, each expandable parent's
@@ -885,9 +942,11 @@
         });
     }
   }
-  function setCurve(index, on) {
+  function setCurve(curveId, on) {
+    const index = curveTraceIndex[curveId];
+    if (index === undefined) return;
     Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
-                   [curveTraceStart + index]);
+                   [index]);
   }
   function syncPanels() {
     // A family crossing empty <-> populated re-renders so its panel
@@ -907,13 +966,22 @@
     }
   }
   function setGroup(name, on) {
+    // One batched restyle: per-member calls redraw once per member,
+    // which is seconds of freeze on a large family.
+    const indices = [];
     (groupMembers[name] || []).forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
-      setCurve(curveIds.indexOf(curveId), on);
+      if (curveTraceIndex[curveId] !== undefined) {
+        indices.push(curveTraceIndex[curveId]);
+      }
     });
+    if (indices.length) {
+      Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
+                     indices);
+    }
     persistPrefs();
     syncPanels();
   }
@@ -971,7 +1039,7 @@
         label.querySelector('input').addEventListener('change', function (e) {
           if (e.target.checked) curvesOff.delete(curveId);
           else curvesOff.add(curveId);
-          setCurve(index, e.target.checked);
+          setCurve(curveId, e.target.checked);
           persistPrefs();
           syncPanels();
         });
@@ -1033,13 +1101,20 @@
     });
   }
   function setAll(on) {
-    curveIds.forEach(function (curveId, index) {
+    const indices = [];
+    curveIds.forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
-      setCurve(index, on);
+      if (curveTraceIndex[curveId] !== undefined) {
+        indices.push(curveTraceIndex[curveId]);
+      }
     });
+    if (indices.length) {
+      Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
+                     indices);
+    }
     persistPrefs();
     syncPanels();
   }
@@ -1928,8 +2003,30 @@
   window.snapperObservatory = {
     dataText: function () { return dataText; },
     refresh: function (text) {
+      const incoming = JSON.parse(text);
+      // Curves and lanes unchanged (daily records change once a day):
+      // slide the axis instead of rebuilding hundreds of traces.
+      if (JSON.stringify(incoming.curves) === JSON.stringify(data.curves)
+          && JSON.stringify(incoming.lanes) === JSON.stringify(data.lanes)) {
+        dataText = text;
+        data = incoming;
+        basisCorrection = data.end_ms - Date.parse(data.end);
+        fullRange = [Date.parse(data.start), Date.parse(data.end)];
+        const countEl = document.getElementById('snapper-snap-count');
+        if (countEl) countEl.textContent = data.snap_count;
+        if (!viewIsZoomed()) {
+          suppressPush = true;
+          Plotly.relayout(plotDiv, {
+            'xaxis.range': [data.start, data.end]});
+          setTimeout(function () {
+            lastRange = currentRange();
+            suppressPush = false;
+          }, 100);
+        }
+        return;
+      }
       dataText = text;
-      data = JSON.parse(text);
+      data = incoming;
       buildLaneRow();
       const viewTrue = viewIsZoomed()
           ? currentRange().map(ms => ms + basisCorrection) : null;
