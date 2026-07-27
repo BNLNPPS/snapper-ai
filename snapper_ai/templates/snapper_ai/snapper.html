@@ -108,6 +108,15 @@
                 {% endif %}
             {% endfor %}
         </div>
+        {% if observatory_focus %}
+        <div class="btn-group" role="group" aria-label="{{ observatory_focus.label }} selection">
+            {% for option in observatory_focus.options %}
+            <a class="btn btn-sm {% if option.active %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
+               href="{{ option.url }}"
+               {% if option.active %}aria-current="page"{% endif %}>{{ option.label }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
         <div class="btn-group" role="group" aria-label="Snapper view">
             <a class="btn btn-sm {% if active_tab == 'report' %}btn-secondary active{% else %}btn-outline-secondary{% endif %}"
                href="{% url 'snapper_ai:snapper_report' scope=scope %}"

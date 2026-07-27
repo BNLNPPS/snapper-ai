@@ -725,8 +725,10 @@
                visible: false, fixedrange: true},
       shapes: gapShapes.concat(cutShapeList()),
       hovermode: 'closest',
-      // The floater belongs on the tile, not hours away from it.
-      hoverdistance: 8,
+      // The floater belongs on the tile, not hours away from it — but
+      // without activity tiles (curves views, sparse daily steps
+      // included) the cursor deserves a generous reach.
+      hoverdistance: isActivityScope() ? 8 : 40,
       annotations: [],
     };
     // No namespace swatches anywhere: each lane's own bars, beside
@@ -834,12 +836,26 @@
     Object.keys(data.curves).forEach(function (id) {
       if (wanted.indexOf(groupName(id)) < 0) curvesOff.add(id);
     });
-    document.querySelectorAll('#snapper-th-bar a[href^="?window="]')
-      .forEach(function (link) {
-        const url = new URL(link.href, window.location.href);
-        url.searchParams.set('families', familiesParam);
-        link.href = url.pathname + url.search;
-      });
+  }
+  // Window-strip links carry the focused-view parameters along.
+  {
+    const carry = [['families', familiesParam]];
+    const focusParam = '{{ observatory_focus.param|default:""|escapejs }}';
+    if (focusParam) {
+      carry.push([focusParam, new URL(window.location.href)
+          .searchParams.get(focusParam) || '']);
+    }
+    const live = carry.filter(function (pair) { return pair[1]; });
+    if (live.length) {
+      document.querySelectorAll('#snapper-th-bar a[href^="?window="]')
+        .forEach(function (link) {
+          const url = new URL(link.href, window.location.href);
+          live.forEach(function (pair) {
+            url.searchParams.set(pair[0], pair[1]);
+          });
+          link.href = url.pathname + url.search;
+        });
+    }
   }
   function setCurve(index, on) {
     Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
@@ -1541,7 +1557,12 @@
     const lookupIso = new Date(
         snapToActivity(cutTrueMs - basisCorrection) + basisCorrection
     ).toISOString();
-    fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso))
+    // A focus view narrows the cut to its component: on a delivery
+    // view a click answers with the delivery card alone.
+    const focusComponent = '{{ observatory_focus.component|default:""|escapejs }}';
+    fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
+          + (focusComponent
+             ? '&component=' + encodeURIComponent(focusComponent) : ''))
       .then(r => r.text())
       .then(function (fragment) {
         cutPanel.hidden = false;

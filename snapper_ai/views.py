@@ -41,9 +41,11 @@ def _scope_options(scope, active_query=''):
     is active when the current querystring carries its families value."""
     from urllib.parse import parse_qs
 
-    active_families = (parse_qs(active_query).get('families') or [''])[0]
+    active_params = parse_qs(active_query)
+    active_families = (active_params.get('families') or [''])[0]
     options = []
     for name in registry.scopes():
+        plain_index = len(options)
         options.append({
             'name': name,
             'label': _scope_label(name),
@@ -66,6 +68,24 @@ def _scope_options(scope, active_query=''):
                 'active': (name == scope and bool(active_families)
                            and preset_families == active_families),
             })
+        focus = provider.focus_view if provider else None
+        if focus is not None:
+            try:
+                focus = focus() if callable(focus) else focus
+            except Exception:                                # noqa: BLE001
+                focus = None
+        if focus:
+            param = focus.get('param') or 'focus'
+            focus_active = (name == scope
+                            and bool(active_params.get(param)))
+            options.append({
+                'name': name,
+                'label': focus.get('label') or 'Focus',
+                'query': f"{param}={focus.get('default') or ''}",
+                'active': focus_active,
+            })
+            if focus_active:
+                options[plain_index]['active'] = False
     return options
 
 
@@ -246,12 +266,68 @@ def snapper_report(request, scope, snap_id=None):
     snaps = SystemSnap.objects.filter(scope=scope).order_by('-snap_time')
     latest_snap = snaps.first()
 
+    # Focus view (registry.focus_view): the report narrowed to one
+    # host-defined selection — only its families, its component in the
+    # cut, its start as the window floor.
+    provider = registry.get(scope)
+    focus_def = None
+    focus_option = None
+    if provider is not None and provider.focus_view is not None:
+        try:
+            focus_def = (provider.focus_view()
+                         if callable(provider.focus_view)
+                         else provider.focus_view)
+        except Exception:                                    # noqa: BLE001
+            focus_def = None
+    if focus_def:
+        selected = (request.GET.get(focus_def.get('param') or 'focus')
+                    or '').strip()
+        if selected:
+            options = focus_def.get('options') or []
+            focus_option = next(
+                (o for o in options if o.get('value') == selected),
+                next((o for o in options
+                      if o.get('value') == focus_def.get('default')),
+                     options[0] if options else None))
+
     user_prefs = _snapper_prefs(request, scope)
     now = timezone.now()
     window_start, window_end, window_key = parse_window(
         request, now,
         default_window=str(user_prefs.get('window') or DEFAULT_WINDOW))
+    if focus_option is not None and focus_option.get('start'):
+        window_start = max(window_start, focus_option['start'])
     observatory = observatory_series(scope, window_start, window_end)
+
+    focus_context = None
+    if focus_option is not None:
+        # Only the focused families' curves and control rows render.
+        wanted = set(focus_option.get('families') or ())
+        groups = [g for g in (provider.curve_groups or ())
+                  if g.get('name') in wanted]
+
+        def _in_focus(curve_id):
+            return any(
+                curve_id in (g.get('ids') or ())
+                or str(curve_id).startswith(tuple(g.get('prefixes') or ()))
+                for g in groups)
+
+        observatory['curves'] = {
+            curve_id: curve
+            for curve_id, curve in observatory['curves'].items()
+            if _in_focus(curve_id)}
+        param = focus_def.get('param') or 'focus'
+        focus_context = {
+            'label': focus_def.get('label') or 'Focus',
+            'param': param,
+            'component': focus_option.get('component') or '',
+            'groups': groups,
+            'options': [
+                {'value': o.get('value'), 'label': o.get('label'),
+                 'active': o.get('value') == focus_option.get('value'),
+                 'url': f"?{param}={o.get('value')}"}
+                for o in (focus_def.get('options') or ())],
+        }
 
     # Window stepping: the arrows shift the whole window through the
     # recorded history, loading older or newer data server-side. No
@@ -301,9 +377,11 @@ def snapper_report(request, scope, snap_id=None):
         'observatory_prev_url': observatory_prev_url,
         'observatory_next_url': observatory_next_url,
         'observatory_range_label': observatory_range_label,
-        'observatory_groups': list(
-            (registry.get(scope).curve_groups or ())
-            if registry.get(scope) else ()),
+        'observatory_groups': (
+            focus_context['groups'] if focus_context else list(
+                (registry.get(scope).curve_groups or ())
+                if registry.get(scope) else ())),
+        'observatory_focus': focus_context,
         'health_url': _health_url(),
     })
 

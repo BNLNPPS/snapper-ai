@@ -69,6 +69,15 @@ class ScopeProvider:
     # supplies them; a callable is invoked at render time so presets
     # can track host state such as the producing campaigns.
     preset_links: object = ()
+    # A focus view: one scope-switcher tab opening the report narrowed
+    # to a host-defined selection. A callable returning
+    # {'param', 'label', 'default', 'options': [{'value', 'label',
+    # 'families': [...], 'component': name, 'start': datetime|None}]}.
+    # When the report request carries ?<param>=<value>: only the
+    # option's families' curves and control rows render, the window
+    # start clamps to the option's start, the cut narrows to the
+    # option's component, and the options render as a tab row.
+    focus_view: object = None
 
 
 _REGISTRY = {}
