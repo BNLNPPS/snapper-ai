@@ -1,0 +1,177 @@
+{% comment %}
+Embeddable curves-only Time history: stacked per-family curve panels
+over one window, rendered from an embed_context() dict passed as
+``embed`` (see embed.py). Read-only — no controls, no zoom, no
+preferences; a click anywhere on the plot opens the scope's full Time
+history. The curve key above the plot is a static legend.
+{% endcomment %}
+{% if embed.error %}
+<p class="text-danger mb-0">Snapper state history unavailable: {{ embed.error }}</p>
+{% elif not embed.has_points %}
+<p class="text-muted mb-0">No recorded state in this window.
+  <a href="{{ embed.report_url }}">Open the {{ embed.label }} Time history</a>.</p>
+{% else %}
+{% if embed.clamp_note %}
+<p class="text-muted mb-1">{{ embed.clamp_note }}</p>
+{% endif %}
+<style>
+  #{{ embed.dom_id }} .nsewdrag,
+  #{{ embed.dom_id }} .ewdrag,
+  #{{ embed.dom_id }} .drag {
+    cursor: pointer !important;
+  }
+</style>
+<div id="{{ embed.dom_id }}-key" class="mb-1"></div>
+<div id="{{ embed.dom_id }}" style="min-height:60px; cursor:pointer"
+     title="Open the {{ embed.label }} Time history"></div>
+{{ embed.data|json_script:embed.data_dom_id }}
+<script>
+(function () {
+  const data = JSON.parse(
+      document.getElementById('{{ embed.data_dom_id }}').textContent);
+  const plotDiv = document.getElementById('{{ embed.dom_id }}');
+  const keyDiv = document.getElementById('{{ embed.dom_id }}-key');
+
+  // The observatory template's curve palette, verbatim: colors are
+  // assigned by position in the scope's FULL sorted curve list, so a
+  // curve wears the same color here and on the report page.
+  const PALETTE = ['#1565c0', '#6a1b9a', '#00838f', '#ef6c00', '#33691e',
+                   '#ad1457', '#4527a0', '#00695c', '#bf360c', '#37474f',
+                   '#0277bd', '#8e24aa', '#f4511e', '#558b2f', '#5d4037',
+                   '#c2185b'];
+  const curveColor = {};
+  data.all_curve_ids.forEach(function (id, index) {
+    curveColor[id] = PALETTE[index % PALETTE.length];
+  });
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function renderKey(panels) {
+    let html = '';
+    panels.forEach(function (panel) {
+      html += '<div class="d-flex flex-wrap column-gap-3 row-gap-1 '
+          + 'align-items-baseline">'
+          + '<strong>' + escapeHtml(panel.name) + ':</strong>';
+      panel.ids.forEach(function (id) {
+        html += '<span><span style="display:inline-block;width:1.1em;'
+            + 'height:0.28em;vertical-align:middle;background:'
+            + curveColor[id] + '"></span> '
+            + escapeHtml(data.curves[id].label) + '</span>';
+      });
+      html += '</div>';
+    });
+    keyDiv.innerHTML = html;
+  }
+
+  function render() {
+    // A family with no recorded points in the window earns no panel.
+    const panels = data.panels.filter(function (panel) {
+      return panel.ids.some(function (id) {
+        return (data.curves[id].points || []).length;
+      });
+    });
+    renderKey(panels);
+
+    const traces = [];
+    panels.forEach(function (panel, index) {
+      const axis = index === 0 ? 'y' : 'y' + (index + 1);
+      panel.axisKey = index === 0 ? 'yaxis' : 'yaxis' + (index + 1);
+      panel.traceAxis = axis;
+      panel.ids.forEach(function (id) {
+        const curve = data.curves[id];
+        traces.push({
+          x: curve.points.map(p => p[0]),
+          y: curve.points.map(p => p[1]),
+          mode: 'lines',
+          line: {shape: 'hv', width: 2.5, color: curveColor[id]},
+          name: curve.label,
+          yaxis: axis,
+          showlegend: false,
+          hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
+          hoverlabel: {font: {size: 14}},
+        });
+      });
+    });
+
+    // Known coverage gaps render as grey spans, never painted over.
+    const gapShapes = data.gaps.map(function (gap) {
+      return {
+        type: 'rect', xref: 'x', yref: 'paper',
+        x0: gap[0] || data.start, x1: gap[1], y0: 0, y1: 1,
+        fillcolor: 'rgba(120,120,120,0.35)', line: {width: 0},
+        layer: 'below',
+      };
+    });
+
+    // The observatory's panel geometry: 150px panels, a 30px gap above
+    // each carrying its family annotation.
+    const panelPx = 150, panelGapPx = 30;
+    const innerPx = panels.length * (panelPx + panelGapPx);
+    function domainOf(topPx, bottomPx) {
+      return [Math.max(1 - bottomPx / innerPx, 0),
+              Math.min(1 - topPx / innerPx, 1)];
+    }
+    const layout = {
+      margin: {l: 60, r: 20, t: 10, b: 45},
+      height: innerPx + 10 + 45,
+      font: {size: 15},
+      showlegend: false,
+      xaxis: {type: 'date', range: [data.start, data.end],
+              domain: [0, 1], fixedrange: true,
+              anchor: panels[panels.length - 1].traceAxis,
+              showspikes: true, spikemode: 'across',
+              spikesnap: 'cursor', spikedash: 'dot',
+              spikethickness: 1, spikecolor: '#78909c'},
+      shapes: gapShapes,
+      hovermode: 'closest',
+      annotations: [],
+    };
+    panels.forEach(function (panel, index) {
+      const topPx = index * (panelPx + panelGapPx) + panelGapPx;
+      layout[panel.axisKey] = {
+        domain: domainOf(topPx, topPx + panelPx),
+        rangemode: 'tozero',
+        fixedrange: true,
+        anchor: 'x',
+      };
+      layout.annotations.push({
+        xref: 'paper', x: 0, xanchor: 'left',
+        yref: panel.traceAxis + ' domain', y: 1, yanchor: 'bottom',
+        yshift: 2, showarrow: false,
+        text: '<b>' + escapeHtml(panel.name) + '</b>',
+        font: {size: 13, color: '#37474f'},
+        bgcolor: 'rgba(255,255,255,0.92)',
+        borderpad: 3,
+      });
+    });
+    Plotly.newPlot(plotDiv, traces, layout,
+                   {responsive: true, displayModeBar: false,
+                    doubleClick: false, showTips: false});
+    plotDiv.addEventListener('click', function () {
+      window.location = data.report_url;
+    });
+  }
+
+  if (window.Plotly) {
+    render();
+  } else {
+    let loader = document.querySelector('script[data-snapper-plotly]');
+    if (!loader) {
+      loader = document.createElement('script');
+      loader.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js';
+      loader.setAttribute('data-snapper-plotly', '1');
+      document.head.appendChild(loader);
+    }
+    loader.addEventListener('load', render);
+    loader.addEventListener('error', function () {
+      plotDiv.innerHTML = '<p class="text-danger">The plot library '
+          + 'failed to load.</p>';
+    });
+  }
+})();
+</script>
+{% endif %}

@@ -115,7 +115,36 @@ there. The shared chip, delta, and time vocabulary comes from
 `snapper_ai.presentation` — host modules import only public names from
 `presentation` and `registry`.
 
-## 4. Own the transports you want
+## 4. Embed curve panels on host pages
+
+Any host page can carry a compact, read-only rendering of a scope's
+curve families — the Time history's stacked panels without lanes,
+controls, or preferences. Build the context in the host view and
+render it with the shipped partial:
+
+```python
+from snapper_ai.embed import embed_context
+
+context['snapper_embed'] = embed_context(
+    'mysystem', start, end, families=('Jobs',))
+```
+
+```django
+{% include 'snapper_ai/_snapper_embed.html' with embed=snapper_embed %}
+```
+
+`families` names entries of the provider's `curve_groups`, one panel
+each in the order given. The window is clamped to the most recent 30
+days (`embed.MAX_EMBED_DAYS`) with a visible note. Coverage gaps paint
+as the same grey spans as the report page, and curve colors match the
+report page (assigned over the scope's full curve list). A click
+anywhere on the plot opens the scope's report page with the matching
+window — the named rolling window when the span matches one exactly,
+the explicit range otherwise. Errors, including an unknown scope or
+family, render visibly in the partial. The swf host embeds the
+epicprod jobs and tasks families on its PanDA activity page.
+
+## 5. Own the transports you want
 
 REST and MCP transports for the temporal queries are host territory by
 design: the generic queries return typed evidence envelopes
