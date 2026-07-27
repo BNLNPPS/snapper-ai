@@ -562,12 +562,16 @@
       });
     });
 
-    // Curves: stepped lines with fixed colors shared by the tick boxes,
-    // each on its family panel's own y-axis.
+    // Curves: stepped lines with fixed colors shared by the tick
+    // boxes, each on its family panel's own y-axis. A stacked family
+    // renders as stacked step areas instead — the per-member quilt —
+    // with zero-filled gaps so staggered first appearances stack
+    // correctly.
     curveTraceStart = traces.length;
     curveIds.forEach(function (curveId) {
       const curve = data.curves[curveId];
-      traces.push({
+      const def = groupDef(curveId);
+      const trace = {
         x: curve.points.map(p => p[0]),
         y: curve.points.map(p => p[1]),
         mode: 'lines',
@@ -578,7 +582,15 @@
         visible: curvesOff.has(curveId) ? 'legendonly' : true,
         showlegend: false,
         hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
-      });
+      };
+      if (def && def.stacked) {
+        trace.stackgroup = def.name;
+        trace.stackgaps = 'infer zero';
+        trace.line = {shape: 'hv', width: 0.5,
+                      color: curveColor[curveId]};
+        trace.fillcolor = curveColor[curveId];
+      }
+      traces.push(trace);
     });
     failTriangleTraces().forEach(function (t) { traces.push(t); });
     return traces;
@@ -813,11 +825,19 @@
   const groupsEl = document.getElementById('snapper-observatory-groups');
   const GROUPS = (groupsEl ? JSON.parse(groupsEl.textContent) : [])
       .map(function (g) {
-    return {name: g.name, match: function (id) {
+    return {name: g.name, stacked: !!g.stacked, compact: !!g.compact,
+            default_off: !!g.default_off,
+            match: function (id) {
       return (g.prefixes || []).some(function (p) {
         return id.indexOf(p) === 0; })
           || (g.ids || []).indexOf(id) >= 0; }};
   });
+  function groupDef(curveId) {
+    for (const group of GROUPS) {
+      if (group.match(curveId)) return group;
+    }
+    return null;
+  }
   function groupName(curveId) {
     for (const group of GROUPS) {
       if (group.match(curveId)) return group.name;
@@ -835,6 +855,14 @@
     curvesOff.clear();
     Object.keys(data.curves).forEach(function (id) {
       if (wanted.indexOf(groupName(id)) < 0) curvesOff.add(id);
+    });
+  }
+  // With no remembered selection, default_off families start unticked
+  // (e.g. cumulative series behind a primary stacked display).
+  if (!familiesParam && !curvesOff.size) {
+    Object.keys(data.curves).forEach(function (id) {
+      const def = groupDef(id);
+      if (def && def.default_off) curvesOff.add(id);
     });
   }
   // Window-strip links carry the focused-view parameters along.
@@ -910,6 +938,24 @@
       row.appendChild(head);
       const boxes = document.createElement('div');
       boxes.className = 'snapper-curve-row-boxes';
+      const rowDef = GROUPS.filter(function (g) {
+        return g.name === name;
+      })[0];
+      if (rowDef && rowDef.compact) {
+        // A compact family (hundreds of members, e.g. the per-PC
+        // quilt) lists its size, not a box per member.
+        const info = document.createElement('span');
+        const shown = groupMembers[name].filter(function (id) {
+          return !curvesOff.has(id);
+        }).length;
+        info.className = 'text-muted';
+        info.textContent = groupMembers[name].length + ' members, '
+            + shown + ' shown';
+        boxes.appendChild(info);
+        row.appendChild(boxes);
+        controls.appendChild(row);
+        return;
+      }
       groupMembers[name].forEach(function (curveId) {
         const index = curveIds.indexOf(curveId);
         const id = 'snapper-curve-' + curveId;

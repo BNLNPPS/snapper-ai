@@ -316,6 +316,9 @@ def snapper_report(request, scope, snap_id=None):
             curve_id: curve
             for curve_id, curve in observatory['curves'].items()
             if _in_focus(curve_id)}
+        # The focused record carries its own provenance; the scope's
+        # capture-coverage shading belongs to the scope view.
+        observatory['gaps'] = []
         param = focus_def.get('param') or 'focus'
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
