@@ -46,14 +46,82 @@ history. The curve key above the plot is a static legend.
     curveColor[id] = PALETTE[index % PALETTE.length];
   });
 
+  // Namespace lane colors: hue = namespace identity from the report
+  // page's 8-hue pool; lightness = phase (dark datataking, mid
+  // processing tail, lightest no-recorded-end); fault states keep
+  // their universal colors. The report page's sticky hue map is read
+  // (never written) from localStorage so a namespace wears the same
+  // hue here and there in the same browser.
+  const scope = '{{ embed.scope|escapejs }}';
+  const NS_PALETTE = ['#1565c0', '#6a1b9a', '#00acc1', '#f57c00',
+                      '#00838f', '#ad1457', '#5d4037', '#37474f'];
+  const FAULT_COLORS = {warning: '#f9a825', error: '#c62828',
+                        failed: '#c62828', terminated: '#ef6c00',
+                        unknown: '#9e9e9e', pending: '#9e9e9e'};
+  function mixWhite(hex, f) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const m = function (c) { return Math.round(c + (255 - c) * f); };
+    const h = function (c) { return ('0' + c.toString(16)).slice(-2); };
+    return '#' + h(m(r)) + h(m(g)) + h(m(b));
+  }
+  let nsHue = {}, nsHueNext = 0;
+  try {
+    const saved = JSON.parse(
+        localStorage.getItem('snapper-ui-' + scope + ':nshue') || '{}');
+    if (saved && typeof saved.map === 'object') {
+      nsHue = saved.map || {};
+      nsHueNext = saved.next || 0;
+    }
+  } catch (e) { nsHue = {}; nsHueNext = 0; }
+  Object.keys(data.lanes || {})
+    .filter(function (id) { return nsHue[id] === undefined; })
+    .sort(function (x, y) {
+      return data.lanes[x].label.localeCompare(data.lanes[y].label);
+    })
+    .forEach(function (id) {
+      nsHue[id] = NS_PALETTE[nsHueNext++ % NS_PALETTE.length];
+    });
+  function tileColor(laneId, value, openEnd) {
+    const base = String(value || '').split('/')[0].toLowerCase();
+    if (FAULT_COLORS[base]) return FAULT_COLORS[base];
+    const hue = nsHue[laneId] || NS_PALETTE[0];
+    if (openEnd) return mixWhite(hue, 0.72);
+    if (base === 'processing') return mixWhite(hue, 0.45);
+    return hue;
+  }
+
   function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
 
-  function renderKey(panels) {
+  function renderKey(panels, laneIds) {
     let html = '';
+    if (laneIds.length) {
+      // Hue is namespace identity; the key explains lightness (phase),
+      // demonstrated on the canonical blue as on the report page.
+      function swatch(color) {
+        return '<span style="display:inline-block;width:0.9em;height:0.9em;'
+            + 'vertical-align:middle;border-radius:0.2em;background:'
+            + color + '"></span>';
+      }
+      const hasOpenEnds = laneIds.some(function (id) {
+        return (data.lanes[id].segments || []).some(function (s) {
+          return s.open_end;
+        });
+      });
+      html += '<div class="d-flex flex-wrap column-gap-3 row-gap-1 '
+          + 'align-items-baseline text-muted">'
+          + '<span>' + swatch(NS_PALETTE[0]) + ' datataking</span>'
+          + '<span>' + swatch(mixWhite(NS_PALETTE[0], 0.45))
+          + ' processing</span>'
+          + (hasOpenEnds
+             ? '<span>' + swatch(mixWhite(NS_PALETTE[0], 0.72))
+               + ' run without recorded end</span>' : '')
+          + '</div>';
+    }
     panels.forEach(function (panel) {
       html += '<div class="d-flex flex-wrap column-gap-3 row-gap-1 '
           + 'align-items-baseline">'
@@ -76,12 +144,43 @@ history. The curve key above the plot is a static legend.
         return (data.curves[id].points || []).length;
       });
     });
-    renderKey(panels);
+    // Lanes reverse-sorted so the category axis reads alphabetical
+    // top-down, as on the report page.
+    const laneIds = Object.keys(data.lanes || {}).sort(function (x, y) {
+      return data.lanes[y].label.localeCompare(data.lanes[x].label);
+    });
+    renderKey(panels, laneIds);
 
     const traces = [];
+    // Lane bands: a grey idle track per namespace, activity tiles over
+    // it (barmode overlay), tiles held to a legible minimum width.
+    const spanMs = Date.parse(data.end) - Date.parse(data.start);
+    const minBarMs = spanMs / 60;
+    laneIds.forEach(function (laneId) {
+      const lane = data.lanes[laneId];
+      traces.push({
+        type: 'bar', orientation: 'h', y: [lane.label], x: [spanMs],
+        base: [data.start], width: 0.82, marker: {color: '#dde3e9'},
+        yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
+      });
+      lane.segments.forEach(function (seg) {
+        const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
+        traces.push({
+          type: 'bar', orientation: 'h', y: [lane.label],
+          x: [Math.max(t1 - t0, minBarMs)], base: [seg.t0], width: 0.82,
+          marker: {color: tileColor(laneId, seg.value, seg.open_end),
+                   line: {color: '#ffffff', width: 1}},
+          yaxis: 'y2', showlegend: false,
+          hovertemplate: escapeHtml(lane.label) + ': '
+              + escapeHtml(seg.hover || seg.value) + '<extra></extra>',
+          hoverlabel: {font: {size: 14}},
+        });
+      });
+    });
     panels.forEach(function (panel, index) {
-      const axis = index === 0 ? 'y' : 'y' + (index + 1);
-      panel.axisKey = index === 0 ? 'yaxis' : 'yaxis' + (index + 1);
+      // y2 is the lanes' category axis; panels ride y, y3, y4, ...
+      const axis = index === 0 ? 'y' : 'y' + (index + 2);
+      panel.axisKey = index === 0 ? 'yaxis' : 'yaxis' + (index + 2);
       panel.traceAxis = axis;
       panel.ids.forEach(function (id) {
         const curve = data.curves[id];
@@ -109,22 +208,27 @@ history. The curve key above the plot is a static legend.
       };
     });
 
-    // The observatory's panel geometry: 150px panels, a 30px gap above
-    // each carrying its family annotation.
+    // The observatory's geometry: 46px lane rows on top, then 150px
+    // panels with a 30px gap above each carrying its family annotation.
     const panelPx = 150, panelGapPx = 30;
-    const innerPx = panels.length * (panelPx + panelGapPx);
+    const lanePx = 46 * laneIds.length;
+    const laneGapPx = laneIds.length ? 16 : 0;
+    const innerPx = Math.max(
+        lanePx + laneGapPx + panels.length * (panelPx + panelGapPx), 110);
     function domainOf(topPx, bottomPx) {
       return [Math.max(1 - bottomPx / innerPx, 0),
               Math.min(1 - topPx / innerPx, 1)];
     }
     const layout = {
-      margin: {l: 60, r: 20, t: 10, b: 45},
+      margin: {l: laneIds.length ? 110 : 60, r: 20, t: 10, b: 45},
       height: innerPx + 10 + 45,
       font: {size: 15},
       showlegend: false,
+      barmode: 'overlay',
       xaxis: {type: 'date', range: [data.start, data.end],
               domain: [0, 1], fixedrange: true,
-              anchor: panels[panels.length - 1].traceAxis,
+              anchor: panels.length
+                  ? panels[panels.length - 1].traceAxis : 'y2',
               showspikes: true, spikemode: 'across',
               spikesnap: 'cursor', spikedash: 'dot',
               spikethickness: 1, spikecolor: '#78909c'},
@@ -132,8 +236,22 @@ history. The curve key above the plot is a static legend.
       hovermode: 'closest',
       annotations: [],
     };
+    if (laneIds.length) {
+      layout.yaxis2 = {type: 'category', fixedrange: true,
+                       domain: domainOf(0, lanePx),
+                       categoryorder: 'array', showgrid: true,
+                       categoryarray: laneIds.map(function (id) {
+                         return data.lanes[id].label;
+                       })};
+    }
+    if (!panels.length) {
+      layout.yaxis = {visible: false, fixedrange: true,
+                      domain: [0, Math.max(
+                          domainOf(0, lanePx)[0] - 0.02, 0.01)]};
+    }
     panels.forEach(function (panel, index) {
-      const topPx = index * (panelPx + panelGapPx) + panelGapPx;
+      const topPx = lanePx + laneGapPx
+          + index * (panelPx + panelGapPx) + panelGapPx;
       layout[panel.axisKey] = {
         domain: domainOf(topPx, topPx + panelPx),
         rangemode: 'tozero',

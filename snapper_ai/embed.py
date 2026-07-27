@@ -77,12 +77,14 @@ def _report_query(start, end, now):
     return urlencode({'start': start.isoformat(), 'end': end.isoformat()})
 
 
-def embed_context(scope, start, end, families):
+def embed_context(scope, start, end, families=(), lanes=False):
     """Context for ``_snapper_embed.html``: the scope's curves filtered
     to the named ``families`` (provider ``curve_groups`` names, plotted
     as one panel each in the order given) over [start, end], clamped to
     the most recent MAX_EMBED_DAYS days. A curve joins the first listed
-    family that matches it. Errors return a context whose ``error`` the
+    family that matches it. ``lanes=True`` additionally includes the
+    scope's episodic activity lanes (namespace bands), rendered above
+    any curve panels. Errors return a context whose ``error`` the
     partial renders visibly."""
     from django.utils import timezone
 
@@ -125,6 +127,14 @@ def embed_context(scope, start, end, families):
             curve = series['curves'][curve_id]
             curves[curve_id] = {'label': curve['label'],
                                 'points': _downsample(curve['points'])}
+    # Episodic lanes only (namespace bands): a lane with no activity in
+    # the window earns no row, as on the report page.
+    embed_lanes = {}
+    if lanes:
+        embed_lanes = {
+            lane_id: lane for lane_id, lane in series['lanes'].items()
+            if lane.get('segments')
+        }
     return {
         'scope': scope,
         'label': provider.label or scope,
@@ -136,10 +146,12 @@ def embed_context(scope, start, end, families):
             'curves': curves,
             'all_curve_ids': all_curve_ids,
             'panels': panels,
+            'lanes': embed_lanes,
             'gaps': series['gaps'],
         },
         'report_query': _report_query(start, end, timezone.now()),
         'clamp_note': clamp_note,
-        'has_points': any(curve['points'] for curve in curves.values()),
+        'has_points': (any(curve['points'] for curve in curves.values())
+                       or bool(embed_lanes)),
         'error': '',
     }
