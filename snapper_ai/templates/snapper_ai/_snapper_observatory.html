@@ -307,6 +307,12 @@
   const curvesOff = new Set(
       (serverPrefs.curves_off && serverPrefs.curves_off.length
           ? serverPrefs.curves_off : localPrefs.curves_off) || []);
+  // Per-member filter state for pc_groups families, keyed by the
+  // MEMBER (PC) label — quantity-independent, so an unticked set
+  // stays unticked across the counting toggle's different curve ids.
+  const pcOff = new Set(
+      (serverPrefs.pc_off && serverPrefs.pc_off.length
+          ? serverPrefs.pc_off : localPrefs.pc_off) || []);
   // Expanded lane headers (the health lane opening to its per-check
   // sub-lanes), remembered exactly like the curve selection.
   const lanesOpen = new Set(
@@ -319,6 +325,7 @@
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
     const payload = {curves_off: Array.from(curvesOff),
+                     pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
                      window: pageWindow};
     try { localStorage.setItem(storeKey, JSON.stringify(payload)); }
@@ -1134,6 +1141,15 @@
     }
     return null;
   }
+  // The member (PC) label behind a pc_groups family's curve id — the
+  // quantity-independent identity the remembered filter is keyed by.
+  function pcOfCurve(curveId, def) {
+    let pc = curveId;
+    ((def && def.prefixes) || []).forEach(function (p) {
+      if (curveId.indexOf(p) === 0) pc = curveId.slice(p.length);
+    });
+    return pc;
+  }
   function groupName(curveId) {
     for (const group of GROUPS) {
       if (group.match(curveId)) return group.name;
@@ -1159,6 +1175,17 @@
     Object.keys(data.curves).forEach(function (id) {
       const def = groupDef(id);
       if (def && def.default_off) curvesOff.add(id);
+    });
+  }
+  // The pc_groups filter carries across the counting toggle: the
+  // remembered set is keyed by member label and applied to whichever
+  // curve ids the current quantity draws.
+  if (!familiesParam) {
+    Object.keys(data.curves).forEach(function (id) {
+      const def = groupDef(id);
+      if (def && def.pc_groups && pcOff.has(pcOfCurve(id, def))) {
+        curvesOff.add(id);
+      }
     });
   }
   // Window-strip links carry the focused-view parameters along.
@@ -1221,7 +1248,13 @@
     (groupMembers[name] || []).forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
-      stacked = stacked || !!(groupDef(curveId) || {}).stacked;
+      const def = groupDef(curveId) || {};
+      stacked = stacked || !!def.stacked;
+      if (def.pc_groups) {
+        const pc = pcOfCurve(curveId, def);
+        if (on) pcOff.delete(pc);
+        else pcOff.add(pc);
+      }
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
       if (curveTraceIndex[curveId] !== undefined) {
@@ -1371,8 +1404,14 @@
           box.indeterminate = onCount > 0 && onCount < ids.length;
           box.addEventListener('change', function (e) {
             ids.forEach(function (id) {
-              if (e.target.checked) curvesOff.delete(id);
-              else curvesOff.add(id);
+              const pc = pcOfCurve(id, rowDef);
+              if (e.target.checked) {
+                curvesOff.delete(id);
+                pcOff.delete(pc);
+              } else {
+                curvesOff.add(id);
+                pcOff.add(pc);
+              }
             });
             persistPrefs();
             rerenderView();
@@ -1495,7 +1534,13 @@
     curveIds.forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
-      stacked = stacked || !!(groupDef(curveId) || {}).stacked;
+      const def = groupDef(curveId) || {};
+      stacked = stacked || !!def.stacked;
+      if (def.pc_groups) {
+        const pc = pcOfCurve(curveId, def);
+        if (on) pcOff.delete(pc);
+        else pcOff.add(pc);
+      }
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
       if (curveTraceIndex[curveId] !== undefined) {

@@ -253,7 +253,8 @@ def snapper_prefs_save(request, scope):
     except ValueError:
         return JsonResponse({'error': 'invalid JSON'}, status=400)
     allowed = {key: payload[key]
-               for key in ('curves_off', 'window', 'lanes_open')
+               for key in ('curves_off', 'window', 'lanes_open',
+                           'pc_off')
                if key in payload}
     prefs_set(request.user.username, scope, allowed)
     return JsonResponse({'saved': True})
