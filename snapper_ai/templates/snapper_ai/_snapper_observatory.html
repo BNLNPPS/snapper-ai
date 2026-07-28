@@ -53,6 +53,11 @@
   border: 1px solid #d5dce5;
   border-radius: .35rem;
 }
+/* A docked header sizes to its text — no fixed label column to wrap
+   a short title onto two lines. */
+.snapper-curve-row-docked .snapper-curve-row-label {
+  flex: 0 0 auto;
+}
 </style>
 {# Only this slim strip pins: the window controls and Now stay in    #}
 {# reach anywhere down the table, and a click positions the sliced   #}
@@ -935,19 +940,35 @@
         return {name: p.name, rowPx: panelGapPx, panel: p};
       });
     }
+    // The x tick labels draw once, under the LAST panel; a stub row
+    // sitting right after it needs that band cleared, and nothing
+    // else does. Trailing space is content too: none is reserved
+    // beyond what the rows and labels actually occupy.
+    let lastPanelIdx = -1;
+    sections.forEach(function (s, i) { if (s.panel) lastPanelIdx = i; });
+    const labelBandPx = 26;
+    const stubAfterLabels = DOCK_CONTROLS
+        && lastPanelIdx >= 0 && lastPanelIdx + 1 < sections.length;
     // Height is content: hidden lanes' room is truly reclaimed (the
     // small floor only guards the nothing-shown case).
     const innerPx = Math.max(
-        lanePx + laneGapPx + sections.reduce(function (px, s) {
+        lanePx + laneGapPx + (stubAfterLabels ? labelBandPx : 0)
+        + sections.reduce(function (px, s) {
           return px + s.rowPx + (s.panel ? s.panel.px : 0);
         }, 0), 110);
     function domainOf(topPx, bottomPx) {
       return [Math.max(1 - bottomPx / innerPx, 0),
               Math.min(1 - topPx / innerPx, 1)];
     }
+    // Tightness below the plot is content policy: when the stack ends
+    // in a stub, the labels are already inside the geometry and the
+    // bottom margin collapses; a trailing panel keeps label room only.
+    const bottomPx = !DOCK_CONTROLS ? 45
+        : (sections.length && sections[sections.length - 1].panel
+           ? 38 : 8);
     const layout = {
-      margin: {l: 110, r: 20, t: 10, b: 45},
-      height: innerPx + 10 + 45,
+      margin: {l: 110, r: 20, t: 10, b: bottomPx},
+      height: innerPx + 10 + bottomPx,
       font: {size: 15},
       showlegend: false,
       barmode: 'overlay',
@@ -984,7 +1005,12 @@
     // No namespace swatches anywhere: each lane's own bars, beside
     // its label, state the color mapping louder than any key could.
     let panelTopPx = lanePx + laneGapPx;
-    sections.forEach(function (s) {
+    sections.forEach(function (s, i) {
+      // A stub directly after the last panel clears the tick-label
+      // band that panel's x-axis draws beneath itself.
+      if (stubAfterLabels && i === lastPanelIdx + 1) {
+        panelTopPx += labelBandPx;
+      }
       const topPx = panelTopPx + s.rowPx;
       // The docked row's own top, for positioning after the plot
       // renders: inside the slot it reserved, above its panel.
