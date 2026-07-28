@@ -982,6 +982,17 @@
       barmode: 'overlay',
       xaxis: {type: 'date', range: [toNaive(r0), toNaive(r1)],
               domain: [0, 1],
+              // One-line tick labels: the year rides the date line
+              // ('Jul 14 2026'), never a second line for the tight
+              // bottom to eclipse.
+              tickformatstops: [
+                {dtickrange: [null, 3600000], value: '%H:%M'},
+                {dtickrange: [3600000, 86400000],
+                 value: '%b %-d %H:%M'},
+                {dtickrange: [86400000, 'M1'], value: '%b %-d %Y'},
+                {dtickrange: ['M1', 'M12'], value: '%b %Y'},
+                {dtickrange: ['M12', null], value: '%Y'},
+              ],
               // Time labels belong at the bottom of the whole stack:
               // anchor to the lowest panel (the lanes when no panel).
               anchor: panels.length
