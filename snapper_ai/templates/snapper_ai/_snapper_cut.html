@@ -6,10 +6,12 @@
 .snapper-cut-card { border:1px solid var(--bs-border-color,#ccc);
                     border-radius:.4em; padding:.6em .8em; }
 </style>
+{% if not compact %}
 <p class="mb-2">
   State at <strong>{{ requested_at|fmt_dt }}</strong>
   {% if snap_age_text %}<span class="text-muted">· snap <span title="{{ actual_snap_time|fmt_dt }}">{{ snap_age_text }}</span> earlier</span>{% endif %}
 </p>
+{% endif %}
 {% if coverage_notice %}
 <p class="mb-2">
   <span class="snapper-chip" style="background:{{ coverage_notice.chip.color }}">{{ coverage_notice.label }}</span>
@@ -19,6 +21,9 @@
 <div class="d-flex flex-wrap gap-3 align-items-stretch">
   {% for card in cards %}
   <div class="snapper-cut-card {% if card.changed %}border-2{% endif %}">
+    {# Compact (focus-narrowed) cards carry their own identity — the  #}
+    {# component-name and assessed chrome would only restate it.      #}
+    {% if not compact %}
     <div class="d-flex align-items-baseline gap-2 mb-1">
       <strong>{{ card.name }}</strong>
       {% if card.kind == 'health' %}
@@ -28,6 +33,7 @@
       <span class="text-muted small"{% if card.assessed_age_text %} title="assessed {{ card.assessed_at|fmt_dt }}"{% endif %}>assessed
         {% if card.assessed_age_text %}{{ card.assessed_age_text }} earlier{% else %}{{ card.assessed_at|fmt_dt }}{% endif %}</span>
     </div>
+    {% endif %}
 
     {% if card.kind == 'health' %}
       {% if card.reason %}<div class="mb-1">{{ card.reason }}</div>{% endif %}

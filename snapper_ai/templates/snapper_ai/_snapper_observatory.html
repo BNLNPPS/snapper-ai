@@ -1109,7 +1109,11 @@
   const groupsEl = document.getElementById('snapper-observatory-groups');
   const GROUPS = (groupsEl ? JSON.parse(groupsEl.textContent) : [])
       .map(function (g) {
-    return {name: g.name, stacked: !!g.stacked, compact: !!g.compact,
+    // name is the unique registry identity; title, when given, is the
+    // display form (a name can carry selector qualifiers the display
+    // should not).
+    return {name: g.name, title: g.title || g.name,
+            stacked: !!g.stacked, compact: !!g.compact,
             default_off: !!g.default_off, units: g.units || '',
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
@@ -2014,7 +2018,8 @@
         '{{ observatory_focus.cut_query|default:""|escapejs }}';
     fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
           + (focusComponent
-             ? '&component=' + encodeURIComponent(focusComponent) : '')
+             ? '&component=' + encodeURIComponent(focusComponent)
+               + '&compact=1' : '')
           + (focusValue
              ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
              : '')
@@ -2516,12 +2521,21 @@
         data = incoming;
         basisCorrection = data.end_ms - Date.parse(data.end);
         fullRange = [Date.parse(data.start), Date.parse(data.end)];
+        // The axis opens at the first stacked column's leading edge
+        // here too — the refresh must not undo render()'s opening and
+        // clip the first bin to half a day.
+        if (quiltGeom.length) {
+          const lead = Math.min.apply(null, quiltGeom.map(function (g) {
+            return g.edgesMs[0];
+          }));
+          if (lead < fullRange[0]) fullRange[0] = lead;
+        }
         const countEl = document.getElementById('snapper-snap-count');
         if (countEl) countEl.textContent = data.snap_count;
         if (!viewIsZoomed()) {
           suppressPush = true;
           Plotly.relayout(plotDiv, {
-            'xaxis.range': [data.start, data.end]});
+            'xaxis.range': [toNaive(fullRange[0]), data.end]});
           setTimeout(function () {
             lastRange = currentRange();
             suppressPush = false;

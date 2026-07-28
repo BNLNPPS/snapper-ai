@@ -572,7 +572,14 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_window': window_key,
         'observatory_windows': list(WINDOW_HOURS),
         'observatory_default_window': DEFAULT_WINDOW,
-        'observatory_cut': (request.GET.get('cut') or '').strip(),
+        # A focus page lands with the slice already taken — at the
+        # window midpoint — so the click-for-details gesture is shown,
+        # not discovered. An explicit ?cut= wins as ever.
+        'observatory_cut': (
+            (request.GET.get('cut') or '').strip()
+            or ((window_start
+                 + (window_end - window_start) / 2).isoformat()
+                if focus_option is not None else '')),
         'observatory_prefs': user_prefs,
         'observatory_prev_url': observatory_prev_url,
         'observatory_next_url': observatory_next_url,
@@ -985,4 +992,7 @@ def snapper_cut(request, scope):
         'cards': cards,
         'references': references,
         'health_url': _health_url(),
+        # Compact: a focus-narrowed card carries its own identity; the
+        # instant/component chrome is dropped around it.
+        'compact': (request.GET.get('compact') or '') == '1',
     })
