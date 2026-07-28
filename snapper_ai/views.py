@@ -35,10 +35,12 @@ def _health_url():
     return hook() if hook else None
 
 
-def _scope_options(scope, active_query=''):
+def _scope_options(scope, active_query='', focus_engaged=False):
     """Scope switcher entries: each scope, followed by its provider's
     preset tabs (report-page links with a fixed query string). A preset
-    is active when the current querystring carries its families value."""
+    is active when the current querystring carries its families value.
+    A focus view links to its own selection-free page and is active
+    whenever the focus is engaged (by page or by parameter)."""
     from urllib.parse import parse_qs
 
     active_params = parse_qs(active_query)
@@ -77,11 +79,12 @@ def _scope_options(scope, active_query=''):
         if focus:
             param = focus.get('param') or 'focus'
             focus_active = (name == scope
-                            and bool(active_params.get(param)))
+                            and (focus_engaged
+                                 or bool(active_params.get(param))))
             options.append({
                 'name': name,
                 'label': focus.get('label') or 'Focus',
-                'query': f"{param}={focus.get('default') or ''}",
+                'focus_slug': (focus.get('label') or 'focus').lower(),
                 'active': focus_active,
             })
             if focus_active:
@@ -256,7 +259,7 @@ def snapper_prefs_save(request, scope):
     return JsonResponse({'saved': True})
 
 
-def snapper_report(request, scope, snap_id=None):
+def snapper_report(request, scope, snap_id=None, focus_slug=None):
     from django.utils import timezone
 
     from .series import (DEFAULT_WINDOW, WINDOW_HOURS,
@@ -279,11 +282,19 @@ def snapper_report(request, scope, snap_id=None):
                          else provider.focus_view)
         except Exception:                                    # noqa: BLE001
             focus_def = None
+    # The focus view's own page (/scope/<label>/) engages the focus
+    # with its defaults; the query parameter only narrows. A slug that
+    # names no focus view is an unknown page.
+    if focus_slug is not None:
+        expected = ((focus_def.get('label') or 'focus').lower()
+                    if focus_def else None)
+        if focus_slug.lower() != expected:
+            raise Http404(f'Unknown Snapper page {focus_slug!r}')
     focus_selected = []
     if focus_def:
         raw = (request.GET.get(focus_def.get('param') or 'focus')
                or '').strip()
-        if raw:
+        if raw or focus_slug is not None:
             options = focus_def.get('options') or []
             by_value = {o.get('value'): o for o in options}
             focus_selected = [v for v in
@@ -344,7 +355,26 @@ def snapper_report(request, scope, snap_id=None):
             window_start = focus_option['start']
             window_end = now
             window_key = 'custom'
-    observatory = observatory_series(scope, window_start, window_end)
+    # The series is a cached product where the host provides the
+    # mechanism: named windows and the focus default span key stably
+    # (their spans slide, their identity does not); explicit ranges
+    # build inline. The top-level dict is copied before the focus
+    # narrowing mutates it.
+    series_cache = registry.hook('series_cache')
+    cache_key = None
+    if (series_cache is not None
+            and not (request.GET.get('start') or request.GET.get('end'))):
+        if window_key in WINDOW_HOURS:
+            cache_key = f'snapper_series:v1:{scope}:{window_key}'
+        elif focus_option is not None and focus_option.get('start'):
+            cache_key = (f'snapper_series:v1:{scope}:span:'
+                         f'{window_start.date().isoformat()}')
+    if cache_key:
+        observatory = dict(series_cache(
+            cache_key,
+            lambda: observatory_series(scope, window_start, window_end)))
+    else:
+        observatory = observatory_series(scope, window_start, window_end)
 
     focus_context = None
     if focus_option is not None:
@@ -446,6 +476,7 @@ def snapper_report(request, scope, snap_id=None):
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
             'param': param,
+            'value': focus_option.get('value') or '',
             'component': focus_option.get('component') or '',
             'groups': groups,
             'options': [
@@ -503,7 +534,8 @@ def snapper_report(request, scope, snap_id=None):
         'scope': scope,
         'scope_label': _scope_label(scope),
         'scope_options': _scope_options(
-            scope, request.META.get('QUERY_STRING', '')),
+            scope, request.META.get('QUERY_STRING', ''),
+            focus_engaged=focus_option is not None),
         'observatory': observatory,
         'observatory_window': window_key,
         'observatory_windows': list(WINDOW_HOURS),

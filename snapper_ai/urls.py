@@ -31,4 +31,9 @@ urlpatterns = [
          name='snapper_report_snap'),
     path('<str:scope>/system/', views.snapper_system,
          name='snapper_system'),
+    # The focus view's own page — a clean, selection-free URL (e.g.
+    # /epicprod/campaign/) that lands on the focus defaults; query
+    # parameters only narrow it. Last so the fixed segments above win.
+    path('<str:scope>/<str:focus_slug>/', views.snapper_report,
+         name='snapper_focus'),
 ]

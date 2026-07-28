@@ -334,6 +334,26 @@
   // local storage (not the URL), so the established colors survive
   // reloads and the 60 s auto-refresh alike.
   const hueStoreKey = storeKey + ':nshue';
+  // Collapsed family sections (the arrow rotator on secondary
+  // families): name -> 1 closed / 0 open, remembered per browser.
+  // A default_off family starts closed absent a remembered choice.
+  const famClosedKey = storeKey + ':famclosed';
+  let famClosedStore = {};
+  try {
+    famClosedStore = JSON.parse(
+        localStorage.getItem(famClosedKey) || '{}');
+  } catch (e) { famClosedStore = {}; }
+  function familyClosed(name, def) {
+    if (name in famClosedStore) return !!famClosedStore[name];
+    return !!(def && def.default_off);
+  }
+  function setFamilyClosed(name, closed) {
+    famClosedStore[name] = closed ? 1 : 0;
+    try {
+      localStorage.setItem(famClosedKey,
+                           JSON.stringify(famClosedStore));
+    } catch (e) { /* storage full/blocked: state lives this page */ }
+  }
   let nsHue = {}, nsHueNext = 0;
   try {
     const savedHue = JSON.parse(
@@ -631,7 +651,8 @@
       const edgesMs = [lead].concat(stampsMs);
       const edgesX = [toNaive(lead)].concat(unionX);
       const running = unionX.map(function () { return 0; });
-      const familyOff = members.every(function (id) {
+      const familyOff = familyClosed(familyName, stackedDefs[familyName])
+          || members.every(function (id) {
         return curvesOff.has(id);
       });
       const geom = {axisKey: null, edgesMs: edgesMs, members: [],
@@ -696,7 +717,9 @@
         name: curve.label,
         yaxis: (curveAxis[curveId] && curveAxis[curveId] !== 'hidden')
             ? curveAxis[curveId] : 'y',
-        visible: curvesOff.has(curveId) ? 'legendonly' : true,
+        visible: (curvesOff.has(curveId)
+                  || familyClosed(groupName(curveId), groupDef(curveId)))
+            ? 'legendonly' : true,
         showlegend: false,
         hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
       });
@@ -783,7 +806,10 @@
         return !curveAxis[id] && group.match(id);
       });
       members.forEach(function (id) { curveAxis[id] = 'hidden'; });
-      if (!members.some(function (id) { return !curvesOff.has(id); })) {
+      // A closed family holds no panel: hidden altogether, tick
+      // state preserved for its reopening.
+      if (familyClosed(group.name, group)
+          || !members.some(function (id) { return !curvesOff.has(id); })) {
         return;
       }
       const traceAxis = panels.length ? 'y' + (panels.length + 2) : 'y';
@@ -1098,13 +1124,54 @@
       const name = groupName(curveId);
       (groupMembers[name] = groupMembers[name] || []).push(curveId);
     });
+    // Control rows in GROUPS order — the same order the panels stack
+    // in, so a family's controls sit above its plot, never crossed.
+    const orderedNames = [];
+    GROUPS.forEach(function (g) {
+      if (groupMembers[g.name]) orderedNames.push(g.name);
+    });
     Object.keys(groupMembers).forEach(function (name) {
+      if (orderedNames.indexOf(name) < 0) orderedNames.push(name);
+    });
+    orderedNames.forEach(function (name) {
+      const def = groupDef(name && groupMembers[name][0]) || {};
+      const closable = !!def.default_off;
+      const closed = closable && familyClosed(name, def);
       const row = document.createElement('div');
       row.className = 'snapper-curve-row';
       const head = document.createElement('div');
       head.className = 'snapper-curve-row-label';
-      head.innerHTML = '<strong>' + escapeHtml(name) + ':</strong> '
-          + '<a href="#" data-group-on>all</a>/<a href="#" data-group-off>none</a>';
+      // The rotator hides a secondary family altogether — controls
+      // and panel — without touching its tick state.
+      const arrow = closable
+          ? '<a href="#" data-fam-arrow style="text-decoration:none">'
+            + (closed ? '&#9656;' : '&#9662;') + '</a> '
+          : '';
+      head.innerHTML = arrow + '<strong>' + escapeHtml(name)
+          + (closed ? '</strong>'
+                    : ':</strong> <a href="#" data-group-on>all</a>/'
+                      + '<a href="#" data-group-off>none</a>');
+      if (closable) {
+        head.querySelector('[data-fam-arrow]').addEventListener(
+            'click', function (e) {
+              e.preventDefault();
+              setFamilyClosed(name, !closed);
+              const viewTrue = viewIsZoomed()
+                  ? currentRange().map(ms => ms + basisCorrection)
+                  : null;
+              suppressPush = true;
+              render(viewTrue);
+              setTimeout(function () {
+                lastRange = currentRange();
+                suppressPush = false;
+              }, 100);
+            });
+      }
+      if (closed) {
+        row.appendChild(head);
+        controls.appendChild(row);
+        return;
+      }
       head.querySelector('[data-group-on]').addEventListener('click',
           function (e) { e.preventDefault(); setGroup(name, true); });
       head.querySelector('[data-group-off]').addEventListener('click',
@@ -1791,9 +1858,10 @@
     // card for the ticked campaigns alone.
     const focusComponent = '{{ observatory_focus.component|default:""|escapejs }}';
     const focusParam = '{{ observatory_focus.param|default:""|escapejs }}';
-    const focusValue = focusParam
-        ? (new URL(window.location.href).searchParams.get(focusParam)
-           || '') : '';
+    // The EFFECTIVE selection from the server — the clean focus page
+    // carries no parameter in its URL, yet its cut must narrow.
+    const focusValue =
+        '{{ observatory_focus.value|default:""|escapejs }}';
     fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
           + (focusComponent
              ? '&component=' + encodeURIComponent(focusComponent) : '')
@@ -1829,14 +1897,23 @@
   // its swatch.
   function paintCutSwatches() {
     cutPanel.querySelectorAll('[data-curve]').forEach(function (el) {
-      const id = el.getAttribute('data-curve') || '';
-      let color = curveColor[id];
+      // data-curve lists candidate curve ids (e.g. the same member in
+      // either plotted quantity); the first the plot carries wins.
+      const ids = (el.getAttribute('data-curve') || '').split(/\s+/)
+          .filter(Boolean);
+      let color = null;
+      ids.forEach(function (id) {
+        if (!color && curveColor[id]) color = curveColor[id];
+      });
       if (!color) {
-        Object.keys(curveColor).forEach(function (cid) {
-          const at = cid.indexOf('zz_other');
-          if (!color && at >= 0 && id.indexOf(cid.slice(0, at)) === 0) {
-            color = curveColor[cid];
-          }
+        ids.forEach(function (id) {
+          Object.keys(curveColor).forEach(function (cid) {
+            const at = cid.indexOf('zz_other');
+            if (!color && at >= 0
+                && id.indexOf(cid.slice(0, at)) === 0) {
+              color = curveColor[cid];
+            }
+          });
         });
       }
       if (color) el.style.background = color;
