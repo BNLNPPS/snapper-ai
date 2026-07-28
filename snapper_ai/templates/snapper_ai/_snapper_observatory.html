@@ -1019,7 +1019,26 @@
         for (const s of steps) { if (s >= target) { step = s; break; } }
         const first = new Date(start);
         let d;
-        if (step >= DAY) {
+        if (step >= DAY && quiltGeom.length) {
+          // Day bins exist: a date label belongs under the CENTER of
+          // its own bin — a boundary-placed date straddles two bins
+          // and reads as neither. Ticks come from the quilt columns:
+          // position at the column midpoint, named by the column's
+          // day.
+          const edges = quiltGeom[0].edgesMs;
+          const every = Math.max(1, Math.round(step / DAY));
+          for (let i = 0; i < edges.length - 1; i += every) {
+            const mid = (edges[i] + edges[i + 1]) / 2;
+            if (mid < start || mid > end) continue;
+            const dayEnd = new Date(edges[i + 1] - 1000);
+            const withYear = dayEnd.getFullYear() !== lastYear;
+            lastYear = dayEnd.getFullYear();
+            vals.push(naiveIso(new Date(mid)));
+            text.push(MONTHS[dayEnd.getMonth()] + ' '
+                + dayEnd.getDate()
+                + (withYear ? ' ' + dayEnd.getFullYear() : ''));
+          }
+        } else if (step >= DAY) {
           d = new Date(first.getFullYear(), first.getMonth(),
                        first.getDate());
           if (d.getTime() < start) d.setDate(d.getDate() + 1);
