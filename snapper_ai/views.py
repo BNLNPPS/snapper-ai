@@ -311,7 +311,22 @@ def snapper_report(request, scope, snap_id=None):
         request, now,
         default_window=str(user_prefs.get('window') or DEFAULT_WINDOW))
     if focus_option is not None and focus_option.get('start'):
-        window_start = max(window_start, focus_option['start'])
+        explicit = any(request.GET.get(key)
+                       for key in ('window', 'start', 'end', 'view'))
+        if explicit:
+            window_start = max(window_start, focus_option['start'])
+        else:
+            # A focus view's natural window is the focused record's own
+            # span: its start through now. A remembered short window
+            # (hours) holds no points of a daily record and lands on an
+            # empty plot; explicit window choices are honored above.
+            # The key becomes 'custom' so no named button claims the
+            # span and the client never stamps a named window into the
+            # URL (which would land the next load back on the
+            # remembered short window).
+            window_start = focus_option['start']
+            window_end = now
+            window_key = 'custom'
     observatory = observatory_series(scope, window_start, window_end)
 
     focus_context = None
@@ -334,11 +349,20 @@ def snapper_report(request, scope, snap_id=None):
         # The focused record carries its own provenance; the scope's
         # capture-coverage shading belongs to the scope view.
         observatory['gaps'] = []
-        # Fold the long tail of a stacked family: members below the
-        # collapse fraction of the family total merge into one 'other'
-        # band (id suffix zz_other, drawn atop the stack). Hundreds of
-        # invisible slivers otherwise cost real browsers dearly; the
-        # fold is stated, never silent.
+        # So do the core health lanes: on a focus view the plot is the
+        # focused record alone.
+        observatory['lanes'] = {
+            lane_id: lane
+            for lane_id, lane in (observatory.get('lanes') or {}).items()
+            if lane_id != 'health' and lane.get('parent') != 'health'}
+        # Fold the long tail of a stacked family: members that never
+        # reach the collapse fraction of ANY single interval's family
+        # total merge into one 'other' band (id suffix zz_other, drawn
+        # atop the stack). The test is per interval, not whole-window:
+        # a new configuration dominating recent days must keep its
+        # color even while its window sum is still small. Hundreds of
+        # never-visible slivers otherwise cost real browsers dearly;
+        # the fold is stated, never silent.
         collapse = float(focus_option.get('collapse_below') or 0)
         if collapse > 0:
             for group in groups:
@@ -346,14 +370,24 @@ def snapper_report(request, scope, snap_id=None):
                     continue
                 prefix = (group.get('prefixes') or [''])[0]
                 members = {
-                    curve_id: sum(p[1] for p in curve['points'])
+                    curve_id: dict(curve['points'])
                     for curve_id, curve in observatory['curves'].items()
                     if curve_id.startswith(prefix)}
-                family_total = sum(members.values())
-                if not family_total:
+                interval_totals = {}
+                for points in members.values():
+                    for x, y in points.items():
+                        interval_totals[x] = interval_totals.get(x, 0) + y
+                if not any(interval_totals.values()):
                     continue
-                folded = [curve_id for curve_id, total in members.items()
-                          if total < collapse * family_total]
+
+                def _peak_share(points):
+                    return max(
+                        (y / interval_totals[x]
+                         for x, y in points.items()
+                         if interval_totals[x]), default=0)
+
+                folded = [curve_id for curve_id, points in members.items()
+                          if _peak_share(points) < collapse]
                 if len(folded) < 2:
                     continue
                 other_points = {}
@@ -363,7 +397,8 @@ def snapper_report(request, scope, snap_id=None):
                     del observatory['curves'][curve_id]
                 observatory['curves'][f'{prefix}zz_other'] = {
                     'label': (f'{len(folded)} configurations, each '
-                              f'below {collapse:.0%} of the total'),
+                              f'below {collapse:.0%} of every '
+                              f'interval\'s total'),
                     'points': sorted(other_points.items()),
                 }
         param = focus_def.get('param') or 'focus'
@@ -659,7 +694,7 @@ def snapper_system(request, scope):
 # ── The cut: structured state at an instant ──────────────────────────────
 
 def _cut_components(snap, previous_snap, scope, requested_at=None,
-                    only=None):
+                    only=None, params=None):
     state = _dict(snap.state)
     previous_state = _dict(previous_snap.state) if previous_snap else {}
     provider = registry.get(scope)
@@ -700,7 +735,8 @@ def _cut_components(snap, previous_snap, scope, requested_at=None,
             if builder is not None:
                 card.update(builder(data, previous_data,
                                     {'scope': scope,
-                                     'requested_at': requested_at}))
+                                     'requested_at': requested_at,
+                                     'params': params or {}}))
                 if provider.card_template:
                     card.setdefault('template', provider.card_template)
             else:
@@ -814,9 +850,13 @@ def snapper_cut(request, scope):
             'detail': 'Whether capture was observing at this instant cannot '
                       'be established — showing the last recorded state.'}
 
+    # The page's query travels to the card builders: a provider whose
+    # card spans several records (e.g. campaigns) narrows to the
+    # page's selection.
     cards = (_cut_components(snap, previous_snap, scope,
                              requested_at=result.requested_at,
-                             only=component_filter or None)
+                             only=component_filter or None,
+                             params=request.GET)
              if snap else [])
     for card in cards:
         assessed = parse_datetime(str(card.get('assessed_at') or ''))

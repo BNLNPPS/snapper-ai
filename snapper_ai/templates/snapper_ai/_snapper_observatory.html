@@ -398,6 +398,9 @@
   // soft refresh can update the plot in place with no page reload.
   let laneIds = [], curveIds = [], curveColor = {}, curveTraceStart = 0;
   let curveTraceIndex = {};
+  // Stacked-family geometry (day columns, member bands) for the
+  // in-house hover floater and day-snapping cuts.
+  let quiltGeom = [];
   let gapShapes = [], fullRange = [0, 0], groupMembers = {};
   let laneLabelById = {}, parentKids = {}, curveAxis = {}, panels = [];
   // Minimum on-screen bar length for episodic run periods, in ms of the
@@ -593,6 +596,7 @@
             .push(curveId);
       }
     });
+    quiltGeom = [];
     Object.keys(stackedFamilies).forEach(function (familyName) {
       const members = stackedFamilies[familyName];
       const xSeen = {};
@@ -600,10 +604,24 @@
         data.curves[id].points.forEach(function (p) { xSeen[p[0]] = 1; });
       });
       const unionX = Object.keys(xSeen).sort();
+      // A stacked member's value at a stamp covers the INTERVAL ending
+      // at that stamp (a daily record stamps each day at its end), so
+      // each column is drawn over (previous stamp, stamp] — never
+      // pushed forward over the following day. Column edges: a leading
+      // edge one median interval before the first stamp, then the
+      // stamps themselves; vertex i carries column i's value and the
+      // final vertex closes the last column.
+      const stampsMs = unionX.map(function (x) { return Date.parse(x); });
+      const lead = stampsMs.length > 1
+          ? stampsMs[0] - (stampsMs[1] - stampsMs[0])
+          : stampsMs[0] - 86400000;
+      const edgesMs = [lead].concat(stampsMs);
+      const edgesX = [toNaive(lead)].concat(unionX);
       const running = unionX.map(function () { return 0; });
       const familyOff = members.every(function (id) {
         return curvesOff.has(id);
       });
+      const geom = {axisKey: null, edgesMs: edgesMs, members: []};
       members.forEach(function (id, memberIndex) {
         const values = {};
         data.curves[id].points.forEach(function (p) {
@@ -615,22 +633,30 @@
           tops.push(running[xi]);
           own.push(values[x] || 0);
         });
+        const axis = (curveAxis[id] && curveAxis[id] !== 'hidden')
+            ? curveAxis[id] : 'y';
+        geom.axisKey = axis === 'y' ? 'yaxis' : 'yaxis' + axis.slice(1);
+        geom.members.push({id: id, label: data.curves[id].label,
+                           own: own, tops: tops});
         curveTraceIndex[id] = traces.length;
         traces.push({
-          x: unionX, y: tops, customdata: own,
+          x: edgesX, y: tops.concat(tops[tops.length - 1]),
           mode: 'lines',
           line: {shape: 'hv', width: 0.5, color: curveColor[id]},
           fill: memberIndex === 0 ? 'tozeroy' : 'tonexty',
           fillcolor: curveColor[id],
           name: data.curves[id].label,
-          yaxis: (curveAxis[id] && curveAxis[id] !== 'hidden')
-              ? curveAxis[id] : 'y',
+          yaxis: axis,
           visible: familyOff ? 'legendonly' : true,
           showlegend: false,
-          hovertemplate: data.curves[id].label
-              + ': <b>%{customdata}</b><br>%{x}<extra></extra>',
+          // Native closest-point hover is wrong for band fills — it
+          // names the nearest band TOP, often the band below the
+          // cursor, and misses fills entirely. The in-house floater
+          // (quiltHit) owns stacked hover.
+          hoverinfo: 'skip',
         });
       });
+      if (!familyOff) quiltGeom.push(geom);
     });
     // Family totals draw beneath their siblings: where a total and a
     // subcategory coincide (early days, one dominant group), the
@@ -669,14 +695,29 @@
   // a [start, end] true-instant range to preserve, or null for the full
   // window. Plotly.react updates the existing plot in place.
   function render(viewTrue) {
+    hideQuiltFloater();
     basisCorrection = data.end_ms - Date.parse(data.end);
     curveIds = Object.keys(data.curves).sort();
     fullRange = [Date.parse(data.start), Date.parse(data.end)];
     curveColor = {};
-    curveIds.forEach(function (curveId, index) {
-      // The folded long-tail band is always neutral grey.
-      curveColor[curveId] = curveId.indexOf('zz_other') >= 0
-          ? '#9e9e9e' : PALETTE[index % PALETTE.length];
+    // Colors are dealt per family, so a family's members take the
+    // most distinct colors available instead of sharing one global
+    // deal with every other family's curves. Beyond the palette,
+    // golden-angle hues at alternating lightness stay pairwise
+    // distinct. The folded long-tail band is always neutral grey.
+    const familyDealt = {};
+    curveIds.forEach(function (curveId) {
+      if (curveId.indexOf('zz_other') >= 0) {
+        curveColor[curveId] = '#9e9e9e';
+        return;
+      }
+      const family = groupName(curveId);
+      const index = familyDealt[family] || 0;
+      familyDealt[family] = index + 1;
+      curveColor[curveId] = index < PALETTE.length
+          ? PALETTE[index]
+          : 'hsl(' + ((index * 137.508) % 360).toFixed(1) + ', 62%, '
+            + (index % 2 ? '55%' : '38%') + ')';
     });
 
     // Lane order: base lanes as delivered, each expandable parent's
@@ -733,7 +774,10 @@
       }
       const traceAxis = panels.length ? 'y' + (panels.length + 2) : 'y';
       members.forEach(function (id) { curveAxis[id] = traceAxis; });
+      // A stacked family (the quilt) earns triple the panel height:
+      // its information is vertical composition, not a single line.
       panels.push({name: group.name, traceAxis: traceAxis,
+                   px: group.stacked ? 450 : 150,
                    axisKey: traceAxis === 'y' ? 'yaxis'
                        : 'yaxis' + traceAxis.slice(1)});
     });
@@ -770,14 +814,17 @@
     const traces = buildTraces();
 
     // Vertical geometry in pixels, then normalized to axis domains:
-    // the lane band on top, one fixed-height panel per family below.
+    // the lane band on top, one panel per family below at that
+    // panel's own height.
     const lanePx = 46 * laneIds.length;
     const laneGapPx = laneIds.length ? 16 : 0;
-    const panelPx = 150, panelGapPx = 30;
+    const panelGapPx = 30;
     // Height is content: hidden lanes' room is truly reclaimed (the
     // small floor only guards the nothing-shown case).
     const innerPx = Math.max(
-        lanePx + laneGapPx + panels.length * (panelPx + panelGapPx), 110);
+        lanePx + laneGapPx + panels.reduce(function (px, panel) {
+          return px + panel.px + panelGapPx;
+        }, 0), 110);
     function domainOf(topPx, bottomPx) {
       return [Math.max(1 - bottomPx / innerPx, 0),
               Math.min(1 - topPx / innerPx, 1)];
@@ -798,13 +845,17 @@
               showspikes: true, spikemode: 'across',
               spikesnap: 'cursor', spikedash: 'dot',
               spikethickness: 1, spikecolor: '#78909c'},
+      // With no lanes at all (a focus view) the band collapses to a
+      // sliver of domain: a [1,1] span is degenerate for Plotly.
       yaxis2: {type: 'category', fixedrange: true,
-               domain: domainOf(0, lanePx),
-               categoryorder: 'array', showgrid: true,
+               visible: laneIds.length > 0,
+               domain: laneIds.length ? domainOf(0, lanePx) : [0.999, 1],
+               categoryorder: 'array', showgrid: laneIds.length > 0,
                categoryarray: laneIds.map(id => laneLabelById[id])},
       // Hidden numeric twin of the lane band: the failure-triangle
       // overlay draws here in category-index units.
-      yaxis9: {overlaying: 'y2', range: [-0.5, laneIds.length - 0.5],
+      yaxis9: {overlaying: 'y2',
+               range: [-0.5, Math.max(laneIds.length - 0.5, 0.5)],
                visible: false, fixedrange: true},
       shapes: gapShapes.concat(cutShapeList()),
       hovermode: 'closest',
@@ -816,11 +867,12 @@
     };
     // No namespace swatches anywhere: each lane's own bars, beside
     // its label, state the color mapping louder than any key could.
-    panels.forEach(function (panel, index) {
-      const topPx = lanePx + laneGapPx + index * (panelPx + panelGapPx)
-          + panelGapPx;
+    let panelTopPx = lanePx + laneGapPx;
+    panels.forEach(function (panel) {
+      const topPx = panelTopPx + panelGapPx;
+      panelTopPx = topPx + panel.px;
       layout[panel.axisKey] = {
-        domain: domainOf(topPx, topPx + panelPx),
+        domain: domainOf(topPx, topPx + panel.px),
         rangemode: 'tozero',
         // Locked: drag zooms time only, and undo/reset are exact — a
         // rectangle zoom must never bend the y scale.
@@ -850,6 +902,9 @@
     if (!viewTrue) lastRange = fullRange.slice();
     renderControls();
     wireLaneToggles();
+    // A standing cut card keeps stating the current color mapping
+    // even when a refresh re-deals the palette.
+    paintCutSwatches();
     const countEl = document.getElementById('snapper-snap-count');
     if (countEl) countEl.textContent = data.snap_count;
     updateClearAll();
@@ -1689,20 +1744,150 @@
       pendingSliceLane = null;
       return;
     }
+    const displayMs = cutTrueMs - basisCorrection;
+    const quiltStamp = snapToQuiltStamp(displayMs);
     const lookupIso = new Date(
-        snapToActivity(cutTrueMs - basisCorrection) + basisCorrection
-    ).toISOString();
-    // A focus view narrows the cut to its component: on a delivery
-    // view a click answers with the delivery card alone.
+        (quiltStamp !== null ? quiltStamp : snapToActivity(displayMs))
+        + basisCorrection).toISOString();
+    // A focus view narrows the cut to its component and its
+    // selection: on a campaign view a click answers with the delivery
+    // card for the ticked campaigns alone.
     const focusComponent = '{{ observatory_focus.component|default:""|escapejs }}';
+    const focusParam = '{{ observatory_focus.param|default:""|escapejs }}';
+    const focusValue = focusParam
+        ? (new URL(window.location.href).searchParams.get(focusParam)
+           || '') : '';
     fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
           + (focusComponent
-             ? '&component=' + encodeURIComponent(focusComponent) : ''))
+             ? '&component=' + encodeURIComponent(focusComponent) : '')
+          + (focusValue
+             ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
+             : ''))
       .then(r => r.text())
       .then(function (fragment) {
         cutPanel.hidden = false;
         cutPanel.innerHTML = fragment;
+        paintCutSwatches();
       });
+  }
+
+  // Cut-card swatches: any element in the card naming a curve
+  // (data-curve) is painted that curve's plot color, so the table
+  // states the quilt's color mapping. A member folded into the
+  // long-tail band takes the band's grey; an unknown curve hides
+  // its swatch.
+  function paintCutSwatches() {
+    cutPanel.querySelectorAll('[data-curve]').forEach(function (el) {
+      const id = el.getAttribute('data-curve') || '';
+      let color = curveColor[id];
+      if (!color) {
+        Object.keys(curveColor).forEach(function (cid) {
+          const at = cid.indexOf('zz_other');
+          if (!color && at >= 0 && id.indexOf(cid.slice(0, at)) === 0) {
+            color = curveColor[cid];
+          }
+        });
+      }
+      if (color) el.style.background = color;
+      else el.style.visibility = 'hidden';
+    });
+  }
+
+  // The quilt's own floater. Stacked bands are filled areas, not
+  // lines; hover resolves the cursor to its day column and the band
+  // whose vertical interval contains it, and the floater carries that
+  // patch's identity, value, and day in the patch's own color.
+  const quiltFloater = document.createElement('div');
+  quiltFloater.style.cssText =
+      'position:fixed; z-index:1000; pointer-events:none; display:none;'
+      + ' font-size:15px; padding:.3rem .6rem; border-radius:4px;'
+      + ' box-shadow:0 1px 5px rgba(0,0,0,0.45); white-space:nowrap;';
+  document.body.appendChild(quiltFloater);
+  function hideQuiltFloater() {
+    quiltFloater.style.display = 'none';
+  }
+  function textColorOn(color) {
+    let bright = false;
+    const hex = /^#([0-9a-f]{6})$/i.exec(color);
+    if (hex) {
+      const v = parseInt(hex[1], 16);
+      bright = (0.299 * (v >> 16 & 255) + 0.587 * (v >> 8 & 255)
+                + 0.114 * (v & 255)) > 150;
+    } else {
+      const hsl = /,\s*(\d+(?:\.\d+)?)%\s*\)$/.exec(color);
+      bright = hsl ? parseFloat(hsl[1]) > 47 : false;
+    }
+    return bright ? '#111' : '#fff';
+  }
+  function quiltHit(event) {
+    if (!quiltGeom.length || !plotDiv._fullLayout) return null;
+    const t = eventTime(event);
+    if (t === null) return null;
+    const bb = plotDiv.getBoundingClientRect();
+    for (const geom of quiltGeom) {
+      const ya = plotDiv._fullLayout[geom.axisKey];
+      if (!ya || ya._offset === undefined) continue;
+      const py = event.clientY - bb.top - ya._offset;
+      if (py < 0 || py > ya._length) continue;
+      const lo = ya.range[0], hi = ya.range[1];
+      const value = hi - (py / ya._length) * (hi - lo);
+      let column = -1;
+      for (let i = 0; i < geom.edgesMs.length - 1; i += 1) {
+        if (t >= geom.edgesMs[i] && t < geom.edgesMs[i + 1]) {
+          column = i;
+          break;
+        }
+      }
+      if (column < 0) return null;
+      let bottom = 0;
+      for (const member of geom.members) {
+        const top = member.tops[column];
+        if (member.own[column] > 0 && value >= bottom && value <= top) {
+          return {geom: geom, member: member, column: column};
+        }
+        bottom = top;
+      }
+      return null;
+    }
+    return null;
+  }
+  plotDiv.addEventListener('mousemove', function (event) {
+    if (event.buttons) { hideQuiltFloater(); return; }
+    const hit = quiltHit(event);
+    if (!hit) { hideQuiltFloater(); return; }
+    // The column's day is the day its closing stamp belongs to (a
+    // day-end stamp); one second back also holds at a midnight stamp.
+    const day = toNaive(hit.geom.edgesMs[hit.column + 1] - 1000)
+        .slice(0, 10);
+    const color = curveColor[hit.member.id] || '#37474f';
+    quiltFloater.style.background = color;
+    quiltFloater.style.color = textColorOn(color);
+    quiltFloater.innerHTML = '<b>' + escapeHtml(hit.member.label)
+        + '</b>: ' + hit.member.own[hit.column] + ' · ' + day;
+    quiltFloater.style.display = 'block';
+    const width = quiltFloater.offsetWidth;
+    const left = event.clientX + 16 + width > window.innerWidth
+        ? event.clientX - width - 12 : event.clientX + 16;
+    quiltFloater.style.left = left + 'px';
+    quiltFloater.style.top = (event.clientY - 14) + 'px';
+  });
+  plotDiv.addEventListener('mouseleave', hideQuiltFloater);
+
+  // A cut clicked inside a quilt column means "this day": resolve to
+  // the column's closing stamp, whose snap carries exactly that day.
+  // The plain latest-before-the-click lookup would land on the
+  // previous day's snap.
+  function snapToQuiltStamp(displayMs) {
+    for (const geom of quiltGeom) {
+      const edges = geom.edgesMs;
+      if (displayMs < edges[0] || displayMs >= edges[edges.length - 1]) {
+        continue;
+      }
+      for (let i = 0; i < edges.length - 1; i += 1) {
+        if (displayMs < edges[i + 1]) return edges[i + 1];
+      }
+    }
+    return null;
   }
 
   function stampCutUrl(timeIso) {
