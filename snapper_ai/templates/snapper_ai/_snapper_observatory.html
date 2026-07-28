@@ -93,6 +93,17 @@
                onchange="window.location='{{ option.url }}'"> {{ option.label }}
       </label>
       {% endfor %}
+      {% if observatory_focus.quantity %}
+      <span class="text-muted">·</span>
+      <strong>{{ observatory_focus.quantity.label }}:</strong>
+      {% for choice in observatory_focus.quantity.choices %}
+      <label class="form-check form-check-inline mb-0">
+        <input type="radio" class="form-check-input" name="snapper-quantity"
+               {% if choice.active %}checked{% endif %}
+               onchange="window.location='{{ choice.url }}'"> {{ choice.label }}
+      </label>
+      {% endfor %}
+      {% endif %}
     </div>
     {% endif %}
     <div id="snapper-observatory-controls" class="mb-2"></div>
@@ -1019,6 +1030,12 @@
       carry.push([focusParam, new URL(window.location.href)
           .searchParams.get(focusParam) || '']);
     }
+    const quantityParam =
+        '{{ observatory_focus.quantity.param|default:""|escapejs }}';
+    if (quantityParam) {
+      carry.push([quantityParam, new URL(window.location.href)
+          .searchParams.get(quantityParam) || '']);
+    }
     const live = carry.filter(function (pair) { return pair[1]; });
     if (live.length) {
       document.querySelectorAll('#snapper-th-bar a[href^="?window="]')
@@ -1783,11 +1800,25 @@
           + (focusValue
              ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
              : ''))
-      .then(r => r.text())
+      .then(function (r) {
+        if (!r.ok) {
+          throw new Error('cut endpoint returned HTTP ' + r.status);
+        }
+        return r.text();
+      })
       .then(function (fragment) {
         cutPanel.hidden = false;
         cutPanel.innerHTML = fragment;
         paintCutSwatches();
+      })
+      .catch(function (err) {
+        // The failure must be visible where the card belongs — an
+        // empty slot reads as "no detail exists".
+        cutPanel.hidden = false;
+        cutPanel.innerHTML = '<div class="text-danger">Cut detail '
+            + 'failed to load (' + escapeHtml(String(err))
+            + ') — <a href="javascript:location.reload()">reload'
+            + '</a>.</div>';
       });
   }
 

@@ -293,13 +293,30 @@ def snapper_report(request, scope, snap_id=None):
                 default = by_value.get(focus_def.get('default'))
                 focus_selected = [(default or options[0]).get('value')]
             chosen = [by_value[v] for v in focus_selected]
+            # A focus view may offer alternate quantities (e.g. events
+            # and files): each option carries families per quantity,
+            # and the ?<quantity param>= choice picks which set plots.
+            quantity_def = focus_def.get('quantity') or {}
+            quantity_values = [c.get('value') for c in
+                               (quantity_def.get('choices') or ())]
+            quantity = (request.GET.get(quantity_def.get('param')
+                                        or 'quantity') or '').strip()
+            if quantity not in quantity_values:
+                quantity = quantity_def.get('default') or ''
+
+            def _families(option):
+                by_quantity = option.get('families_by')
+                if by_quantity:
+                    return by_quantity.get(quantity) or ()
+                return option.get('families') or ()
+
             # One or several options at once: families union, window
             # floored at the earliest start.
             starts = [o.get('start') for o in chosen if o.get('start')]
             focus_option = {
                 'value': ','.join(focus_selected),
-                'families': [f for o in chosen
-                             for f in (o.get('families') or ())],
+                'quantity': quantity,
+                'families': [f for o in chosen for f in _families(o)],
                 'component': chosen[0].get('component') or '',
                 'collapse_below': chosen[0].get('collapse_below'),
                 'start': min(starts) if starts else None,
@@ -333,8 +350,13 @@ def snapper_report(request, scope, snap_id=None):
     if focus_option is not None:
         # Only the focused families' curves and control rows render.
         wanted = set(focus_option.get('families') or ())
-        groups = [g for g in (provider.curve_groups or ())
+        groups = [dict(g) for g in (provider.curve_groups or ())
                   if g.get('name') in wanted]
+        # A chosen stacked family is the focus view's primary display:
+        # a scope-view default_off marking does not apply to it.
+        for group in groups:
+            if group.get('stacked'):
+                group.pop('default_off', None)
 
         def _in_focus(curve_id):
             return any(
@@ -403,6 +425,14 @@ def snapper_report(request, scope, snap_id=None):
                 }
         param = focus_def.get('param') or 'focus'
         default = focus_def.get('default') or ''
+        quantity_param = quantity_def.get('param') or 'quantity'
+        quantity_default = quantity_def.get('default') or ''
+
+        def _quantity_suffix(value=None):
+            chosen_quantity = value if value is not None else quantity
+            if chosen_quantity and chosen_quantity != quantity_default:
+                return f'&{quantity_param}={chosen_quantity}'
+            return ''
 
         def _toggle_url(value):
             # A tick toggles membership; the last member cannot untick
@@ -410,7 +440,8 @@ def snapper_report(request, scope, snap_id=None):
             after = [v for v in focus_selected if v != value]
             if value not in focus_selected:
                 after = focus_selected + [value]
-            return f"?{param}={','.join(after) if after else default}"
+            return (f"?{param}={','.join(after) if after else default}"
+                    + _quantity_suffix())
 
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
@@ -422,6 +453,16 @@ def snapper_report(request, scope, snap_id=None):
                  'active': o.get('value') in focus_selected,
                  'url': _toggle_url(o.get('value'))}
                 for o in (focus_def.get('options') or ())],
+            'quantity': {
+                'label': quantity_def.get('label') or 'Counting',
+                'param': quantity_param,
+                'choices': [
+                    {'value': c.get('value'), 'label': c.get('label'),
+                     'active': c.get('value') == quantity,
+                     'url': (f"?{param}={','.join(focus_selected)}"
+                             + _quantity_suffix(c.get('value')))}
+                    for c in (quantity_def.get('choices') or ())],
+            } if quantity_def else None,
         }
 
     # Window stepping: the arrows shift the whole window through the
