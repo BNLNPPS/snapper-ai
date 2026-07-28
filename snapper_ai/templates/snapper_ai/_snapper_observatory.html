@@ -16,6 +16,10 @@
   border: 1px solid #d5dce5;
   border-radius: .35rem;
 }
+/* Docked mode leaves the strip empty; an empty strip draws nothing. */
+#snapper-observatory-controls:empty {
+  display: none;
+}
 .snapper-curve-row {
   display: flex;
   flex-wrap: wrap;
@@ -36,6 +40,18 @@
   flex-wrap: wrap;
   column-gap: 1rem;
   row-gap: .1rem;
+}
+/* Focus views dock each family's control row directly above its own
+   panel: the row is positioned in-house from the same pixel geometry
+   the panels are built from, and it IS the panel header. */
+.snapper-curve-row-docked {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #d5dce5;
+  border-radius: .35rem;
 }
 </style>
 {# Only this slim strip pins: the window controls and Now stay in    #}
@@ -115,7 +131,7 @@
       <button type="button" id="snapper-zoom-undo" class="btn btn-sm btn-secondary">Undo zoom</button>
       <button type="button" id="snapper-zoom-reset" class="btn btn-sm btn-secondary">Reset to full window</button>
     </div>
-    <div style="position:relative">
+    <div id="snapper-plot-wrap" style="position:relative">
       {# Lane ticks: the tick defines the shown truth — an unticked    #}
       {# lane disappears from plot, table, and slice, reclaiming       #}
       {# vertical room. Efficient in what is shown, flexible in what   #}
@@ -170,6 +186,27 @@
   const storeKey = 'snapper-ui-' + data.scope;
   const plotDiv = document.getElementById('snapper-observatory-plot');
   const controls = document.getElementById('snapper-observatory-controls');
+  // Focus views dock each family's control row directly above its own
+  // panel — the row is the panel header, cumulative under arrivals,
+  // never a control stranded over another family's plot. Positioning
+  // is in-house pixel math shared with the panel geometry (the same
+  // discipline as the quilt floater); scope views keep the single
+  // block of rows above the plot.
+  const DOCK_CONTROLS =
+      {% if observatory_focus %}true{% else %}false{% endif %};
+  const plotWrap = document.getElementById('snapper-plot-wrap');
+  let dockedRows = [];
+  let dockedSections = [];
+  function positionDockedRows() {
+    // margin.t is 10 in the layout below; each row lands in the slot
+    // its measured height reserved, and only then becomes visible.
+    const baseTop = plotDiv.offsetTop + 10;
+    dockedSections.forEach(function (s) {
+      if (!s.el) return;
+      s.el.style.top = (baseTop + s.rowTopPx) + 'px';
+      s.el.style.visibility = '';
+    });
+  }
   const stateKeyEl = document.getElementById('snapper-state-key');
   const clearBtn = document.getElementById('snapper-clear-all');
   // Numbered activities: the bars visible in the active view, most
@@ -631,7 +668,17 @@
     });
     quiltGeom = [];
     Object.keys(stackedFamilies).forEach(function (familyName) {
-      const members = stackedFamilies[familyName];
+      // Only ticked members stack: an unticked member must leave the
+      // stack (its neighbors re-seat on the true running sums), not
+      // linger as a phantom interval under everything above it. Member
+      // tick changes re-render rather than restyle for exactly this.
+      const members = stackedFamilies[familyName].filter(function (id) {
+        return !curvesOff.has(id);
+      });
+      if (familyClosed(familyName, stackedDefs[familyName])
+          || !members.length) {
+        return;
+      }
       const xSeen = {};
       members.forEach(function (id) {
         data.curves[id].points.forEach(function (p) { xSeen[p[0]] = 1; });
@@ -651,10 +698,6 @@
       const edgesMs = [lead].concat(stampsMs);
       const edgesX = [toNaive(lead)].concat(unionX);
       const running = unionX.map(function () { return 0; });
-      const familyOff = familyClosed(familyName, stackedDefs[familyName])
-          || members.every(function (id) {
-        return curvesOff.has(id);
-      });
       const geom = {axisKey: null, edgesMs: edgesMs, members: [],
                     units: (stackedDefs[familyName] || {}).units || ''};
       members.forEach(function (id, memberIndex) {
@@ -682,7 +725,7 @@
           fillcolor: curveColor[id],
           name: data.curves[id].label,
           yaxis: axis,
-          visible: familyOff ? 'legendonly' : true,
+          visible: true,
           showlegend: false,
           // Native closest-point hover is wrong for band fills — it
           // names the nearest band TOP, often the band below the
@@ -691,7 +734,7 @@
           hoverinfo: 'skip',
         });
       });
-      if (!familyOff) quiltGeom.push(geom);
+      quiltGeom.push(geom);
     });
     // Family totals draw beneath their siblings: where a total and a
     // subcategory coincide (early days, one dominant group), the
@@ -873,11 +916,30 @@
     const lanePx = 46 * laneIds.length;
     const laneGapPx = laneIds.length ? 16 : 0;
     const panelGapPx = 30;
+    // Docked mode: every family claims a slot in panel order — its
+    // control row's measured height, then its panel; a closed family
+    // is its stub row alone, sitting exactly where its panel would
+    // reopen. Non-docked geometry is the flat panel gap, unchanged.
+    let sections;
+    if (DOCK_CONTROLS) {
+      renderControls();
+      const panelByName = {};
+      panels.forEach(function (p) { panelByName[p.name] = p; });
+      sections = dockedRows.map(function (r) {
+        return {name: r.name, el: r.el,
+                rowPx: r.el.offsetHeight + 10,
+                panel: panelByName[r.name] || null};
+      });
+    } else {
+      sections = panels.map(function (p) {
+        return {name: p.name, rowPx: panelGapPx, panel: p};
+      });
+    }
     // Height is content: hidden lanes' room is truly reclaimed (the
     // small floor only guards the nothing-shown case).
     const innerPx = Math.max(
-        lanePx + laneGapPx + panels.reduce(function (px, panel) {
-          return px + panel.px + panelGapPx;
+        lanePx + laneGapPx + sections.reduce(function (px, s) {
+          return px + s.rowPx + (s.panel ? s.panel.px : 0);
         }, 0), 110);
     function domainOf(topPx, bottomPx) {
       return [Math.max(1 - bottomPx / innerPx, 0),
@@ -922,8 +984,14 @@
     // No namespace swatches anywhere: each lane's own bars, beside
     // its label, state the color mapping louder than any key could.
     let panelTopPx = lanePx + laneGapPx;
-    panels.forEach(function (panel) {
-      const topPx = panelTopPx + panelGapPx;
+    sections.forEach(function (s) {
+      const topPx = panelTopPx + s.rowPx;
+      // The docked row's own top, for positioning after the plot
+      // renders: inside the slot it reserved, above its panel.
+      s.rowTopPx = panelTopPx + 4;
+      panelTopPx = topPx;
+      if (!s.panel) return;
+      const panel = s.panel;
       panelTopPx = topPx + panel.px;
       layout[panel.axisKey] = {
         domain: domainOf(topPx, topPx + panel.px),
@@ -933,6 +1001,7 @@
         fixedrange: true,
         anchor: 'x',
       };
+      if (DOCK_CONTROLS) return;
       layout.annotations.push({
         xref: 'paper', x: 0, xanchor: 'left',
         yref: panel.traceAxis + ' domain', y: 1, yanchor: 'bottom',
@@ -948,6 +1017,11 @@
         borderpad: 3,
       });
     });
+    // Land the docked rows: the plot's top margin plus each row's
+    // reserved slot, relative to the wrapper the rows live in. Pure
+    // arithmetic on our own geometry — nothing asks Plotly where
+    // things ended up.
+    dockedSections = DOCK_CONTROLS ? sections : [];
     if (!panels.length) {
       layout.yaxis = {visible: false, fixedrange: true,
                       domain: [0, Math.max(domainOf(0, lanePx)[0] - 0.02, 0.01)]};
@@ -957,7 +1031,8 @@
                   doubleClick: false, showTips: false});
     renderActivityTable();
     if (!viewTrue) lastRange = fullRange.slice();
-    renderControls();
+    if (DOCK_CONTROLS) positionDockedRows();
+    else renderControls();
     wireLaneToggles();
     // A standing cut card keeps stating the current color mapping
     // even when a refresh re-deals the palette.
@@ -1094,22 +1169,33 @@
     });
     if (differ) {
       rerenderView();
-      renderControls();
+      // Docked rows rebuild inside render(); a second build here
+      // would leave them unpositioned.
+      if (!DOCK_CONTROLS) renderControls();
     }
   }
   function setGroup(name, on) {
     // One batched restyle: per-member calls redraw once per member,
     // which is seconds of freeze on a large family.
     const indices = [];
+    let stacked = false;
     (groupMembers[name] || []).forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
+      stacked = stacked || !!(groupDef(curveId) || {}).stacked;
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
       if (curveTraceIndex[curveId] !== undefined) {
         indices.push(curveTraceIndex[curveId]);
       }
     });
+    // Stacked members exist as traces only while ticked (the stack
+    // re-seats on the survivors): rebuild rather than restyle.
+    if (stacked) {
+      persistPrefs();
+      rerenderView();
+      return;
+    }
     if (indices.length) {
       Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
                      indices);
@@ -1119,6 +1205,22 @@
   }
   function renderControls() {
     controls.innerHTML = '';
+    dockedRows.forEach(function (r) { r.el.remove(); });
+    dockedRows = [];
+    // Docked rows live in the plot wrapper, hidden until the geometry
+    // that reserved their slots has rendered and they can land in
+    // place; block rows land in the controls strip as always.
+    function attachRow(name, row) {
+      if (DOCK_CONTROLS) {
+        row.classList.add('snapper-curve-row-docked');
+        row.style.visibility = 'hidden';
+        row.style.top = '0px';
+        plotWrap.appendChild(row);
+        dockedRows.push({name: name, el: row});
+      } else {
+        controls.appendChild(row);
+      }
+    }
     groupMembers = {};
     curveIds.forEach(function (curveId) {
       const name = groupName(curveId);
@@ -1147,7 +1249,10 @@
           ? '<a href="#" data-fam-arrow style="text-decoration:none">'
             + (closed ? '&#9656;' : '&#9662;') + '</a> '
           : '';
-      head.innerHTML = arrow + '<strong>' + escapeHtml(name)
+      // A docked row is its panel's header: it states the unit too.
+      const title = name + (DOCK_CONTROLS && def.units
+                            ? ' — ' + def.units : '');
+      head.innerHTML = arrow + '<strong>' + escapeHtml(title)
           + (closed ? '</strong>'
                     : ':</strong> <a href="#" data-group-on>all</a>/'
                       + '<a href="#" data-group-off>none</a>');
@@ -1169,7 +1274,7 @@
       }
       if (closed) {
         row.appendChild(head);
-        controls.appendChild(row);
+        attachRow(name, row);
         return;
       }
       head.querySelector('[data-group-on]').addEventListener('click',
@@ -1194,7 +1299,7 @@
             + shown + ' shown';
         boxes.appendChild(info);
         row.appendChild(boxes);
-        controls.appendChild(row);
+        attachRow(name, row);
         return;
       }
       groupMembers[name].forEach(function (curveId) {
@@ -1212,13 +1317,20 @@
         label.querySelector('input').addEventListener('change', function (e) {
           if (e.target.checked) curvesOff.delete(curveId);
           else curvesOff.add(curveId);
+          // A stacked member's neighbors re-seat on the new running
+          // sums: rebuild; a line curve restyles in place.
+          if ((groupDef(curveId) || {}).stacked) {
+            persistPrefs();
+            rerenderView();
+            return;
+          }
           setCurve(curveId, e.target.checked);
           persistPrefs();
           syncPanels();
         });
       });
       row.appendChild(boxes);
-      controls.appendChild(row);
+      attachRow(name, row);
     });
     stateKeyEl.innerHTML = '';
     // Hue is namespace identity; the key explains lightness (phase).
@@ -1275,15 +1387,22 @@
   }
   function setAll(on) {
     const indices = [];
+    let stacked = false;
     curveIds.forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
+      stacked = stacked || !!(groupDef(curveId) || {}).stacked;
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
       if (curveTraceIndex[curveId] !== undefined) {
         indices.push(curveTraceIndex[curveId]);
       }
     });
+    if (stacked) {
+      persistPrefs();
+      rerenderView();
+      return;
+    }
     if (indices.length) {
       Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
                      indices);
@@ -2317,6 +2436,15 @@
         suppressPush = false;
       }, 100);
     }, 250);
+  });
+  // Docked control rows re-wrap when the page width changes, and
+  // their measured heights feed the panel geometry: a resize
+  // re-renders (debounced) so rows and panels stay seated together.
+  let dockResizeTimer = null;
+  window.addEventListener('resize', function () {
+    if (!DOCK_CONTROLS) return;
+    clearTimeout(dockResizeTimer);
+    dockResizeTimer = setTimeout(rerenderView, 200);
   });
   persistPrefs();
 
