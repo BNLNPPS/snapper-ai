@@ -109,17 +109,17 @@
                onchange="window.location='{{ option.url }}'"> {{ option.label }}
       </label>
       {% endfor %}
-      {% if observatory_focus.quantity %}
+      {% for sel in observatory_focus.selectors %}
       <span class="text-muted">·</span>
-      <strong>{{ observatory_focus.quantity.label }}:</strong>
-      {% for choice in observatory_focus.quantity.choices %}
+      <strong>{{ sel.label }}:</strong>
+      {% for choice in sel.choices %}
       <label class="form-check form-check-inline mb-0">
-        <input type="radio" class="form-check-input" name="snapper-quantity"
+        <input type="radio" class="form-check-input" name="snapper-sel-{{ sel.param }}"
                {% if choice.active %}checked{% endif %}
                onchange="window.location='{{ choice.url }}'"> {{ choice.label }}
       </label>
       {% endfor %}
-      {% endif %}
+      {% endfor %}
     </div>
     {% endif %}
     <div id="snapper-observatory-controls" class="mb-2"></div>
@@ -1131,12 +1131,13 @@
       carry.push([focusParam, new URL(window.location.href)
           .searchParams.get(focusParam) || '']);
     }
-    const quantityParam =
-        '{{ observatory_focus.quantity.param|default:""|escapejs }}';
-    if (quantityParam) {
-      carry.push([quantityParam, new URL(window.location.href)
-          .searchParams.get(quantityParam) || '']);
-    }
+    // Selector axes (counting, grouping, ...) present in the page URL
+    // ride the window strip too.
+    '{{ observatory_focus.carry_params|default:""|escapejs }}'
+        .split(',').filter(Boolean).forEach(function (name) {
+      carry.push([name, new URL(window.location.href)
+          .searchParams.get(name) || '']);
+    });
     const live = carry.filter(function (pair) { return pair[1]; });
     if (live.length) {
       document.querySelectorAll('#snapper-th-bar a[href^="?window="]')
@@ -1981,12 +1982,17 @@
     // carries no parameter in its URL, yet its cut must narrow.
     const focusValue =
         '{{ observatory_focus.value|default:""|escapejs }}';
+    // The effective selector values (counting, grouping) shape the
+    // card even when the clean URL carries none.
+    const focusCutQuery =
+        '{{ observatory_focus.cut_query|default:""|escapejs }}';
     fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
           + (focusComponent
              ? '&component=' + encodeURIComponent(focusComponent) : '')
           + (focusValue
              ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
-             : ''))
+             : '')
+          + (focusCutQuery ? '&' + focusCutQuery : ''))
       .then(function (r) {
         if (!r.ok) {
           throw new Error('cut endpoint returned HTTP ' + r.status);

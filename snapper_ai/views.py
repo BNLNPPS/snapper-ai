@@ -304,21 +304,29 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 default = by_value.get(focus_def.get('default'))
                 focus_selected = [(default or options[0]).get('value')]
             chosen = [by_value[v] for v in focus_selected]
-            # A focus view may offer alternate quantities (e.g. events
-            # and files): each option carries families per quantity,
-            # and the ?<quantity param>= choice picks which set plots.
-            quantity_def = focus_def.get('quantity') or {}
-            quantity_values = [c.get('value') for c in
-                               (quantity_def.get('choices') or ())]
-            quantity = (request.GET.get(quantity_def.get('param')
-                                        or 'quantity') or '').strip()
-            if quantity not in quantity_values:
-                quantity = quantity_def.get('default') or ''
+            # A focus view may offer selector axes (e.g. a plotted
+            # quantity, a grouping lens): each option carries families
+            # per selector combination, and each axis's ?<param>=
+            # choice picks which set plots. A single 'quantity' axis is
+            # accepted as the one-axis form.
+            selector_defs = list(focus_def.get('selectors') or ())
+            if not selector_defs and focus_def.get('quantity'):
+                selector_defs = [focus_def['quantity']]
+            selected_values = []
+            for sel in selector_defs:
+                values = [c.get('value')
+                          for c in (sel.get('choices') or ())]
+                value = (request.GET.get(sel.get('param')
+                                         or 'quantity') or '').strip()
+                if value not in values:
+                    value = sel.get('default') or ''
+                selected_values.append(value)
+            families_key = '|'.join(selected_values)
 
             def _families(option):
-                by_quantity = option.get('families_by')
-                if by_quantity:
-                    return by_quantity.get(quantity) or ()
+                by_key = option.get('families_by')
+                if by_key:
+                    return by_key.get(families_key) or ()
                 return option.get('families') or ()
 
             # One or several options at once: families union, window
@@ -326,7 +334,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             starts = [o.get('start') for o in chosen if o.get('start')]
             focus_option = {
                 'value': ','.join(focus_selected),
-                'quantity': quantity,
+                'selector_values': selected_values,
                 'families': [f for o in chosen for f in _families(o)],
                 'component': chosen[0].get('component') or '',
                 'collapse_below': chosen[0].get('collapse_below'),
@@ -455,14 +463,19 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 }
         param = focus_def.get('param') or 'focus'
         default = focus_def.get('default') or ''
-        quantity_param = quantity_def.get('param') or 'quantity'
-        quantity_default = quantity_def.get('default') or ''
 
-        def _quantity_suffix(value=None):
-            chosen_quantity = value if value is not None else quantity
-            if chosen_quantity and chosen_quantity != quantity_default:
-                return f'&{quantity_param}={chosen_quantity}'
-            return ''
+        def _selector_suffix(overrides=None):
+            # Non-default selector values ride every built URL; an
+            # override swaps one axis's value in.
+            parts = []
+            for i, sel in enumerate(selector_defs):
+                value = selected_values[i]
+                sel_param = sel.get('param') or 'quantity'
+                if overrides and sel_param in overrides:
+                    value = overrides[sel_param]
+                if value and value != (sel.get('default') or ''):
+                    parts.append(f'&{sel_param}={value}')
+            return ''.join(parts)
 
         def _toggle_url(value):
             # A tick toggles membership; the last member cannot untick
@@ -471,8 +484,24 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             if value not in focus_selected:
                 after = focus_selected + [value]
             return (f"?{param}={','.join(after) if after else default}"
-                    + _quantity_suffix())
+                    + _selector_suffix())
 
+        selectors_context = []
+        for i, sel in enumerate(selector_defs):
+            sel_param = sel.get('param') or 'quantity'
+            selectors_context.append({
+                'label': sel.get('label') or 'Counting',
+                'param': sel_param,
+                'value': selected_values[i],
+                'choices': [
+                    {'value': c.get('value'), 'label': c.get('label'),
+                     'active': c.get('value') == selected_values[i],
+                     'url': (f"?{param}={','.join(focus_selected)}"
+                             + _selector_suffix(
+                                 {sel_param: c.get('value')}))}
+                    for c in (sel.get('choices') or ())],
+            })
+        from urllib.parse import urlencode as _enc
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
             'param': param,
@@ -484,16 +513,19 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                  'active': o.get('value') in focus_selected,
                  'url': _toggle_url(o.get('value'))}
                 for o in (focus_def.get('options') or ())],
-            'quantity': {
-                'label': quantity_def.get('label') or 'Counting',
-                'param': quantity_param,
-                'choices': [
-                    {'value': c.get('value'), 'label': c.get('label'),
-                     'active': c.get('value') == quantity,
-                     'url': (f"?{param}={','.join(focus_selected)}"
-                             + _quantity_suffix(c.get('value')))}
-                    for c in (quantity_def.get('choices') or ())],
-            } if quantity_def else None,
+            'selectors': selectors_context,
+            # The cut narrows by the EFFECTIVE selector values — the
+            # clean page carries none in its URL, yet its cut must
+            # know them all.
+            'cut_query': _enc(
+                [(sel.get('param') or 'quantity', selected_values[i])
+                 for i, sel in enumerate(selector_defs)
+                 if selected_values[i]]),
+            # Parameter names the window strip carries through when
+            # present in the page URL.
+            'carry_params': ','.join(
+                sel.get('param') or 'quantity'
+                for sel in selector_defs),
         }
 
     # Window stepping: the arrows shift the whole window through the
