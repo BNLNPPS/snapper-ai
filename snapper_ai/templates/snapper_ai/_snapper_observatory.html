@@ -864,7 +864,8 @@
       members.forEach(function (id) { curveAxis[id] = traceAxis; });
       // A stacked family (the quilt) earns triple the panel height:
       // its information is vertical composition, not a single line.
-      panels.push({name: group.name, traceAxis: traceAxis,
+      panels.push({name: group.name, title: group.title || group.name,
+                   traceAxis: traceAxis,
                    px: group.stacked ? 450 : 150,
                    units: group.units || '',
                    axisKey: traceAxis === 'y' ? 'yaxis'
@@ -1034,7 +1035,7 @@
         yshift: 2, showarrow: false,
         // The panel states its unit: what the numbers count is never
         // left to be guessed.
-        text: '<b>' + escapeHtml(panel.name) + '</b>'
+        text: '<b>' + escapeHtml(panel.title) + '</b>'
             + (panel.units ? ' — ' + escapeHtml(panel.units) : ''),
         font: {size: 13, color: '#37474f'},
         // Solid backing: the label must stay legible over the
@@ -1111,8 +1112,11 @@
       .map(function (g) {
     // name is the unique registry identity; title, when given, is the
     // display form (a name can carry selector qualifiers the display
-    // should not).
+    // should not). pc_groups, when given, clusters a per-member
+    // family's tick boxes by the active lens: a box toggles its
+    // member SET while every member keeps its own curve and color.
     return {name: g.name, title: g.title || g.name,
+            prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             stacked: !!g.stacked, compact: !!g.compact,
             default_off: !!g.default_off, units: g.units || '',
             match: function (id) {
@@ -1120,6 +1124,10 @@
         return id.indexOf(p) === 0; })
           || (g.ids || []).indexOf(id) >= 0; }};
   });
+  // The effective focus selector values (grouping lens, counting):
+  // present even on the clean URL.
+  const FOCUS_PARAMS = new URLSearchParams(
+      '{{ observatory_focus.cut_query|default:""|escapejs }}');
   function groupDef(curveId) {
     for (const group of GROUPS) {
       if (group.match(curveId)) return group;
@@ -1280,9 +1288,10 @@
           ? '<a href="#" data-fam-arrow style="text-decoration:none">'
             + (closed ? '&#9656;' : '&#9662;') + '</a> '
           : '';
-      // A docked row is its panel's header: it states the unit too.
-      const title = name + (DOCK_CONTROLS && def.units
-                            ? ' — ' + def.units : '');
+      // A docked row is its panel's header: display title (never the
+      // qualifier-carrying registry name) plus the unit.
+      const title = (def.title || name)
+          + (DOCK_CONTROLS && def.units ? ' — ' + def.units : '');
       head.innerHTML = arrow + '<strong>' + escapeHtml(title)
           + (closed ? '</strong>'
                     : ':</strong> <a href="#" data-group-on>all</a>/'
@@ -1318,6 +1327,70 @@
       const rowDef = GROUPS.filter(function (g) {
         return g.name === name;
       })[0];
+      if (rowDef && rowDef.pc_groups) {
+        // Lens-clustered ticks over per-member curves: one box per
+        // group of the active lens, toggling its member set; every
+        // member keeps its own patch color on the plot. Mixed sets
+        // show as indeterminate.
+        const lensValue = FOCUS_PARAMS.get('lens') || 'category';
+        const fallback = lensValue === 'category'
+            ? 'Uncategorized' : 'Unassigned';
+        const clusters = {};
+        groupMembers[name].forEach(function (curveId) {
+          let pc = curveId;
+          (rowDef.prefixes || []).forEach(function (p) {
+            if (curveId.indexOf(p) === 0) pc = curveId.slice(p.length);
+          });
+          let labels;
+          if (pc.indexOf('zz_other') >= 0) {
+            labels = ['small configurations'];
+          } else {
+            const meta = rowDef.pc_groups[pc];
+            labels = (meta && meta[lensValue]
+                      && meta[lensValue].length)
+                ? meta[lensValue] : [fallback];
+          }
+          labels.forEach(function (lab) {
+            (clusters[lab] = clusters[lab] || []).push(curveId);
+          });
+        });
+        Object.keys(clusters).sort().forEach(function (lab) {
+          const ids = clusters[lab];
+          const onCount = ids.filter(function (id) {
+            return !curvesOff.has(id);
+          }).length;
+          const label = document.createElement('label');
+          label.className = 'form-check form-check-inline mb-0 me-0';
+          label.innerHTML =
+              '<input type="checkbox" class="form-check-input">'
+              + ' <span class="form-check-label">' + escapeHtml(lab)
+              + ' <span class="text-muted">(' + ids.length
+              + ')</span></span>';
+          const box = label.querySelector('input');
+          box.checked = onCount === ids.length;
+          box.indeterminate = onCount > 0 && onCount < ids.length;
+          box.addEventListener('change', function (e) {
+            ids.forEach(function (id) {
+              if (e.target.checked) curvesOff.delete(id);
+              else curvesOff.add(id);
+            });
+            persistPrefs();
+            rerenderView();
+          });
+          boxes.appendChild(label);
+        });
+        const info = document.createElement('span');
+        info.className = 'text-muted';
+        const shown = groupMembers[name].filter(function (id) {
+          return !curvesOff.has(id);
+        }).length;
+        info.textContent = groupMembers[name].length + ' PCs, '
+            + shown + ' shown';
+        boxes.appendChild(info);
+        row.appendChild(boxes);
+        attachRow(name, row);
+        return;
+      }
       if (rowDef && rowDef.compact) {
         // A compact family (hundreds of members, e.g. the per-PC
         // quilt) lists its size, not a box per member.
