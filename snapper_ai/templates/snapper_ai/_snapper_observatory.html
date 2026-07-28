@@ -968,6 +968,97 @@
       return [Math.max(1 - bottomPx / innerPx, 0),
               Math.min(1 - topPx / innerPx, 1)];
     }
+    // In-house date ticks over the FULL window at the current view's
+    // density (panning shows the right labels without a rebuild). The
+    // year is stated once — first label, and again only when it
+    // changes — the common-sense reading of a date axis.
+    const dateTickSpec = (function () {
+      const HOUR = 3600000, DAY = 86400000;
+      const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const target = renderedSpan / 8;
+      const steps = [HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR,
+                     DAY, 2 * DAY, 4 * DAY, 7 * DAY, 14 * DAY];
+      const monthSteps = [1, 2, 3, 6];
+      const vals = [], text = [];
+      function pad(n) { return (n < 10 ? '0' : '') + n; }
+      function naiveIso(d) {
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-'
+            + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':'
+            + pad(d.getMinutes()) + ':00';
+      }
+      let lastYear = null, lastDayKey = null;
+      function push(d, kind) {
+        const withYear = d.getFullYear() !== lastYear;
+        lastYear = d.getFullYear();
+        let label;
+        if (kind === 'hour') {
+          const dayKey = d.getFullYear() + '-' + d.getMonth() + '-'
+              + d.getDate();
+          const withDay = dayKey !== lastDayKey;
+          lastDayKey = dayKey;
+          label = (withDay ? MONTHS[d.getMonth()] + ' ' + d.getDate()
+                             + (withYear ? ' ' + d.getFullYear() : '')
+                             + ' ' : '')
+              + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        } else if (kind === 'day') {
+          label = MONTHS[d.getMonth()] + ' ' + d.getDate()
+              + (withYear ? ' ' + d.getFullYear() : '');
+        } else if (kind === 'month') {
+          label = MONTHS[d.getMonth()]
+              + (withYear ? ' ' + d.getFullYear() : '');
+        } else {
+          label = String(d.getFullYear());
+        }
+        vals.push(naiveIso(d));
+        text.push(label);
+      }
+      const start = fullRange[0], end = fullRange[1];
+      if (target < 14 * DAY) {
+        let step = steps[steps.length - 1];
+        for (const s of steps) { if (s >= target) { step = s; break; } }
+        const first = new Date(start);
+        let d;
+        if (step >= DAY) {
+          d = new Date(first.getFullYear(), first.getMonth(),
+                       first.getDate());
+          if (d.getTime() < start) d.setDate(d.getDate() + 1);
+          for (; d.getTime() <= end;
+               d.setDate(d.getDate() + step / DAY)) {
+            push(new Date(d.getTime()), 'day');
+          }
+        } else {
+          d = new Date(first.getFullYear(), first.getMonth(),
+                       first.getDate(), first.getHours());
+          while (d.getTime() < start) {
+            d = new Date(d.getTime() + step);
+          }
+          for (; d.getTime() <= end; d = new Date(d.getTime() + step)) {
+            push(d, 'hour');
+          }
+        }
+      } else if (target < 365 * DAY) {
+        let months = monthSteps[monthSteps.length - 1];
+        for (const m of monthSteps) {
+          if (m * 30 * DAY >= target) { months = m; break; }
+        }
+        const first = new Date(start);
+        const d = new Date(first.getFullYear(), first.getMonth(), 1);
+        if (d.getTime() < start) d.setMonth(d.getMonth() + 1);
+        for (; d.getTime() <= end; d.setMonth(d.getMonth() + months)) {
+          push(new Date(d.getTime()), 'month');
+        }
+      } else {
+        const first = new Date(start);
+        const d = new Date(first.getFullYear(), 0, 1);
+        if (d.getTime() < start) d.setFullYear(d.getFullYear() + 1);
+        for (; d.getTime() <= end;
+             d.setFullYear(d.getFullYear() + 1)) {
+          push(new Date(d.getTime()), 'year');
+        }
+      }
+      return {vals: vals, text: text};
+    })();
     // Tightness below the plot is content policy: when the stack ends
     // in a stub, the labels are already inside the geometry and the
     // bottom margin collapses; a trailing panel keeps label room only.
@@ -982,17 +1073,12 @@
       barmode: 'overlay',
       xaxis: {type: 'date', range: [toNaive(r0), toNaive(r1)],
               domain: [0, 1],
-              // One-line tick labels: the year rides the date line
-              // ('Jul 14 2026'), never a second line for the tight
-              // bottom to eclipse.
-              tickformatstops: [
-                {dtickrange: [null, 3600000], value: '%H:%M'},
-                {dtickrange: [3600000, 86400000],
-                 value: '%b %-d %H:%M'},
-                {dtickrange: [86400000, 'M1'], value: '%b %-d %Y'},
-                {dtickrange: ['M1', 'M12'], value: '%b %Y'},
-                {dtickrange: ['M12', null], value: '%Y'},
-              ],
+              // In-house one-line ticks: the year appears ONCE — on
+              // the first label and where it changes — never repeated
+              // on every date and never on a second line.
+              tickmode: 'array',
+              tickvals: dateTickSpec.vals,
+              ticktext: dateTickSpec.text,
               // Time labels belong at the bottom of the whole stack:
               // anchor to the lowest panel (the lanes when no panel).
               anchor: panels.length
