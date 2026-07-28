@@ -589,11 +589,13 @@
     curveTraceStart = traces.length;
     curveTraceIndex = {};
     const stackedFamilies = {};
+    const stackedDefs = {};
     curveIds.forEach(function (curveId) {
       const def = groupDef(curveId);
       if (def && def.stacked) {
         (stackedFamilies[def.name] = stackedFamilies[def.name] || [])
             .push(curveId);
+        stackedDefs[def.name] = def;
       }
     });
     quiltGeom = [];
@@ -621,7 +623,8 @@
       const familyOff = members.every(function (id) {
         return curvesOff.has(id);
       });
-      const geom = {axisKey: null, edgesMs: edgesMs, members: []};
+      const geom = {axisKey: null, edgesMs: edgesMs, members: [],
+                    units: (stackedDefs[familyName] || {}).units || ''};
       members.forEach(function (id, memberIndex) {
         const values = {};
         data.curves[id].points.forEach(function (p) {
@@ -778,6 +781,7 @@
       // its information is vertical composition, not a single line.
       panels.push({name: group.name, traceAxis: traceAxis,
                    px: group.stacked ? 450 : 150,
+                   units: group.units || '',
                    axisKey: traceAxis === 'y' ? 'yaxis'
                        : 'yaxis' + traceAxis.slice(1)});
     });
@@ -812,6 +816,19 @@
     // recent first; the numbers re-derive on every zoom or filter.
     visibleActivities = collectVisibleActivities(r0, r1);
     const traces = buildTraces();
+    // The axis opens at the first stacked column's leading edge — a
+    // half-clipped first bin reads as an error, not a boundary.
+    if (quiltGeom.length && !viewTrue) {
+      const lead = Math.min.apply(null, quiltGeom.map(function (g) {
+        return g.edgesMs[0];
+      }));
+      if (lead < fullRange[0]) {
+        fullRange[0] = lead;
+        r0 = lead;
+        renderedSpan = r1 - r0;
+        minBarMs = renderedSpan / 60;
+      }
+    }
 
     // Vertical geometry in pixels, then normalized to axis domains:
     // the lane band on top, one panel per family below at that
@@ -883,7 +900,10 @@
         xref: 'paper', x: 0, xanchor: 'left',
         yref: panel.traceAxis + ' domain', y: 1, yanchor: 'bottom',
         yshift: 2, showarrow: false,
-        text: '<b>' + escapeHtml(panel.name) + '</b>',
+        // The panel states its unit: what the numbers count is never
+        // left to be guessed.
+        text: '<b>' + escapeHtml(panel.name) + '</b>'
+            + (panel.units ? ' — ' + escapeHtml(panel.units) : ''),
         font: {size: 13, color: '#37474f'},
         // Solid backing: the label must stay legible over the
         // no-coverage grey and anything else beneath it.
@@ -952,7 +972,7 @@
   const GROUPS = (groupsEl ? JSON.parse(groupsEl.textContent) : [])
       .map(function (g) {
     return {name: g.name, stacked: !!g.stacked, compact: !!g.compact,
-            default_off: !!g.default_off,
+            default_off: !!g.default_off, units: g.units || '',
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
         return id.indexOf(p) === 0; })
@@ -1806,18 +1826,33 @@
   function hideQuiltFloater() {
     quiltFloater.style.display = 'none';
   }
+  // Perceived luma decides the text color — HSL lightness alone is
+  // wrong for it: a blue at 55% lightness is dark to the eye.
+  function hslToRgb(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const hp = ((h % 360) + 360) % 360 / 60;
+    const x = c * (1 - Math.abs(hp % 2 - 1));
+    const m = l - c / 2;
+    const base = hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0]
+        : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c]
+        : hp < 5 ? [x, 0, c] : [c, 0, x];
+    return base.map(function (v) { return Math.round((v + m) * 255); });
+  }
   function textColorOn(color) {
-    let bright = false;
+    let rgb = null;
     const hex = /^#([0-9a-f]{6})$/i.exec(color);
     if (hex) {
       const v = parseInt(hex[1], 16);
-      bright = (0.299 * (v >> 16 & 255) + 0.587 * (v >> 8 & 255)
-                + 0.114 * (v & 255)) > 150;
+      rgb = [v >> 16 & 255, v >> 8 & 255, v & 255];
     } else {
-      const hsl = /,\s*(\d+(?:\.\d+)?)%\s*\)$/.exec(color);
-      bright = hsl ? parseFloat(hsl[1]) > 47 : false;
+      const hsl =
+          /hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)/i
+          .exec(color);
+      if (hsl) rgb = hslToRgb(+hsl[1], +hsl[2] / 100, +hsl[3] / 100);
     }
-    return bright ? '#111' : '#fff';
+    if (!rgb) return '#fff';
+    const luma = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+    return luma > 150 ? '#111' : '#fff';
   }
   function quiltHit(event) {
     if (!quiltGeom.length || !plotDiv._fullLayout) return null;
@@ -1863,7 +1898,9 @@
     quiltFloater.style.background = color;
     quiltFloater.style.color = textColorOn(color);
     quiltFloater.innerHTML = '<b>' + escapeHtml(hit.member.label)
-        + '</b>: ' + hit.member.own[hit.column] + ' · ' + day;
+        + '</b>: ' + hit.member.own[hit.column]
+        + (hit.geom.units ? ' ' + escapeHtml(hit.geom.units) : '')
+        + ' · ' + day;
     quiltFloater.style.display = 'block';
     const width = quiltFloater.offsetWidth;
     const left = event.clientX + 16 + width > window.innerWidth
