@@ -623,7 +623,10 @@ def snapper_snaps(request, scope, snap_id=None):
 
     from django.core.paginator import Paginator
 
-    paginator = Paginator(snaps, RECENT_SNAP_LIMIT)
+    # The history table needs each snap's metadata, never its state:
+    # a page of full state documents is tens of megabytes of JSONB for
+    # a table of timestamps.
+    paginator = Paginator(snaps.defer('state'), RECENT_SNAP_LIMIT)
     try:
         snap_page_number = max(int(request.GET.get('snap_page') or 1), 1)
     except ValueError:
