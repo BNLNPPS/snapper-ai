@@ -32,7 +32,11 @@ history. The curve key above the plot is a static legend.
   const plotDiv = document.getElementById('{{ embed.dom_id }}');
   const keyDiv = document.getElementById('{{ embed.dom_id }}-key');
   {# Path resolved at render time — a cached context must never bake a script-prefix path. #}
+  {% if embed.report_focus_slug %}
+  const reportUrl = '{% url "snapper_ai:snapper_focus" scope=embed.scope focus_slug=embed.report_focus_slug %}?{{ embed.report_query|escapejs }}';
+  {% else %}
   const reportUrl = '{% url "snapper_ai:snapper_report" scope=embed.scope %}?{{ embed.report_query|escapejs }}';
+  {% endif %}
 
   // The observatory template's curve palette, verbatim: colors are
   // assigned by position in the scope's FULL sorted curve list, so a
