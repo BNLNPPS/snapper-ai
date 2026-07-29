@@ -938,6 +938,14 @@
     // recent first; the numbers re-derive on every zoom or filter.
     visibleActivities = collectVisibleActivities(r0, r1);
     const traces = buildTraces(viewTrue);
+    // Invisible activator: an axis renders only when a trace uses it,
+    // so the top panel's date-label twin gets one silent point.
+    if (panels.length > 1) {
+      traces.push({x: [toNaive(fullRange[0])], y: [0], xaxis: 'x2',
+                   yaxis: panels[0].traceAxis, mode: 'markers',
+                   marker: {opacity: 0}, hoverinfo: 'skip',
+                   showlegend: false});
+    }
     // The axis opens at the first stacked column's leading edge — a
     // half-clipped first bin reads as an error, not a boundary.
     if (quiltGeom.length && !viewTrue) {
@@ -978,19 +986,29 @@
         return {name: p.name, rowPx: panelGapPx, panel: p};
       });
     }
-    // The x tick labels draw once, under the LAST panel; a stub row
-    // sitting right after it needs that band cleared, and nothing
-    // else does. Trailing space is content too: none is reserved
-    // beyond what the rows and labels actually occupy.
-    let lastPanelIdx = -1;
-    sections.forEach(function (s, i) { if (s.panel) lastPanelIdx = i; });
+    // The x tick labels draw under the LAST panel — and again under
+    // the FIRST when several panels stack, so the lead panel stands
+    // alone in a screenshot. A stub row sitting right after a label
+    // band needs that band cleared, and nothing else does. Trailing
+    // space is content too: none is reserved beyond what the rows and
+    // labels actually occupy.
+    let lastPanelIdx = -1, firstPanelIdx = -1;
+    sections.forEach(function (s, i) {
+      if (!s.panel) return;
+      if (firstPanelIdx < 0) firstPanelIdx = i;
+      lastPanelIdx = i;
+    });
     const labelBandPx = 26;
+    const topLabelsPx = (firstPanelIdx >= 0
+                         && firstPanelIdx !== lastPanelIdx)
+        ? labelBandPx : 0;
     const stubAfterLabels = DOCK_CONTROLS
         && lastPanelIdx >= 0 && lastPanelIdx + 1 < sections.length;
     // Height is content: hidden lanes' room is truly reclaimed (the
     // small floor only guards the nothing-shown case).
     const innerPx = Math.max(
         lanePx + laneGapPx + (stubAfterLabels ? labelBandPx : 0)
+        + topLabelsPx
         + sections.reduce(function (px, s) {
           return px + s.rowPx + (s.panel ? s.panel.px : 0);
         }, 0), 110);
@@ -1150,6 +1168,17 @@
                visible: false, fixedrange: true},
       shapes: gapShapes.concat(cutShapeList()),
       hovermode: 'closest',
+      ...(topLabelsPx ? {
+        // Matched twin of the x axis under the TOP panel: the same
+        // in-house date labels, so the lead panel screenshots whole.
+        xaxis2: {type: 'date', matches: 'x',
+                 anchor: panels[0].traceAxis,
+                 tickmode: 'array', tickvals: dateTickSpec.vals,
+                 ticktext: dateTickSpec.text, showgrid: false,
+                 showspikes: true, spikemode: 'across',
+                 spikesnap: 'cursor', spikedash: 'dot',
+                 spikethickness: 1, spikecolor: '#78909c'},
+      } : {}),
       // The floater belongs on the tile, not hours away from it — but
       // without activity tiles (curves views, sparse daily steps
       // included) the cursor deserves a generous reach.
@@ -1173,6 +1202,11 @@
       if (!s.panel) return;
       const panel = s.panel;
       panelTopPx = topPx + panel.px;
+      // The top panel's own date-label band sits between it and the
+      // next section.
+      if (i === firstPanelIdx && topLabelsPx) {
+        panelTopPx += topLabelsPx;
+      }
       layout[panel.axisKey] = {
         domain: domainOf(topPx, topPx + panel.px),
         rangemode: 'tozero',
