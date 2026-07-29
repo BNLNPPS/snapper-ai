@@ -1450,15 +1450,10 @@
     }
   }
   function setGroup(name, on) {
-    // One batched restyle: per-member calls redraw once per member,
-    // which is seconds of freeze on a large family.
-    const indices = [];
-    let stacked = false;
     (groupMembers[name] || []).forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
       const def = groupDef(curveId) || {};
-      stacked = stacked || !!def.stacked;
       if (def.pc_groups) {
         const pc = pcOfCurve(curveId, def);
         if (on) pcOff.delete(pc);
@@ -1466,23 +1461,9 @@
       }
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
-      if (curveTraceIndex[curveId] !== undefined) {
-        indices.push(curveTraceIndex[curveId]);
-      }
     });
-    // Stacked members exist as traces only while ticked (the stack
-    // re-seats on the survivors): rebuild rather than restyle.
-    if (stacked) {
-      persistPrefs();
-      rerenderView();
-      return;
-    }
-    if (indices.length) {
-      Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
-                     indices);
-    }
     persistPrefs();
-    syncPanels();
+    rerenderView();
   }
   function renderControls() {
     controls.innerHTML = '';
@@ -1753,13 +1734,10 @@
     });
   }
   function setAll(on) {
-    const indices = [];
-    let stacked = false;
     curveIds.forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
       const def = groupDef(curveId) || {};
-      stacked = stacked || !!def.stacked;
       if (def.pc_groups) {
         const pc = pcOfCurve(curveId, def);
         if (on) pcOff.delete(pc);
@@ -1767,21 +1745,9 @@
       }
       const box = document.getElementById('snapper-curve-' + curveId);
       if (box) box.checked = on;
-      if (curveTraceIndex[curveId] !== undefined) {
-        indices.push(curveTraceIndex[curveId]);
-      }
     });
-    if (stacked) {
-      persistPrefs();
-      rerenderView();
-      return;
-    }
-    if (indices.length) {
-      Plotly.restyle(plotDiv, {visible: on ? true : 'legendonly'},
-                     indices);
-    }
     persistPrefs();
-    syncPanels();
+    rerenderView();
   }
   document.getElementById('snapper-curves-all-on')
       .addEventListener('click', function () { setAll(true); });
