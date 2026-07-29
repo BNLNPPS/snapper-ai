@@ -877,9 +877,10 @@
       members.forEach(function (id) { curveAxis[id] = traceAxis; });
       // A stacked family (the quilt) earns triple the panel height:
       // its information is vertical composition, not a single line.
+      // A family declaring tall earns double height.
       panels.push({name: group.name, title: group.title || group.name,
                    traceAxis: traceAxis,
-                   px: group.stacked ? 450 : 150,
+                   px: group.stacked ? 450 : (group.tall ? 300 : 150),
                    units: group.units || '',
                    axisKey: traceAxis === 'y' ? 'yaxis'
                        : 'yaxis' + traceAxis.slice(1)});
@@ -1250,6 +1251,7 @@
             default_off: !!g.default_off, units: g.units || '',
             order: g.order || [],
             window_relative: !!g.window_relative,
+            tall: !!g.tall,
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
         return id.indexOf(p) === 0; })
