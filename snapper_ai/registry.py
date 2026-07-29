@@ -18,7 +18,10 @@ template, one ``register(ScopeProvider(...))`` call per scope, and a
 data feed into ``snapper_ai.capture``.
 """
 
+import logging
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,7 +36,10 @@ class ScopeProvider:
     curve_label      (curve_id) -> label, or None to fall through to
                      the id itself.
     curve_groups     Tuple of {'name', 'prefixes', 'ids'} dicts: the
-                     curve family rows of the observatory legend.
+                     curve family rows of the observatory legend. May
+                     be a callable returning that tuple, resolved per
+                     render so families can track live host state
+                     (resolve with ``resolve_curve_groups``).
     episodic_lanes   (start, end, dangle_seconds) -> {lane_name:
                      [segment, ...]} discrete activity lanes.
     activity_at      (instant) -> per-lane activity truth at an
@@ -69,14 +75,17 @@ class ScopeProvider:
     # supplies them; a callable is invoked at render time so presets
     # can track host state such as the producing campaigns.
     preset_links: object = ()
-    # A focus view: one scope-switcher tab opening the report narrowed
-    # to a host-defined selection. A callable returning
-    # {'param', 'label', 'default', 'options': [{'value', 'label',
-    # 'families': [...], 'component': name, 'start': datetime|None}]}.
-    # When the report request carries ?<param>=<value>: only the
-    # option's families' curves and control rows render, the window
-    # start clamps to the option's start, the cut narrows to the
-    # option's component, and the options render as a tab row.
+    # Focus views: scope-switcher tabs opening the report narrowed to
+    # a host-defined selection. A declaration is a dict (or a callable
+    # returning one): {'param', 'label', 'default', 'options':
+    # [{'value', 'label', 'families': [...], 'component': name,
+    # 'start': datetime|None}]}. This field accepts one declaration or
+    # a tuple/list of them — each gets its own tab and its own clean
+    # page at /<scope>/<label-lowercased>/. When the report request
+    # carries ?<param>=<value>: only the option's families' curves and
+    # control rows render, the window start clamps to the option's
+    # start, the cut narrows to the option's component, and the
+    # options render as a tab row.
     focus_view: object = None
 
 
@@ -102,6 +111,42 @@ _HOOKS = {
 def register(provider):
     """Register a scope provider (host AppConfig.ready() territory)."""
     _REGISTRY[provider.scope] = provider
+
+
+def resolve_curve_groups(provider):
+    """A provider's curve families, resolving the callable form. A
+    failing callable yields no families and logs — the page renders
+    without them rather than erroring."""
+    groups = provider.curve_groups if provider else ()
+    if callable(groups):
+        try:
+            groups = groups()
+        except Exception as e:                               # noqa: BLE001
+            logger.error('snapper curve_groups callable failed for '
+                         'scope %r: %s', provider.scope, e)
+            groups = ()
+    return groups or ()
+
+
+def resolve_focus_views(provider):
+    """A provider's focus views as a list. The field accepts one
+    declaration or a tuple/list; each entry is a dict or a callable
+    returning one. A failing or empty entry drops out and logs."""
+    raw = provider.focus_view if provider else None
+    if raw is None:
+        return []
+    entries = list(raw) if isinstance(raw, (list, tuple)) else [raw]
+    views = []
+    for entry in entries:
+        try:
+            entry = entry() if callable(entry) else entry
+        except Exception as e:                               # noqa: BLE001
+            logger.error('snapper focus view failed for scope %r: %s',
+                         provider.scope, e)
+            entry = None
+        if entry:
+            views.append(entry)
+    return views
 
 
 def register_hooks(**hooks):

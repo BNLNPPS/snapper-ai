@@ -35,12 +35,12 @@ def _health_url():
     return hook() if hook else None
 
 
-def _scope_options(scope, active_query='', focus_engaged=False):
+def _scope_options(scope, active_query='', active_focus_label=None):
     """Scope switcher entries: each scope, followed by its provider's
     preset tabs (report-page links with a fixed query string). A preset
     is active when the current querystring carries its families value.
-    A focus view links to its own selection-free page and is active
-    whenever the focus is engaged (by page or by parameter)."""
+    Each focus view links to its own selection-free page and is active
+    when it is the engaged one (by page or by parameter)."""
     from urllib.parse import parse_qs
 
     active_params = parse_qs(active_query)
@@ -70,21 +70,17 @@ def _scope_options(scope, active_query='', focus_engaged=False):
                 'active': (name == scope and bool(active_families)
                            and preset_families == active_families),
             })
-        focus = provider.focus_view if provider else None
-        if focus is not None:
-            try:
-                focus = focus() if callable(focus) else focus
-            except Exception:                                # noqa: BLE001
-                focus = None
-        if focus:
+        for focus in registry.resolve_focus_views(provider):
             param = focus.get('param') or 'focus'
+            label = focus.get('label') or 'Focus'
             focus_active = (name == scope
-                            and (focus_engaged
-                                 or bool(active_params.get(param))))
+                            and (active_focus_label == label
+                                 or (active_focus_label is None
+                                     and bool(active_params.get(param)))))
             options.append({
                 'name': name,
-                'label': focus.get('label') or 'Focus',
-                'focus_slug': (focus.get('label') or 'focus').lower(),
+                'label': label,
+                'focus_slug': label.lower(),
                 'active': focus_active,
             })
             if focus_active:
@@ -270,27 +266,32 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     snaps = SystemSnap.objects.filter(scope=scope).order_by('-snap_time')
     latest_snap = snaps.first()
 
-    # Focus view (registry.focus_view): the report narrowed to one
+    # Focus views (registry.focus_view): the report narrowed to one
     # host-defined selection — only its families, its component in the
-    # cut, its start as the window floor.
+    # cut, its start as the window floor. A provider may declare
+    # several; the engaged one is named by the page slug or by the
+    # first declaration whose parameter the request carries.
     provider = registry.get(scope)
+    focus_defs = registry.resolve_focus_views(provider)
     focus_def = None
     focus_option = None
-    if provider is not None and provider.focus_view is not None:
-        try:
-            focus_def = (provider.focus_view()
-                         if callable(provider.focus_view)
-                         else provider.focus_view)
-        except Exception:                                    # noqa: BLE001
-            focus_def = None
-    # The focus view's own page (/scope/<label>/) engages the focus
+    # A focus view's own page (/scope/<label>/) engages that focus
     # with its defaults; the query parameter only narrows. A slug that
     # names no focus view is an unknown page.
     if focus_slug is not None:
-        expected = ((focus_def.get('label') or 'focus').lower()
-                    if focus_def else None)
-        if focus_slug.lower() != expected:
+        for candidate in focus_defs:
+            if focus_slug.lower() == (candidate.get('label')
+                                      or 'focus').lower():
+                focus_def = candidate
+                break
+        if focus_def is None:
             raise Http404(f'Unknown Snapper page {focus_slug!r}')
+    else:
+        for candidate in focus_defs:
+            if (request.GET.get(candidate.get('param') or 'focus')
+                    or '').strip():
+                focus_def = candidate
+                break
     focus_selected = []
     if focus_def:
         raw = (request.GET.get(focus_def.get('param') or 'focus')
@@ -374,9 +375,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     if (series_cache is not None
             and not (request.GET.get('start') or request.GET.get('end'))):
         if window_key in WINDOW_HOURS:
-            cache_key = f'snapper_series:v3:{scope}:{window_key}'
+            cache_key = f'snapper_series:v4:{scope}:{window_key}'
         elif focus_option is not None and focus_option.get('start'):
-            cache_key = (f'snapper_series:v3:{scope}:span:'
+            cache_key = (f'snapper_series:v4:{scope}:span:'
                          f'{window_start.date().isoformat()}')
     if cache_key:
         observatory = dict(series_cache(
@@ -389,7 +390,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     if focus_option is not None:
         # Only the focused families' curves and control rows render.
         wanted = set(focus_option.get('families') or ())
-        groups = [dict(g) for g in (provider.curve_groups or ())
+        groups = [dict(g)
+                  for g in registry.resolve_curve_groups(provider)
                   if g.get('name') in wanted]
         # A chosen stacked family is the focus view's primary display:
         # a scope-view default_off marking does not apply to it.
@@ -568,7 +570,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'scope_label': _scope_label(scope),
         'scope_options': _scope_options(
             scope, request.META.get('QUERY_STRING', ''),
-            focus_engaged=focus_option is not None),
+            active_focus_label=(
+                (focus_def.get('label') or 'Focus')
+                if focus_option is not None else None)),
         'observatory': observatory,
         'observatory_window': window_key,
         'observatory_windows': list(WINDOW_HOURS),
@@ -587,8 +591,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_range_label': observatory_range_label,
         'observatory_groups': (
             focus_context['groups'] if focus_context else list(
-                (registry.get(scope).curve_groups or ())
-                if registry.get(scope) else ())),
+                registry.resolve_curve_groups(registry.get(scope)))),
         'observatory_focus': focus_context,
         'health_url': _health_url(),
     })

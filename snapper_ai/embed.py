@@ -106,7 +106,7 @@ def embed_context(scope, start, end, families=(), lanes=False):
     all_curve_ids = sorted(series['curves'])
 
     groups = {group.get('name'): group
-              for group in (provider.curve_groups or ())}
+              for group in registry.resolve_curve_groups(provider)}
     panels = []
     assigned = set()
     for name in families:
