@@ -126,6 +126,9 @@
       {% endfor %}
       {% endfor %}
     </div>
+    {% if observatory_focus.note %}
+    <div class="mb-2 text-muted">{{ observatory_focus.note }}</div>
+    {% endif %}
     {% endif %}
     <div id="snapper-observatory-controls" class="mb-2"></div>
     {# style-based visibility: Bootstrap's d-flex !important would override the hidden attribute #}
@@ -486,7 +489,7 @@
   // Minimum on-screen bar length for episodic run periods, in ms of the
   // rendered view span — a minutes-long run stays visible at a 7-day
   // zoom. Recomputed (with a re-render) when the view span changes.
-  let minBarMs = 0, renderedSpan = 0;
+  let minBarMs = 0, renderedSpan = 0, renderedLeft = null;
   const seenStates = new Set();
   // The vertical cut line, as a true instant; confirmed is the last cut
   // actually taken (a provisional line from a click that turns into a
@@ -561,7 +564,7 @@
     Plotly.relayout(plotDiv, {shapes: gapShapes.concat(cutShapeList())});
   }
 
-  function buildTraces() {
+  function buildTraces(viewTrue) {
     const traces = [];
     seenStates.clear();
 
@@ -764,9 +767,23 @@
     flatIds.forEach(function (curveId) {
       const curve = data.curves[curveId];
       curveTraceIndex[curveId] = traces.length;
+      // A window-relative curve re-bases at the view's left edge when
+      // zoomed: the visible range is the integration range, so the
+      // staircase rises from zero wherever the view begins.
+      let ys = curve.points.map(p => p[1]);
+      if (viewTrue && isWindowRelative(curveId, groupDef(curveId))) {
+        const leftMs = viewTrue[0] - basisCorrection;
+        let base = 0;
+        for (const point of curve.points) {
+          if (Date.parse(point[0]) <= leftMs) base = point[1];
+          else break;
+        }
+        if (base) ys = curve.points.map(
+            p => Math.max(0, p[1] - base));
+      }
       traces.push({
         x: curve.points.map(p => p[0]),
-        y: curve.points.map(p => p[1]),
+        y: ys,
         mode: 'lines',
         line: {shape: 'hv', width: 2.5, color: curveColor[curveId]},
         name: curve.label,
@@ -777,6 +794,10 @@
             ? 'legendonly' : true,
         showlegend: false,
         hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
+        // The hover label sits on the curve's color; the house
+        // perceptual-luma rule picks the text color, never Plotly's
+        // linearized default (wrong on mid oranges and cyans).
+        hoverlabel: {font: {color: textOn(curveColor[curveId])}},
       });
     });
     failTriangleTraces().forEach(function (t) { traces.push(t); });
@@ -909,13 +930,14 @@
       }
     }
     renderedSpan = r1 - r0;
+    renderedLeft = r0;
     // The plot enhances the truth into legibility: no activity tile
     // renders below a legible minimum width, whatever its true span.
     minBarMs = renderedSpan / 60;
     // Dynamic numbering: the activities visible in this view, most
     // recent first; the numbers re-derive on every zoom or filter.
     visibleActivities = collectVisibleActivities(r0, r1);
-    const traces = buildTraces();
+    const traces = buildTraces(viewTrue);
     // The axis opens at the first stacked column's leading edge — a
     // half-clipped first bin reads as an error, not a boundary.
     if (quiltGeom.length && !viewTrue) {
@@ -926,6 +948,7 @@
         fullRange[0] = lead;
         r0 = lead;
         renderedSpan = r1 - r0;
+        renderedLeft = r0;
         minBarMs = renderedSpan / 60;
       }
     }
@@ -1268,6 +1291,22 @@
     }
     return null;
   }
+  // Whether one curve is window-relative: its family declares
+  // window_relative as true (whole family) or as a list of curve ids
+  // and '_'-terminated prefixes (a subset of a mixed family).
+  function isWindowRelative(curveId, def) {
+    const flag = def && def.window_relative;
+    if (!flag) return false;
+    if (flag === true) return true;
+    const list = Array.isArray(flag) ? flag : [flag];
+    return list.some(function (entry) {
+      return entry.slice(-1) === '_'
+          ? curveId.indexOf(entry) === 0 : curveId === entry;
+    });
+  }
+  const HAS_WINDOW_RELATIVE = GROUPS.some(function (g) {
+    return !!g.window_relative;
+  });
   // The member (PC) label behind a pc_groups family's curve id — the
   // quantity-independent identity the remembered filter is keyed by.
   function pcOfCurve(curveId, def) {
@@ -2276,6 +2315,14 @@
     // card even when the clean URL carries none.
     const focusCutQuery =
         '{{ observatory_focus.cut_query|default:""|escapejs }}';
+    // The integration basis rides along: the current view's left edge
+    // (the zoomed view when zoomed, else the window), so the card's
+    // in-window numbers match what the staircases show.
+    const axisRange = (plotDiv.layout && plotDiv.layout.xaxis
+                       && plotDiv.layout.xaxis.range) || null;
+    const sinceIso = new Date(
+        (axisRange ? Date.parse(axisRange[0]) : Date.parse(data.start))
+        + basisCorrection).toISOString();
     fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
           + (focusComponent
              ? '&component=' + encodeURIComponent(focusComponent)
@@ -2283,7 +2330,8 @@
           + (focusValue
              ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
              : '')
-          + (focusCutQuery ? '&' + focusCutQuery : ''))
+          + (focusCutQuery ? '&' + focusCutQuery : '')
+          + '&since=' + encodeURIComponent(sinceIso))
       .then(function (r) {
         if (!r.ok) {
           throw new Error('cut endpoint returned HTTP ' + r.status);
@@ -2721,7 +2769,12 @@
     if (!plotDiv._fullLayout || !plotDiv._fullLayout.xaxis) return;
     const view = currentRange();
     const span = view[1] - view[0];
-    if (renderedSpan && Math.abs(span - renderedSpan) / renderedSpan < 0.2) {
+    // Window-relative curves also re-render when the LEFT EDGE moves
+    // (a pan keeps the span but shifts the integration basis).
+    const leftMoved = HAS_WINDOW_RELATIVE && renderedLeft !== null
+        && Math.abs(view[0] - renderedLeft) > span * 0.02;
+    if (renderedSpan && !leftMoved
+        && Math.abs(span - renderedSpan) / renderedSpan < 0.2) {
       return;
     }
     clearTimeout(spanRenderTimer);

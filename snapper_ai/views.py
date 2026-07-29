@@ -537,6 +537,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         from urllib.parse import urlencode as _enc
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
+            'note': focus_def.get('note') or '',
             'param': param,
             'value': focus_option.get('value') or '',
             'component': focus_option.get('component') or '',
@@ -843,7 +844,8 @@ def snapper_system(request, scope):
 # ── The cut: structured state at an instant ──────────────────────────────
 
 def _cut_components(snap, previous_snap, scope, requested_at=None,
-                    only=None, params=None):
+                    only=None, params=None, since_snap=None,
+                    since=None):
     state = _dict(snap.state)
     previous_state = _dict(previous_snap.state) if previous_snap else {}
     provider = registry.get(scope)
@@ -882,10 +884,18 @@ def _cut_components(snap, previous_snap, scope, requested_at=None,
             builder = (provider.component_cards.get(name)
                        if provider and provider.component_cards else None)
             if builder is not None:
+                # The integration basis: the same component's data at
+                # the ?since= instant, for cards reporting
+                # window-relative counter differences.
+                since_data = _dict(_dict(_dict(_dict(
+                    (since_snap.state if since_snap else {})
+                    or {}).get('components')).get(name)).get('data'))
                 card.update(builder(data, previous_data,
                                     {'scope': scope,
                                      'requested_at': requested_at,
-                                     'params': params or {}}))
+                                     'params': params or {},
+                                     'since': since,
+                                     'since_data': since_data}))
                 if provider.card_template:
                     card.setdefault('template', provider.card_template)
             else:
@@ -1001,11 +1011,23 @@ def snapper_cut(request, scope):
 
     # The page's query travels to the card builders: a provider whose
     # card spans several records (e.g. campaigns) narrows to the
-    # page's selection.
+    # page's selection. ?since= names the integration basis — the
+    # displayed window's left edge — and resolves to the latest snap
+    # at or before it carrying the narrowed component.
+    since = parse_datetime((request.GET.get('since') or '').strip())
+    since_snap = None
+    if since is not None and since.tzinfo is not None:
+        basis_query = SystemSnap.objects.filter(
+            scope=scope, snap_time__lte=since)
+        if component_filter:
+            basis_query = basis_query.filter(
+                state__components__has_key=component_filter)
+        since_snap = basis_query.order_by('-snap_time').first()
     cards = (_cut_components(snap, previous_snap, scope,
                              requested_at=result.requested_at,
                              only=component_filter or None,
-                             params=request.GET)
+                             params=request.GET,
+                             since_snap=since_snap, since=since)
              if snap else [])
     for card in cards:
         assessed = parse_datetime(str(card.get('assessed_at') or ''))
