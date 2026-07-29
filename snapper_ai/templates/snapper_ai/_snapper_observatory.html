@@ -311,20 +311,24 @@
   // series cache — when the curve vocabulary changes, selections
   // recorded against the old vocabulary are stale wholesale (a
   // 2026-07-29 deploy persisted auto-unticked ids into the old key).
+  // A signed-in account's truth is the server record ALONE: local
+  // storage is the anonymous browser's memory and must never override
+  // it — a non-empty test cannot distinguish the server saying
+  // "all on" from the server having no record, so a locally recorded
+  // all-off state would otherwise stand forever.
   const curvesOff = new Set(
-      (serverPrefs.curves_off2 && serverPrefs.curves_off2.length
-          ? serverPrefs.curves_off2 : localPrefs.curves_off2) || []);
+      (authenticated ? serverPrefs.curves_off2
+                     : localPrefs.curves_off2) || []);
   // Per-member filter state for pc_groups families, keyed by the
   // MEMBER (PC) label — quantity-independent, so an unticked set
   // stays unticked across the counting toggle's different curve ids.
   const pcOff = new Set(
-      (serverPrefs.pc_off && serverPrefs.pc_off.length
-          ? serverPrefs.pc_off : localPrefs.pc_off) || []);
+      (authenticated ? serverPrefs.pc_off : localPrefs.pc_off) || []);
   // Expanded lane headers (the health lane opening to its per-check
   // sub-lanes), remembered exactly like the curve selection.
   const lanesOpen = new Set(
-      (serverPrefs.lanes_open && serverPrefs.lanes_open.length
-          ? serverPrefs.lanes_open : localPrefs.lanes_open) || []);
+      (authenticated ? serverPrefs.lanes_open
+                     : localPrefs.lanes_open) || []);
 
   let saveTimer = null;
   function persistPrefs() {
