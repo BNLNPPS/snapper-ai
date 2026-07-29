@@ -504,19 +504,24 @@
   // double-click zoom reverts to it).
   let cutTrueMs = null;
   let confirmedCutTrueMs = null;
+  let cutFetchController = null;
+  let cutRangeTimer = null;
 
   function cutShapeList() {
     if (cutTrueMs === null) return [];
     let basisMs = cutTrueMs - basisCorrection;
-    // A cut at the window edge loses half its 2px width to plot
-    // clipping (Now slices at the exact right edge): nudge the LINE
-    // inward by exactly one pixel's worth of time so it renders
-    // whole — the cut time itself is untouched.
+    // A cut at the visible range edge loses half its 2px width to plot
+    // clipping (Now and a drag-selected range both slice at the exact
+    // right edge): nudge the LINE inward by exactly one pixel's worth
+    // of time so it renders whole — the cut time itself is untouched.
     const xa = plotDiv._fullLayout && plotDiv._fullLayout.xaxis;
     if (renderedSpan && xa && xa._length) {
       const onePx = renderedSpan / xa._length;
-      basisMs = Math.min(basisMs, fullRange[1] - onePx);
-      basisMs = Math.max(basisMs, fullRange[0] + onePx);
+      const visible = xa.range
+          ? [Date.parse(xa.range[0]), Date.parse(xa.range[1])]
+          : fullRange;
+      basisMs = Math.min(basisMs, visible[1] - onePx);
+      basisMs = Math.max(basisMs, visible[0] + onePx);
     }
     return [{
       type: 'line', xref: 'x', yref: 'paper',
@@ -2352,6 +2357,10 @@
     // on: a short run renders as a tile far wider than its true span,
     // so a click anywhere on that tile resolves to the run it stands
     // for. Line where you clicked; state of the run you clicked.
+    // A deliberate click after a range gesture owns the cut; do not
+    // let that gesture's delayed right-edge synchronization overwrite
+    // the user's newer selection.
+    clearTimeout(cutRangeTimer);
     cutTrueMs = confirmedCutTrueMs = Date.parse(timeIso);
     applyShapes();
     updateClearAll();
@@ -2366,10 +2375,10 @@
     fetchCutDetail();
   }
   function fetchCutDetail() {
-    // The active cut's server card on the CURRENT view's basis. The
-    // card and the staircases share one integration basis — the
-    // view's left edge — so a zoom or pan that re-bases the plot
-    // re-fetches the card too (the view-change hook below).
+    // The active cut's server card over the CURRENT view interval.
+    // The card and the staircases share both bounds: the view's left
+    // edge is the integration basis and its right edge is the cut
+    // after a range gesture (the view-change hook below).
     if (confirmedCutTrueMs === null) return;
     const displayMs = confirmedCutTrueMs - basisCorrection;
     const quiltStamp = snapToQuiltStamp(displayMs);
@@ -2392,11 +2401,17 @@
     // The integration basis rides along: the current view's left edge
     // (the zoomed view when zoomed, else the window), so the card's
     // in-window numbers match what the staircases show.
-    const axisRange = (plotDiv.layout && plotDiv.layout.xaxis
-                       && plotDiv.layout.xaxis.range) || null;
+    const axisRange = (plotDiv._fullLayout && plotDiv._fullLayout.xaxis)
+        ? currentRange() : null;
     const sinceIso = new Date(
-        (axisRange ? Date.parse(axisRange[0]) : Date.parse(data.start))
+        (axisRange ? axisRange[0] : Date.parse(data.start))
         + basisCorrection).toISOString();
+    // Average-time queries make a card fetch materially slower than a
+    // range gesture. Cancel the previous request so an older interval
+    // cannot arrive late and overwrite the current one.
+    if (cutFetchController) cutFetchController.abort();
+    cutFetchController = new AbortController();
+    const controller = cutFetchController;
     fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
           + (focusComponent
              ? '&component=' + encodeURIComponent(focusComponent)
@@ -2405,7 +2420,8 @@
              ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
              : '')
           + (focusCutQuery ? '&' + focusCutQuery : '')
-          + '&since=' + encodeURIComponent(sinceIso))
+          + '&since=' + encodeURIComponent(sinceIso),
+          {signal: controller.signal})
       .then(function (r) {
         if (!r.ok) {
           throw new Error('cut endpoint returned HTTP ' + r.status);
@@ -2413,11 +2429,13 @@
         return r.text();
       })
       .then(function (fragment) {
+        if (controller !== cutFetchController) return;
         cutPanel.hidden = false;
         cutPanel.innerHTML = fragment;
         paintCutSwatches();
       })
       .catch(function (err) {
+        if (err && err.name === 'AbortError') return;
         // The failure must be visible where the card belongs — an
         // empty slot reads as "no detail exists".
         cutPanel.hidden = false;
@@ -2426,6 +2444,20 @@
             + ') — <a href="javascript:location.reload()">reload'
             + '</a>.</div>';
       });
+  }
+  function syncCutToViewRange() {
+    // A range gesture selects an interval, not merely a new left-edge
+    // basis. Its detail is the state at the selected right edge and
+    // the terminal outcomes accumulated from the selected left edge.
+    // Move the visible cut and its durable URL state to that right
+    // edge before fetching the card.
+    if (confirmedCutTrueMs === null || isActivityScope()) return;
+    const view = currentRange();
+    cutTrueMs = confirmedCutTrueMs = view[1] + basisCorrection;
+    applyShapes();
+    updateClearAll();
+    stampCutUrl(new Date(confirmedCutTrueMs).toISOString());
+    fetchCutDetail();
   }
 
   // Cut-card swatches: any element in the card naming a curve
@@ -2616,7 +2648,6 @@
   let rangeStack = [];
   let lastRange = [0, 0];
   let suppressPush = false;
-  let cutRebaseTimer = null;
   function currentRange() {
     const xa = plotDiv._fullLayout.xaxis;
     return [Date.parse(xa.range[0]), Date.parse(xa.range[1])];
@@ -2644,13 +2675,13 @@
       }
       const wasInit = lastRange[0] === 0 && lastRange[1] === 0;
       lastRange = view.slice();
-      // The detail card shares the view's integration basis: once the
-      // view settles on a new range, the active cut re-fetches so the
-      // card's since-basis numbers match the re-based staircases.
+      // The detail card represents the whole selected interval. Once
+      // the view settles, its left edge is the integration basis and
+      // its right edge becomes the cut, on zoom, pan, undo, and reset.
       if (!wasInit && !isActivityScope()
           && confirmedCutTrueMs !== null) {
-        clearTimeout(cutRebaseTimer);
-        cutRebaseTimer = setTimeout(fetchCutDetail, 400);
+        clearTimeout(cutRangeTimer);
+        cutRangeTimer = setTimeout(syncCutToViewRange, 400);
       }
     }
     const zoomed = viewIsZoomed();
