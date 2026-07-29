@@ -159,10 +159,19 @@ def observatory_series(scope, start, end):
     # edge and a counter re-base never renders as a negative step.
     matchers = []
     for group in registry.resolve_curve_groups(provider):
-        if not group.get('window_relative'):
+        flag = group.get('window_relative')
+        if not flag:
             continue
-        prefixes = tuple(group.get('prefixes') or ())
-        ids = set(group.get('ids') or ())
+        if flag is True:
+            # The whole family is window-relative.
+            prefixes = tuple(group.get('prefixes') or ())
+            ids = set(group.get('ids') or ())
+        else:
+            # An explicit selection within a mixed family: entries
+            # ending in '_' are prefixes, the rest exact curve ids.
+            entries = [flag] if isinstance(flag, str) else list(flag)
+            prefixes = tuple(e for e in entries if e.endswith('_'))
+            ids = {e for e in entries if not e.endswith('_')}
         matchers.append(
             lambda cid, p=prefixes, i=ids:
                 cid in i or bool(p and cid.startswith(p)))

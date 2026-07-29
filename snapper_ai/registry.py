@@ -44,10 +44,14 @@ class ScopeProvider:
                      be a callable returning that tuple, resolved per
                      render so families can track live host state
                      (resolve with ``resolve_curve_groups``). A family
-                     may declare 'order' (member display order) and
+                     may declare 'order' (member display order),
                      'window_relative' (cumulative-counter curves
-                     rendered relative to the window's left edge: the
-                     displayed window is the integration range).
+                     rendered relative to the window's left edge — the
+                     displayed window is the integration range; True
+                     for the whole family or a list of ids and
+                     '_'-terminated prefixes within a mixed family),
+                     'tall' (double panel height), and 'focus_closed'
+                     (section closed by default inside a focus view).
     episodic_lanes   (start, end, dangle_seconds) -> {lane_name:
                      [segment, ...]} discrete activity lanes.
     activity_at      (instant) -> per-lane activity truth at an

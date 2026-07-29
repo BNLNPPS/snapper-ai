@@ -419,11 +419,15 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         # a scope-view default_off marking does not apply to it. A
         # focus whose families include no stacked group has no other
         # primary display — every family it names is the view, so all
-        # of them shed the scope-view marking.
+        # of them shed the scope-view marking. A family marked
+        # focus_closed keeps a closed section by default (its curves
+        # stay ticked) — secondary within the focus itself.
         has_stacked = any(group.get('stacked') for group in groups)
         for group in groups:
             if group.get('stacked') or not has_stacked:
                 group.pop('default_off', None)
+                if group.get('focus_closed'):
+                    group['start_closed'] = True
 
         def _in_focus(curve_id):
             return any(

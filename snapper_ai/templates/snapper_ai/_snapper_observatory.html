@@ -394,7 +394,7 @@
   } catch (e) { famClosedStore = {}; }
   function familyClosed(name, def) {
     if (name in famClosedStore) return !!famClosedStore[name];
-    return !!(def && def.default_off);
+    return !!(def && (def.default_off || def.start_closed));
   }
   function setFamilyClosed(name, closed) {
     famClosedStore[name] = closed ? 1 : 0;
@@ -1250,7 +1250,8 @@
             stacked: !!g.stacked, compact: !!g.compact,
             default_off: !!g.default_off, units: g.units || '',
             order: g.order || [],
-            window_relative: !!g.window_relative,
+            window_relative: g.window_relative || false,
+            start_closed: !!g.start_closed,
             tall: !!g.tall,
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
@@ -1448,8 +1449,10 @@
     });
     orderedNames.forEach(function (name) {
       const def = groupDef(name && groupMembers[name][0]) || {};
-      const closable = !!def.default_off;
-      const closed = closable && familyClosed(name, def);
+      // Every family carries the rotator; default_off/start_closed
+      // only set the default state.
+      const closable = true;
+      const closed = familyClosed(name, def);
       const row = document.createElement('div');
       row.className = 'snapper-curve-row';
       const head = document.createElement('div');
