@@ -307,9 +307,13 @@
   } catch (e) { localPrefs = {}; }
   const familiesParam = (new URL(window.location.href)
       .searchParams.get('families') || '');
+  // curves_off2: the remembered-selection store is versioned like the
+  // series cache — when the curve vocabulary changes, selections
+  // recorded against the old vocabulary are stale wholesale (a
+  // 2026-07-29 deploy persisted auto-unticked ids into the old key).
   const curvesOff = new Set(
-      (serverPrefs.curves_off && serverPrefs.curves_off.length
-          ? serverPrefs.curves_off : localPrefs.curves_off) || []);
+      (serverPrefs.curves_off2 && serverPrefs.curves_off2.length
+          ? serverPrefs.curves_off2 : localPrefs.curves_off2) || []);
   // Per-member filter state for pc_groups families, keyed by the
   // MEMBER (PC) label — quantity-independent, so an unticked set
   // stays unticked across the counting toggle's different curve ids.
@@ -327,7 +331,7 @@
     // A ?families= preset is a one-shot focused link; it must never
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
-    const payload = {curves_off: Array.from(curvesOff),
+    const payload = {curves_off2: Array.from(curvesOff),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
                      window: pageWindow};
