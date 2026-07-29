@@ -811,6 +811,24 @@
     hideQuiltFloater();
     basisCorrection = data.end_ms - Date.parse(data.end);
     curveIds = Object.keys(data.curves).sort();
+    // On a focus view, a family whose EVERY curve is remembered-off
+    // is stale memory, not choice — hiding a family is the rotator's
+    // job. Its curves return to on (and the healed selection persists
+    // on the next interaction).
+    if (FOCUS_ENGAGED) {
+      const byFamily = {};
+      curveIds.forEach(function (id) {
+        const name = groupName(id);
+        (byFamily[name] = byFamily[name] || []).push(id);
+      });
+      Object.keys(byFamily).forEach(function (name) {
+        if (byFamily[name].every(
+              function (id) { return curvesOff.has(id); })) {
+          byFamily[name].forEach(
+              function (id) { curvesOff.delete(id); });
+        }
+      });
+    }
     fullRange = [Date.parse(data.start), Date.parse(data.end)];
     curveColor = {};
     // Colors are dealt per family, so a family's members take the
@@ -1319,6 +1337,7 @@
   // present even on the clean URL.
   const FOCUS_PARAMS = new URLSearchParams(
       '{{ observatory_focus.cut_query|default:""|escapejs }}');
+  const FOCUS_ENGAGED = {% if observatory_focus %}true{% else %}false{% endif %};
   function groupDef(curveId) {
     for (const group of GROUPS) {
       if (group.match(curveId)) return group;
@@ -1390,22 +1409,27 @@
   }
   // Window-strip links carry the focused-view parameters along.
   {
-    const carry = [['families', familiesParam]];
+    const pageUrl = new URL(window.location.href);
+    const live = [];
+    if (familiesParam) live.push(['families', familiesParam]);
+    // The focus selection and selector axes (counting, grouping, ...)
+    // ride the window strip whenever the page URL carries them — an
+    // explicitly empty selection (all off) rides too.
     const focusParam = '{{ observatory_focus.param|default:""|escapejs }}';
-    if (focusParam) {
-      carry.push([focusParam, new URL(window.location.href)
-          .searchParams.get(focusParam) || '']);
+    if (focusParam && pageUrl.searchParams.has(focusParam)) {
+      live.push([focusParam, pageUrl.searchParams.get(focusParam)]);
     }
-    // Selector axes (counting, grouping, ...) present in the page URL
-    // ride the window strip too.
     '{{ observatory_focus.carry_params|default:""|escapejs }}'
         .split(',').filter(Boolean).forEach(function (name) {
-      carry.push([name, new URL(window.location.href)
-          .searchParams.get(name) || '']);
+      if (pageUrl.searchParams.has(name)) {
+        live.push([name, pageUrl.searchParams.get(name)]);
+      }
     });
-    const live = carry.filter(function (pair) { return pair[1]; });
     if (live.length) {
-      document.querySelectorAll('#snapper-th-bar a[href^="?window="]')
+      // Named windows AND the step arrows (?start=...&end=...) alike.
+      document.querySelectorAll(
+          '#snapper-th-bar a[href^="?window="], '
+          + '#snapper-th-bar a[href^="?start="]')
         .forEach(function (link) {
           const url = new URL(link.href, window.location.href);
           live.forEach(function (pair) {
