@@ -2363,7 +2363,15 @@
       pendingSliceLane = null;
       return;
     }
-    const displayMs = cutTrueMs - basisCorrection;
+    fetchCutDetail();
+  }
+  function fetchCutDetail() {
+    // The active cut's server card on the CURRENT view's basis. The
+    // card and the staircases share one integration basis — the
+    // view's left edge — so a zoom or pan that re-bases the plot
+    // re-fetches the card too (the view-change hook below).
+    if (confirmedCutTrueMs === null) return;
+    const displayMs = confirmedCutTrueMs - basisCorrection;
     const quiltStamp = snapToQuiltStamp(displayMs);
     const lookupIso = new Date(
         (quiltStamp !== null ? quiltStamp : snapToActivity(displayMs))
@@ -2608,6 +2616,7 @@
   let rangeStack = [];
   let lastRange = [0, 0];
   let suppressPush = false;
+  let cutRebaseTimer = null;
   function currentRange() {
     const xa = plotDiv._fullLayout.xaxis;
     return [Date.parse(xa.range[0]), Date.parse(xa.range[1])];
@@ -2621,11 +2630,28 @@
     const view = currentRange();
     if (Math.abs(view[0] - lastRange[0]) > 500
         || Math.abs(view[1] - lastRange[1]) > 500) {
-      if (!suppressPush) {
+      // The undo stack records TRUE zoom levels: only a span change
+      // (zoom in/out) pushes. A pan slides the current level in place
+      // — pushing every pan frame buried the real levels under dozens
+      // of near-identical entries, which read as a dead Undo button.
+      const spanChanged = Math.abs(
+          (view[1] - view[0]) - (lastRange[1] - lastRange[0]))
+          > (lastRange[1] - lastRange[0]) * 0.02;
+      if (!suppressPush && spanChanged
+          && lastRange[1] - lastRange[0] > 60000) {
         rangeStack.push(lastRange);
         if (rangeStack.length > 50) rangeStack.shift();
       }
+      const wasInit = lastRange[0] === 0 && lastRange[1] === 0;
       lastRange = view.slice();
+      // The detail card shares the view's integration basis: once the
+      // view settles on a new range, the active cut re-fetches so the
+      // card's since-basis numbers match the re-based staircases.
+      if (!wasInit && !isActivityScope()
+          && confirmedCutTrueMs !== null) {
+        clearTimeout(cutRebaseTimer);
+        cutRebaseTimer = setTimeout(fetchCutDetail, 400);
+      }
     }
     const zoomed = viewIsZoomed();
     // Panning away from the window's end ends track-now: the user is
@@ -2696,8 +2722,25 @@
       .addEventListener('click', function () { shiftView(1); });
   document.getElementById('snapper-zoom-undo')
       .addEventListener('click', function () {
-        if (!rangeStack.length) return;
-        const previous = rangeStack.pop();
+        // Step out one true zoom level: skip stale entries that match
+        // the current view (or carry a degenerate span), and when the
+        // stack runs dry while still zoomed, step out to the full
+        // window — the visible button always does something.
+        const view = currentRange();
+        let previous = null;
+        while (rangeStack.length) {
+          const candidate = rangeStack.pop();
+          if (candidate[1] - candidate[0] > 60000
+              && (Math.abs(candidate[0] - view[0]) > 500
+                  || Math.abs(candidate[1] - view[1]) > 500)) {
+            previous = candidate;
+            break;
+          }
+        }
+        if (!previous) {
+          if (!viewIsZoomed()) return;
+          previous = fullRange.slice();
+        }
         suppressPush = true;
         setRange(previous);
         setTimeout(function () {
