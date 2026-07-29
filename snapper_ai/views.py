@@ -270,8 +270,8 @@ def snapper_prefs_save(request, scope):
     except ValueError:
         return JsonResponse({'error': 'invalid JSON'}, status=400)
     allowed = {key: payload[key]
-               for key in ('curves_off', 'curves_off2', 'window',
-                           'lanes_open', 'pc_off')
+               for key in ('curves_off', 'curves_off2', 'curves_off3',
+                           'window', 'lanes_open', 'pc_off', 'pc_off2')
                if key in payload}
     prefs_set(request.user.username, scope, allowed)
     return JsonResponse({'saved': True})
@@ -508,18 +508,21 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         param = focus_def.get('param') or 'focus'
         default = focus_def.get('default') or ''
 
-        def _selector_suffix(overrides=None):
-            # Non-default selector values ride every built URL; an
-            # override swaps one axis's value in.
-            parts = []
+        def _focus_url(values, overrides=None):
+            # Change only focus membership (and any explicitly changed
+            # selector); keep the live window, cut, and zoom query.
+            query = request.GET.copy()
+            query[param] = ','.join(values)
             for i, sel in enumerate(selector_defs):
                 value = selected_values[i]
                 sel_param = sel.get('param') or 'quantity'
                 if overrides and sel_param in overrides:
                     value = overrides[sel_param]
                 if value and value != (sel.get('default') or ''):
-                    parts.append(f'&{sel_param}={value}')
-            return ''.join(parts)
+                    query[sel_param] = value
+                else:
+                    query.pop(sel_param, None)
+            return '?' + query.urlencode()
 
         def _toggle_url(value):
             # A tick toggles membership; all off is a valid state, as
@@ -528,8 +531,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             after = [v for v in focus_selected if v != value]
             if value not in focus_selected:
                 after = focus_selected + [value]
-            return (f"?{param}={','.join(after)}"
-                    + _selector_suffix())
+            return _focus_url(after)
 
         selectors_context = []
         for i, sel in enumerate(selector_defs):
@@ -541,9 +543,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 'choices': [
                     {'value': c.get('value'), 'label': c.get('label'),
                      'active': c.get('value') == selected_values[i],
-                     'url': (f"?{param}={','.join(focus_selected)}"
-                             + _selector_suffix(
-                                 {sel_param: c.get('value')}))}
+                     'url': _focus_url(
+                         focus_selected, {sel_param: c.get('value')})}
                     for c in (sel.get('choices') or ())],
             })
         from urllib.parse import urlencode as _enc
@@ -554,6 +555,10 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             'value': focus_option.get('value') or '',
             'component': focus_option.get('component') or '',
             'groups': groups,
+            'all_on_url': _focus_url([
+                o.get('value') for o in (focus_def.get('options') or ())
+                if o.get('value')]),
+            'all_off_url': _focus_url([]),
             'options': [
                 {'value': o.get('value'), 'label': o.get('label'),
                  'active': o.get('value') in focus_selected,

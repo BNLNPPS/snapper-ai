@@ -92,13 +92,15 @@
 <div class="card mb-3" id="snapper-observatory-card">
   <div class="card-body">
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
+      {% if observatory_focus %}
       <span>
-        <button type="button" id="snapper-curves-all-on" class="btn btn-sm btn-secondary">All on</button>
-        <button type="button" id="snapper-curves-all-off" class="btn btn-sm btn-secondary">All off</button>
+        <a href="{{ observatory_focus.all_on_url }}" class="btn btn-sm btn-secondary">All on</a>
+        <a href="{{ observatory_focus.all_off_url }}" class="btn btn-sm btn-secondary">All off</a>
         {% comment %} Clear all parked 2026-07-26: its reset-to-default
         window surprise reads as data loss; role to be rethought.
         {% endcomment %}
       </span>
+      {% endif %}
       <span id="snapper-gesture-help" class="text-body" style="display:inline-block; border:1px solid #9fb4c7; border-radius:.6em; background:#f2f7fb; padding:.15em .8em;"><strong>click</strong>: time cut · <strong>click-drag</strong>: time range · <strong>double-click</strong>: zoom 2x</span>
       <span id="snapper-state-key" class="d-flex flex-wrap column-gap-2 row-gap-1 text-muted"></span>
     </div>
@@ -202,6 +204,7 @@
   // block of rows above the plot.
   const DOCK_CONTROLS =
       {% if observatory_focus %}true{% else %}false{% endif %};
+  const FOCUS_ENGAGED = DOCK_CONTROLS;
   const plotWrap = document.getElementById('snapper-plot-wrap');
   let dockedRows = [];
   let dockedSections = [];
@@ -307,18 +310,16 @@
   } catch (e) { localPrefs = {}; }
   const familiesParam = (new URL(window.location.href)
       .searchParams.get('families') || '');
-  // curves_off2: the remembered-selection store is versioned like the
-  // series cache — when the curve vocabulary changes, selections
-  // recorded against the old vocabulary are stale wholesale (a
-  // 2026-07-29 deploy persisted auto-unticked ids into the old key).
+  // curves_off3 invalidates the one contaminated curves_off2 value
+  // while retaining the existing save/restore behavior.
   // A signed-in account's truth is the server record ALONE: local
   // storage is the anonymous browser's memory and must never override
   // it — a non-empty test cannot distinguish the server saying
   // "all on" from the server having no record, so a locally recorded
   // all-off state would otherwise stand forever.
   const curvesOff = new Set(
-      (authenticated ? serverPrefs.curves_off2
-                     : localPrefs.curves_off2) || []);
+      (authenticated ? serverPrefs.curves_off3
+                     : localPrefs.curves_off3) || []);
   // Per-member filter state for pc_groups families, keyed by the
   // MEMBER (PC) label — quantity-independent, so an unticked set
   // stays unticked across the counting toggle's different curve ids.
@@ -335,7 +336,7 @@
     // A ?families= preset is a one-shot focused link; it must never
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
-    const payload = {curves_off2: Array.from(curvesOff),
+    const payload = {curves_off3: Array.from(curvesOff),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
                      window: pageWindow};
@@ -1261,8 +1262,7 @@
 
   // Curve tick boxes with matching color swatches, one full-width
   // bordered row per curve family so the growing families read as a
-  // table. Each row gets its own all/none; the global buttons still
-  // cover everything.
+  // table. Each row gets its own all/none.
   // Curve families come from the host-registered scope provider
   // (observatory_groups: [{name, prefixes, ids}]); a curve joins a
   // family by id prefix or exact id.
@@ -1291,7 +1291,6 @@
   // present even on the clean URL.
   const FOCUS_PARAMS = new URLSearchParams(
       '{{ observatory_focus.cut_query|default:""|escapejs }}');
-  const FOCUS_ENGAGED = {% if observatory_focus %}true{% else %}false{% endif %};
   function groupDef(curveId) {
     for (const group of GROUPS) {
       if (group.match(curveId)) return group;
@@ -1733,27 +1732,6 @@
       stateKeyEl.appendChild(item);
     });
   }
-  function setAll(on) {
-    curveIds.forEach(function (curveId) {
-      if (on) curvesOff.delete(curveId);
-      else curvesOff.add(curveId);
-      const def = groupDef(curveId) || {};
-      if (def.pc_groups) {
-        const pc = pcOfCurve(curveId, def);
-        if (on) pcOff.delete(pc);
-        else pcOff.add(pc);
-      }
-      const box = document.getElementById('snapper-curve-' + curveId);
-      if (box) box.checked = on;
-    });
-    persistPrefs();
-    rerenderView();
-  }
-  document.getElementById('snapper-curves-all-on')
-      .addEventListener('click', function () { setAll(true); });
-  document.getElementById('snapper-curves-all-off')
-      .addEventListener('click', function () { setAll(false); });
-
   // Clear all is live only when there is something to clear: a zoom, a
   // cut, ticked-off curves, or a non-default window.
   function updateClearAll() {
