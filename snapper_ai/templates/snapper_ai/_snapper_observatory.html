@@ -2446,7 +2446,15 @@
           });
         });
       }
-      if (color) el.style.background = color;
+      // SVG shapes (pie slices) take fill; HTML swatches take
+      // background — one data-curve contract for both.
+      if (color) {
+        if (el.namespaceURI === 'http://www.w3.org/2000/svg') {
+          el.style.fill = color;
+        } else {
+          el.style.background = color;
+        }
+      }
       else el.style.visibility = 'hidden';
     });
   }
