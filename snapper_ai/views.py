@@ -308,22 +308,30 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         if focus_def is None:
             raise Http404(f'Unknown Snapper page {focus_slug!r}')
     else:
+        # A present parameter engages its focus even when empty:
+        # ?site= with nothing ticked is the all-off state, not an
+        # exit from the view.
         for candidate in focus_defs:
-            if (request.GET.get(candidate.get('param') or 'focus')
-                    or '').strip():
+            if request.GET.get(
+                    candidate.get('param') or 'focus') is not None:
                 focus_def = candidate
                 break
     focus_selected = []
     if focus_def:
-        raw = (request.GET.get(focus_def.get('param') or 'focus')
-               or '').strip()
-        if raw or focus_slug is not None:
+        raw_value = request.GET.get(focus_def.get('param') or 'focus')
+        raw = (raw_value or '').strip()
+        if raw_value is not None or focus_slug is not None:
             options = focus_def.get('options') or []
             by_value = {o.get('value'): o for o in options}
             focus_selected = [v for v in
                               (s.strip() for s in raw.split(','))
                               if v in by_value]
-            if not focus_selected and options:
+            # Only the clean page (no parameter at all) lands on the
+            # default. An explicitly empty parameter is all off — a
+            # valid state, as in every Snapper tick row — and stays
+            # off until the user ticks again.
+            if (not focus_selected and options
+                    and (raw_value is None or raw)):
                 default = by_value.get(focus_def.get('default'))
                 focus_selected = [(default or options[0]).get('value')]
             chosen = [by_value[v] for v in focus_selected]
@@ -353,14 +361,17 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 return option.get('families') or ()
 
             # One or several options at once: families union, window
-            # floored at the earliest start.
+            # floored at the earliest start. All off is valid: no
+            # families, the cut still narrowed to the view's component.
             starts = [o.get('start') for o in chosen if o.get('start')]
+            lead = chosen[0] if chosen else (options[0] if options else {})
             focus_option = {
                 'value': ','.join(focus_selected),
                 'selector_values': selected_values,
                 'families': [f for o in chosen for f in _families(o)],
-                'component': chosen[0].get('component') or '',
-                'collapse_below': chosen[0].get('collapse_below'),
+                'component': lead.get('component') or '',
+                'collapse_below': (chosen[0].get('collapse_below')
+                                   if chosen else None),
                 'start': min(starts) if starts else None,
             }
 
@@ -511,19 +522,12 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             return ''.join(parts)
 
         def _toggle_url(value):
-            # A tick toggles membership. Unticking the last member
-            # falls back to the default — and never to the unticked
-            # value itself: when it IS the default, the first OTHER
-            # option stands in, so the tick never springs back on.
+            # A tick toggles membership; all off is a valid state, as
+            # in every Snapper tick row, and the explicitly empty
+            # parameter says so.
             after = [v for v in focus_selected if v != value]
             if value not in focus_selected:
                 after = focus_selected + [value]
-            if not after:
-                fallback = default if default != value else next(
-                    (o.get('value') for o in (focus_def.get('options')
-                                              or ())
-                     if o.get('value') != value), value)
-                after = [fallback]
             return (f"?{param}={','.join(after)}"
                     + _selector_suffix())
 
