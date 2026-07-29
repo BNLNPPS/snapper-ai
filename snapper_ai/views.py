@@ -7,6 +7,7 @@ The host includes ``snapper_ai.urls`` and provides a ``base.html``.
 """
 
 import json
+import logging
 
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -86,6 +87,26 @@ def _scope_options(scope, active_query='', active_focus_label=None):
             if focus_active:
                 options[plain_index]['active'] = False
     return options
+
+
+def _curve_colors(provider, curve_ids):
+    """Provider-declared colors for the curves that have one (the
+    host's semantic vocabulary, e.g. state colors); everything else
+    takes the client's palette deal."""
+    hook = provider.curve_color if provider else None
+    if not hook:
+        return {}
+    colors = {}
+    for curve_id in curve_ids:
+        try:
+            color = hook(curve_id)
+        except Exception as e:                               # noqa: BLE001
+            logger.error('snapper curve_color failed for %r: %s',
+                         curve_id, e)
+            return colors
+        if color:
+            colors[curve_id] = color
+    return colors
 
 
 def _dict(value):
@@ -385,6 +406,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             lambda: observatory_series(scope, window_start, window_end)))
     else:
         observatory = observatory_series(scope, window_start, window_end)
+    observatory['colors'] = _curve_colors(provider, observatory['curves'])
 
     focus_context = None
     if focus_option is not None:
@@ -394,9 +416,13 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                   for g in registry.resolve_curve_groups(provider)
                   if g.get('name') in wanted]
         # A chosen stacked family is the focus view's primary display:
-        # a scope-view default_off marking does not apply to it.
+        # a scope-view default_off marking does not apply to it. A
+        # focus whose families include no stacked group has no other
+        # primary display — every family it names is the view, so all
+        # of them shed the scope-view marking.
+        has_stacked = any(group.get('stacked') for group in groups)
         for group in groups:
-            if group.get('stacked'):
+            if group.get('stacked') or not has_stacked:
                 group.pop('default_off', None)
 
         def _in_focus(curve_id):

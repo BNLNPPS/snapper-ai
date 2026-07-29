@@ -35,6 +35,10 @@ class ScopeProvider:
                      lanes beyond the core health lanes.
     curve_label      (curve_id) -> label, or None to fall through to
                      the id itself.
+    curve_color      (curve_id) -> CSS color, or None to take the
+                     palette deal. For curves with semantic color —
+                     state-bearing curves wear the host's state-color
+                     vocabulary on every surface.
     curve_groups     Tuple of {'name', 'prefixes', 'ids'} dicts: the
                      curve family rows of the observatory legend. May
                      be a callable returning that tuple, resolved per
@@ -62,6 +66,7 @@ class ScopeProvider:
     curve_values: object = None
     lane_entries: object = None
     curve_label: object = None
+    curve_color: object = None
     curve_groups: tuple = ()
     episodic_lanes: object = None
     activity_at: object = None

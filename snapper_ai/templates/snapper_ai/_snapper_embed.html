@@ -45,6 +45,11 @@ history. The curve key above the plot is a static legend.
   data.all_curve_ids.forEach(function (id, index) {
     curveColor[id] = PALETTE[index % PALETTE.length];
   });
+  // Provider-declared colors (the host's semantic vocabulary, e.g.
+  // state colors) override the positional deal, as on the report page.
+  Object.keys(data.colors || {}).forEach(function (id) {
+    curveColor[id] = data.colors[id];
+  });
 
   // Namespace lane colors: hue = namespace identity from the report
   // page's 8-hue pool; lightness = phase (dark datataking, mid

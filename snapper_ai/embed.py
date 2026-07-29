@@ -9,7 +9,10 @@ the matching window. Colors are assigned over the scope's full curve
 list, so a curve wears the same color here and on the report page.
 """
 
+import logging
 from datetime import timedelta
+
+logger = logging.getLogger(__name__)
 
 # Bounded read: the series assembly loads every snap in the window, so
 # embeds never reach past the observatory's own largest named window.
@@ -118,6 +121,10 @@ def embed_context(scope, start, end, families=(), lanes=False):
         match = _family_matcher(group)
         ids = [curve_id for curve_id in all_curve_ids
                if curve_id not in assigned and match(curve_id)]
+        order = list(group.get('order') or ())
+        if order:
+            rank = {curve_id: i for i, curve_id in enumerate(order)}
+            ids.sort(key=lambda cid: (rank.get(cid, len(order)), cid))
         assigned.update(ids)
         panels.append({'name': name, 'ids': ids})
 
@@ -135,6 +142,17 @@ def embed_context(scope, start, end, families=(), lanes=False):
             lane_id: lane for lane_id, lane in series['lanes'].items()
             if lane.get('segments')
         }
+    colors = {}
+    if provider.curve_color is not None:
+        for curve_id in curves:
+            try:
+                color = provider.curve_color(curve_id)
+            except Exception as e:                           # noqa: BLE001
+                logger.error('snapper curve_color failed for %r: %s',
+                             curve_id, e)
+                break
+            if color:
+                colors[curve_id] = color
     return {
         'scope': scope,
         'label': provider.label or scope,
@@ -148,6 +166,7 @@ def embed_context(scope, start, end, families=(), lanes=False):
             'panels': panels,
             'lanes': embed_lanes,
             'gaps': series['gaps'],
+            'colors': colors,
         },
         'report_query': _report_query(start, end, timezone.now()),
         'clamp_note': clamp_note,

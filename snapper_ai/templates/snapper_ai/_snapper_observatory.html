@@ -803,6 +803,12 @@
         curveColor[curveId] = '#9e9e9e';
         return;
       }
+      // A provider-declared color (the host's semantic vocabulary,
+      // e.g. state colors) wins outright and consumes no palette slot.
+      if (data.colors && data.colors[curveId]) {
+        curveColor[curveId] = data.colors[curveId];
+        return;
+      }
       const family = groupName(curveId);
       const index = familyDealt[family] || 0;
       familyDealt[family] = index + 1;
@@ -1242,6 +1248,7 @@
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             stacked: !!g.stacked, compact: !!g.compact,
             default_off: !!g.default_off, units: g.units || '',
+            order: g.order || [],
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
         return id.indexOf(p) === 0; })
@@ -1413,6 +1420,19 @@
     curveIds.forEach(function (curveId) {
       const name = groupName(curveId);
       (groupMembers[name] = groupMembers[name] || []).push(curveId);
+    });
+    // A family with a declared member order (e.g. a job lifecycle)
+    // shows in that order; unlisted members follow alphabetically.
+    Object.keys(groupMembers).forEach(function (name) {
+      const def = groupDef(groupMembers[name][0]) || {};
+      const order = def.order || [];
+      if (!order.length) return;
+      groupMembers[name].sort(function (a, b) {
+        const ia = order.indexOf(a), ib = order.indexOf(b);
+        return ((ia < 0 ? order.length : ia)
+                - (ib < 0 ? order.length : ib))
+            || (a < b ? -1 : a > b ? 1 : 0);
+      });
     });
     // Control rows in GROUPS order — the same order the panels stack
     // in, so a family's controls sit above its plot, never crossed.
