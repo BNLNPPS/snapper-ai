@@ -43,9 +43,16 @@ The initial state-evolution components are live:
 - **PanDA activity** for epicprod (component name: panda), with current job and
   task states and target-site discrimination.
 
-The next work is Phase 6: expanding the component catalog one
-contracted component at a time (epicprod components keyed by campaign
-family).
+On 2026-07-29 the provider surface grew in place: curve families may
+be supplied by a callable resolved per render, a provider may declare
+several focus views (each with its own tab and clean page), curves may
+carry provider-declared colors, and a family may declare its member
+display order. The epicprod host used these for a Site focus view over
+per-site job lifecycle curves.
+
+The next work is section 8 — terminal-outcome counters and window
+integrals — ahead of the remaining Phase 6 catalog items (operator
+decision 2026-07-29).
 
 ## Ordered plan
 
@@ -230,8 +237,85 @@ alarm behavior, and event resolver before implementation.
 - [ ] Define any long-term rollups separately from primary snap retention.
 - [ ] Complete operating and recovery procedures and production acceptance.
 
+### 8. Terminal-outcome counters and window integrals
+
+Terminal job transitions are point events: a job leaves the in-flight
+population at its end time, so terminal states have no instantaneous
+population to record, and the trailing-24-hour outcome fields cannot be
+composed into arbitrary-interval counts. This tranche records terminal
+outcomes as monotonic cumulative counters and renders them relative to
+the displayed window: the counters rise from zero at the window's left
+edge, the zoom range is the integration range, the vertical cut reports
+outcomes accumulated since the window start, and the same counters
+answer numeric queries through the existing REST and MCP transports.
+Drag remains zoom; no separate selection gesture is needed.
+
+- [ ] epicprod panda component version 5 (swf-monitor
+  `snapper_panda.py`): cumulative terminal counters, scope-level and
+  per-site, for finished, failed, cancelled, and closed jobs, plus a
+  bounded per-site failed-by-class map (at most 16 classes from the
+  monitor's error-component classification; the smallest classes roll
+  into 'other'). Each publication counts completed jobs with end times
+  after the previous publication's source time (active and archived
+  tables, deduplicated) and adds them to the counters read from the
+  component's current state. The counters are monotonic across
+  restarts by construction, and the absolute origin is arbitrary
+  because every consumer differences them. Update the registration and
+  catch SWF_EPICPROD_INTEGRATION.md up to the deployed version 4
+  contract before recording version 5.
+- [ ] Generic window-relative rendering: a curve family may declare
+  `window_relative`; the series assembly rebases matched curves at the
+  window's left boundary — each point becomes the sum of non-negative
+  increments since the boundary snap, so a counter re-base never
+  renders as a negative step. Labels carry the basis ("in window").
+  Embedded panels inherit the transform. On a client zoom,
+  window-relative curves subtract their value at the view's left edge,
+  so the value at the view's right edge is the interval total.
+- [ ] Site families rework (swf-monitor provider): window-relative
+  finished and failed curves replace the rolling 24-hour curves in the
+  site jobs family, and a per-site failures family stacks the
+  failed-by-class counters so a failure burst is attributable by class
+  on the timeline. Series cache version bump.
+- [ ] Site cut card legibility: on a site-focused cut the site section
+  leads and the scope headline is dropped from the compact form.
+  Reading order: outcomes since the window start (finished and failed
+  totals, failure classes beneath the failed row, each row carrying
+  its curve's swatch color), then in-flight counts in lifecycle order,
+  then tasks. The card states the accumulation basis once. The cut
+  request carries the window start so the card differences the
+  counters server-side.
+- [ ] Transports: no new endpoints — `state_at` and `changes_between`
+  already return the component, and differencing the version-5
+  counters between two instants yields terminal counts per site and
+  per failure class. Name the counters in the MCP tool docstrings so
+  agent consumers find them.
+- [ ] Attribution beyond site (which task or processing type produced
+  the outcomes) stays with the PanDA-database chart on the jobs page
+  and the existing panda query tools; the component counters remain
+  bounded to site, status, and failure class.
+- [ ] Document the display rule in TIME_HISTORY_UI.md and the
+  2026-07-29 provider-surface additions (callable curve groups,
+  multiple focus views, curve colors, member order, window-relative
+  families) in INTEGRATION.md.
+- [ ] Live verification: the window-relative curves must agree with
+  the jobs page's PanDA-database chart over the same window within the
+  five-minute observation resolution; zoom rebase, cut basis, and
+  embed behavior verified on the deployed pages.
+
 ## Progress log
 
+- **2026-07-29:** The provider surface grew in place (61ba2ad,
+  60b74f3): `curve_groups` accepts a callable resolved per render, so
+  families track live host state without an application restart;
+  `focus_view` accepts several declarations, each with its own
+  scope-switcher tab and clean page; `curve_color` gives state-bearing
+  curves the host's state-color vocabulary on the report page and
+  embeds alike; a family may declare its member display order; and a
+  focus view whose families include no stacked group opens all of
+  them. The epicprod host registered a Site focus view (per-site job
+  lifecycle and task curves from the sites maps recorded in every
+  snap) and embedded the site panels on its PanDA jobs page. Section 8
+  was planned the same day and precedes the remaining Phase 6 items.
 - **2026-07-25:** The UI moved into the package (snapper-ai c4868ed and
   the API polish that followed): views, series assembly, templates, URL
   routes, and self-contained template tags, behind the new
