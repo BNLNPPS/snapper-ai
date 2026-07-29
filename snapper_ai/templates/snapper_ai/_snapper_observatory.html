@@ -787,24 +787,6 @@
     hideQuiltFloater();
     basisCorrection = data.end_ms - Date.parse(data.end);
     curveIds = Object.keys(data.curves).sort();
-    // On a focus view, a family whose EVERY curve is remembered-off
-    // is stale memory, not choice — hiding a family is the rotator's
-    // job. Its curves return to on (and the healed selection persists
-    // on the next interaction).
-    if (FOCUS_ENGAGED) {
-      const byFamily = {};
-      curveIds.forEach(function (id) {
-        const name = groupName(id);
-        (byFamily[name] = byFamily[name] || []).push(id);
-      });
-      Object.keys(byFamily).forEach(function (name) {
-        if (byFamily[name].every(
-              function (id) { return curvesOff.has(id); })) {
-          byFamily[name].forEach(
-              function (id) { curvesOff.delete(id); });
-        }
-      });
-    }
     fullRange = [Date.parse(data.start), Date.parse(data.end)];
     curveColor = {};
     // Colors are dealt per family, so a family's members take the
@@ -1378,6 +1360,37 @@
         curvesOff.add(id);
       }
     });
+  }
+  // A focused page must never ARRIVE blank because an older scope view
+  // remembered every member off or collapsed its primary family. Heal
+  // that stale state once at page load only. Filter actions after this
+  // point are authoritative: All off and per-family None stay off.
+  if (FOCUS_ENGAGED && !familiesParam) {
+    const byFamily = {};
+    Object.keys(data.curves).forEach(function (id) {
+      const name = groupName(id);
+      (byFamily[name] = byFamily[name] || []).push(id);
+    });
+    Object.keys(byFamily).forEach(function (name) {
+      if (byFamily[name].every(
+            function (id) { return curvesOff.has(id); })) {
+        byFamily[name].forEach(
+            function (id) { curvesOff.delete(id); });
+      }
+    });
+    let clearedPrimaryCollapse = false;
+    GROUPS.forEach(function (group) {
+      if (!group.start_closed && famClosedStore[group.name]) {
+        delete famClosedStore[group.name];
+        clearedPrimaryCollapse = true;
+      }
+    });
+    if (clearedPrimaryCollapse) {
+      try {
+        localStorage.setItem(famClosedKey,
+                             JSON.stringify(famClosedStore));
+      } catch (e) { /* storage unavailable */ }
+    }
   }
   // Window-strip links carry the focused-view parameters along.
   {
