@@ -511,12 +511,20 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             return ''.join(parts)
 
         def _toggle_url(value):
-            # A tick toggles membership; the last member cannot untick
-            # (the empty selection falls back to the default).
+            # A tick toggles membership. Unticking the last member
+            # falls back to the default — and never to the unticked
+            # value itself: when it IS the default, the first OTHER
+            # option stands in, so the tick never springs back on.
             after = [v for v in focus_selected if v != value]
             if value not in focus_selected:
                 after = focus_selected + [value]
-            return (f"?{param}={','.join(after) if after else default}"
+            if not after:
+                fallback = default if default != value else next(
+                    (o.get('value') for o in (focus_def.get('options')
+                                              or ())
+                     if o.get('value') != value), value)
+                after = [fallback]
+            return (f"?{param}={','.join(after)}"
                     + _selector_suffix())
 
         selectors_context = []
