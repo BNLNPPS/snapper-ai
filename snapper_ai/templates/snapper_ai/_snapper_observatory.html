@@ -208,6 +208,7 @@
   const plotWrap = document.getElementById('snapper-plot-wrap');
   let dockedRows = [];
   let dockedSections = [];
+  let dockedCutDetails = {};
   function positionDockedRows() {
     // margin.t is 10 in the layout below; each row lands in the slot
     // its measured height reserved, and only then becomes visible.
@@ -216,6 +217,10 @@
       if (!s.el) return;
       s.el.style.top = (baseTop + s.rowTopPx) + 'px';
       s.el.style.visibility = '';
+      if (s.detailEl) {
+        s.detailEl.style.top = (baseTop + s.detailTopPx) + 'px';
+        s.detailEl.style.visibility = '';
+      }
     });
   }
   const stateKeyEl = document.getElementById('snapper-state-key');
@@ -880,6 +885,7 @@
       // A family declaring tall earns double height.
       panels.push({name: group.name, title: group.title || group.name,
                    traceAxis: traceAxis,
+                   detailKey: group.detail_key || '',
                    px: group.stacked ? 450 : (group.tall ? 300 : 150),
                    units: group.units || '',
                    axisKey: traceAxis === 'y' ? 'yaxis'
@@ -956,8 +962,14 @@
       const panelByName = {};
       panels.forEach(function (p) { panelByName[p.name] = p; });
       sections = dockedRows.map(function (r) {
-        return {name: r.name, el: r.el,
+        const def = GROUPS.find(function (g) {
+          return g.name === r.name;
+        }) || {};
+        const detailEl = def.detail_key
+            ? dockedCutDetails[def.detail_key] : null;
+        return {name: r.name, el: r.el, detailEl: detailEl,
                 rowPx: r.el.offsetHeight + 10,
+                detailPx: detailEl ? detailEl.offsetHeight + 16 : 0,
                 panel: panelByName[r.name] || null};
       });
     } else {
@@ -989,7 +1001,8 @@
         lanePx + laneGapPx + (stubAfterLabels ? labelBandPx : 0)
         + topLabelsPx
         + sections.reduce(function (px, s) {
-          return px + s.rowPx + (s.panel ? s.panel.px : 0);
+          return px + s.rowPx + (s.panel ? s.panel.px : 0)
+              + (s.detailPx || 0);
         }, 0), 110);
     function domainOf(topPx, bottomPx) {
       return [Math.max(1 - bottomPx / innerPx, 0),
@@ -1174,13 +1187,23 @@
       // renders: inside the slot it reserved, above its panel.
       s.rowTopPx = panelTopPx + 4;
       panelTopPx = topPx;
-      if (!s.panel) return;
+      if (!s.panel) {
+        if (s.detailEl) {
+          s.detailTopPx = panelTopPx + 8;
+          panelTopPx += s.detailPx;
+        }
+        return;
+      }
       const panel = s.panel;
       panelTopPx = topPx + panel.px;
       // The top panel's own date-label band sits between it and the
       // next section.
       if (i === firstPanelIdx && topLabelsPx) {
         panelTopPx += topLabelsPx;
+      }
+      if (s.detailEl) {
+        s.detailTopPx = panelTopPx + 8;
+        panelTopPx += s.detailPx;
       }
       layout[panel.axisKey] = {
         domain: domainOf(topPx, topPx + panel.px),
@@ -1283,6 +1306,7 @@
             order: g.order || [],
             window_relative: g.window_relative || false,
             start_closed: !!g.start_closed,
+            detail_key: g.detail_key || '',
             tall: !!g.tall,
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
@@ -2237,6 +2261,42 @@
   // wait and the server fetch only gate the panel content below.
   const cutPanel = document.getElementById('snapper-observatory-cut');
   const cutUrl = '{% url "snapper_ai:snapper_cut" scope=scope %}';
+  function placeCutDetail(fragment) {
+    Object.keys(dockedCutDetails).forEach(function (key) {
+      dockedCutDetails[key].remove();
+    });
+    dockedCutDetails = {};
+    cutPanel.innerHTML = fragment;
+    const siteDetails = Array.from(
+        cutPanel.querySelectorAll('[data-snapper-detail-key]'));
+    const allDockable = siteDetails.every(function (detail) {
+      return GROUPS.some(function (group) {
+        return group.detail_key === detail.dataset.snapperDetailKey
+            && groupMembers[group.name];
+      });
+    });
+    // A single site's detail already follows its single plot. In a
+    // multi-site view, dock every site card immediately after the
+    // family declaring the same detail_key.
+    if (siteDetails.length > 1 && DOCK_CONTROLS && allDockable) {
+      siteDetails.forEach(function (detail) {
+        detail.classList.add('snapper-cut-card');
+        detail.style.position = 'absolute';
+        detail.style.left = '0';
+        detail.style.right = '0';
+        detail.style.visibility = 'hidden';
+        detail.style.zIndex = '3';
+        detail.style.background = 'var(--bs-body-bg, #fff)';
+        dockedCutDetails[detail.dataset.snapperDetailKey] = detail;
+        plotWrap.appendChild(detail);
+      });
+      cutPanel.hidden = true;
+    } else {
+      cutPanel.hidden = false;
+    }
+    rerenderView();
+    paintCutSwatches();
+  }
   function showCut(timeIso) {
     // timeIso is the true instant the user clicked (UTC ISO): the red
     // line and the URL land exactly there — the click's x is respected.
@@ -2317,9 +2377,7 @@
       })
       .then(function (fragment) {
         if (controller !== cutFetchController) return;
-        cutPanel.hidden = false;
-        cutPanel.innerHTML = fragment;
-        paintCutSwatches();
+        placeCutDetail(fragment);
       })
       .catch(function (err) {
         if (err && err.name === 'AbortError') return;
