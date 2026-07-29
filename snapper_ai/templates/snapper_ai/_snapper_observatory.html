@@ -1249,6 +1249,7 @@
             stacked: !!g.stacked, compact: !!g.compact,
             default_off: !!g.default_off, units: g.units || '',
             order: g.order || [],
+            window_relative: !!g.window_relative,
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
         return id.indexOf(p) === 0; })

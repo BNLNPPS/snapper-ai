@@ -151,6 +151,35 @@ def observatory_series(scope, start, end):
                             for point in lane['points'])]:
         del lanes[lane_id]
 
+    # Window-relative rendering: curves of a family declaring
+    # window_relative rebase at the window's left edge — each point
+    # becomes the sum of non-negative increments since the curve's
+    # first point in range (the boundary snap when it carries the
+    # curve), so a cumulative counter rises from zero at the window's
+    # edge and a counter re-base never renders as a negative step.
+    matchers = []
+    for group in registry.resolve_curve_groups(provider):
+        if not group.get('window_relative'):
+            continue
+        prefixes = tuple(group.get('prefixes') or ())
+        ids = set(group.get('ids') or ())
+        matchers.append(
+            lambda cid, p=prefixes, i=ids:
+                cid in i or bool(p and cid.startswith(p)))
+    if matchers:
+        for curve_id, curve in curves.items():
+            if not any(match(curve_id) for match in matchers):
+                continue
+            total = 0
+            previous = None
+            rebased = []
+            for time_iso, value in curve['points']:
+                if previous is not None and value > previous:
+                    total += value - previous
+                previous = value
+                rebased.append([time_iso, total])
+            curve['points'] = rebased
+
     # Episodic activity lanes from the host's canonical activity
     # record: discrete activity with identity, over a grey idle track.
     if provider is not None and provider.episodic_lanes is not None:

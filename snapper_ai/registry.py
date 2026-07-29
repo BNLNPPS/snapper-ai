@@ -43,7 +43,11 @@ class ScopeProvider:
                      curve family rows of the observatory legend. May
                      be a callable returning that tuple, resolved per
                      render so families can track live host state
-                     (resolve with ``resolve_curve_groups``).
+                     (resolve with ``resolve_curve_groups``). A family
+                     may declare 'order' (member display order) and
+                     'window_relative' (cumulative-counter curves
+                     rendered relative to the window's left edge: the
+                     displayed window is the integration range).
     episodic_lanes   (start, end, dangle_seconds) -> {lane_name:
                      [segment, ...]} discrete activity lanes.
     activity_at      (instant) -> per-lane activity truth at an

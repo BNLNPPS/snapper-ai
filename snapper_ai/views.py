@@ -396,9 +396,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     if (series_cache is not None
             and not (request.GET.get('start') or request.GET.get('end'))):
         if window_key in WINDOW_HOURS:
-            cache_key = f'snapper_series:v4:{scope}:{window_key}'
+            cache_key = f'snapper_series:v5:{scope}:{window_key}'
         elif focus_option is not None and focus_option.get('start'):
-            cache_key = (f'snapper_series:v4:{scope}:span:'
+            cache_key = (f'snapper_series:v5:{scope}:span:'
                          f'{window_start.date().isoformat()}')
     if cache_key:
         observatory = dict(series_cache(
