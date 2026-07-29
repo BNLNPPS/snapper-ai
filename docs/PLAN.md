@@ -250,7 +250,7 @@ outcomes accumulated since the window start, and the same counters
 answer numeric queries through the existing REST and MCP transports.
 Drag remains zoom; no separate selection gesture is needed.
 
-- [ ] epicprod panda component version 5 (swf-monitor
+- [x] epicprod panda component version 5 (swf-monitor
   `snapper_panda.py`): cumulative terminal counters, scope-level and
   per-site, for finished, failed, cancelled, and closed jobs, plus a
   bounded per-site failed-by-class map (at most 16 classes from the
@@ -263,7 +263,7 @@ Drag remains zoom; no separate selection gesture is needed.
   because every consumer differences them. Update the registration and
   catch SWF_EPICPROD_INTEGRATION.md up to the deployed version 4
   contract before recording version 5.
-- [ ] Generic window-relative rendering: a curve family may declare
+- [x] Generic window-relative rendering: a curve family may declare
   `window_relative`; the series assembly rebases matched curves at the
   window's left boundary — each point becomes the sum of non-negative
   increments since the boundary snap, so a counter re-base never
@@ -271,12 +271,12 @@ Drag remains zoom; no separate selection gesture is needed.
   Embedded panels inherit the transform. On a client zoom,
   window-relative curves subtract their value at the view's left edge,
   so the value at the view's right edge is the interval total.
-- [ ] Site families rework (swf-monitor provider): window-relative
+- [x] Site families rework (swf-monitor provider): window-relative
   finished and failed curves replace the rolling 24-hour curves in the
-  site jobs family, and a per-site failures family stacks the
-  failed-by-class counters so a failure burst is attributable by class
-  on the timeline. Series cache version bump.
-- [ ] Site cut card legibility: on a site-focused cut the site section
+  site jobs family, and a per-site failures family renders the
+  failed-by-class counters as per-class curves so a failure burst is
+  attributable by class on the timeline. Series cache version bump.
+- [x] Site cut card legibility: on a site-focused cut the site section
   leads and the scope headline is dropped from the compact form.
   Reading order: outcomes since the window start (finished and failed
   totals, failure classes beneath the failed row, each row carrying
@@ -284,20 +284,20 @@ Drag remains zoom; no separate selection gesture is needed.
   then tasks. The card states the accumulation basis once. The cut
   request carries the window start so the card differences the
   counters server-side.
-- [ ] Transports: no new endpoints — `state_at` and `changes_between`
+- [x] Transports: no new endpoints — `state_at` and `changes_between`
   already return the component, and differencing the version-5
   counters between two instants yields terminal counts per site and
   per failure class. Name the counters in the MCP tool docstrings so
   agent consumers find them.
-- [ ] Attribution beyond site (which task or processing type produced
+- [x] Attribution beyond site (which task or processing type produced
   the outcomes) stays with the PanDA-database chart on the jobs page
   and the existing panda query tools; the component counters remain
   bounded to site, status, and failure class.
-- [ ] Document the display rule in TIME_HISTORY_UI.md and the
+- [x] Document the display rule in TIME_HISTORY_UI.md and the
   2026-07-29 provider-surface additions (callable curve groups,
   multiple focus views, curve colors, member order, window-relative
   families) in INTEGRATION.md.
-- [ ] Live verification: the window-relative curves must agree with
+- [x] Live verification: the window-relative curves must agree with
   the jobs page's PanDA-database chart over the same window within the
   five-minute observation resolution; zoom rebase, cut basis, and
   embed behavior verified on the deployed pages.

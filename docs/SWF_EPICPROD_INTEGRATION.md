@@ -281,8 +281,26 @@ raw integer counts at five-minute observation resolution: a count change
 between maintainer runs is meaningful, while changes inside that interval
 intentionally collapse into the next maintained state.
 
+Version 4 adds current in-flight job counts by processing type and by type
+and status, bounded to 16 types with the smallest rolled into 'other'.
+
+Version 5 records terminal outcomes as monotonic cumulative counters:
+`jobs.cum` by status (finished, failed, cancelled, closed) and, per site,
+`cum` plus `cum_failed_by_class` over the monitor's error-component classes.
+Each publication counts completed jobs with end times after the previous
+publication's source time (active and archived tables, deduplicated) and adds
+them to the counters read from the component's current state; a current state
+without counters seeds from the full recorded job history, so the absolute
+origin is the database epoch and every consumer differences two instants. A
+site evicted from the bounded ranked map loses its per-site counters and
+restarts them on return; the scope-level counters are unaffected. The
+swf-monitor script `scripts/backfill-panda-counters.py` reconstructs the
+counters at an hourly grid of historical instants as `backfill-panda-v1`
+snaps sharing the same absolute origin, covering activity recorded before the
+version-5 publisher deployment.
+
 The assessment and source times are the completed-query time. Visibility is
-public and the assessment policy is swf-panda-activity-24h-v2. The historical
+public and the assessment policy is swf-panda-activity-24h-v3. The historical
 question is: *how much PanDA work was active, what states were its jobs and
 tasks in at each target site, and how did recent outcomes evolve?* The stable
 resolver identifier swf-panda-activity-history is registered for exact PanDA

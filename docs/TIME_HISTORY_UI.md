@@ -130,6 +130,24 @@ throughout (actual snap times, coverage never inferred).
    pages — matching colors, a click opening this display; first host
    is the SWF monitor's PanDA activity page ([INTEGRATION.md
    §4](INTEGRATION.md), README).
+6. **Done (2026-07-29):** terminal outcomes as window-relative
+   cumulative counters. A terminal transition is a point event — the
+   job leaves the in-flight population at its end time — so finished
+   and failed render as staircases rising from zero at the window's
+   left edge: the displayed window is the integration range, zooming
+   or panning re-bases the staircases at the view's left edge, and
+   the value at the view's right edge is the interval total. Drag
+   remains zoom. The cut reports outcomes on the same basis (the cut
+   request carries the view's left edge) and its detail is a table,
+   one row per curve in panel order with the row's swatch in the
+   curve's color. A focus view tells its story in one plot; secondary
+   families (failure classes, tasks) sit behind rotators, closed by
+   default, and every family section carries the rotator. When
+   several panels stack, the top panel draws its own date labels so
+   it stands alone in a screenshot. First user: the epicprod Site
+   focus (per-site job lifecycle). Remembered curve selections are
+   versioned with the curve vocabulary, as the series cache is —
+   selections recorded against an old vocabulary are stale wholesale.
 
 ## Grafana position
 

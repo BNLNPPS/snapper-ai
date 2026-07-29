@@ -102,12 +102,16 @@ authority):
 | `curve_values` | snap state → numeric curves for the Time history |
 | `lane_entries` | extra continuous lanes beyond the core health lanes |
 | `curve_label` | curve id → display label |
-| `curve_groups` | curve family rows of the observatory legend |
+| `curve_color` | curve id → CSS color for curves with semantic color (state-bearing curves take the host's state vocabulary); the palette deal otherwise |
+| `curve_groups` | curve family rows of the observatory legend; a callable is resolved per render so families track live host state. A family entry may declare `order` (member display order), `window_relative` (cumulative counters rendered relative to the window's left edge — `True` for the whole family, or a list of ids and `_`-terminated prefixes within a mixed family), `tall` (double panel height), and `focus_closed` (section closed by default inside a focus view) |
 | `episodic_lanes` | discrete activity lanes from the host's own records |
 | `activity_at` | instant → activity truth, for cards that must agree with the lanes |
-| `component_cards` | component name → card builder (data, previous, ctx) |
+| `activity_card` | keyed episodic activity → detail card |
+| `component_cards` | component name → card builder (data, previous, ctx; ctx carries the page params and, when the cut names a basis, `since`/`since_data` for window-difference reporting) |
 | `card_template` | host template rendering this scope's cards |
 | `annotate_references` | event references → references with host links |
+| `preset_links` | report-page tabs with fixed query strings |
+| `focus_view` | one declaration or a tuple: scope-switcher tabs, each with its own clean page, options, selector axes, and an optional one-line `note` explaining the display |
 
 Card builders return pure data with a `kind`; the host card template
 renders the kinds it knows and carries whatever host page links belong
