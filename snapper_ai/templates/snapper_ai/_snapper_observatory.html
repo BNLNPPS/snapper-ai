@@ -398,7 +398,9 @@
   // Collapsed family sections (the arrow rotator on secondary
   // families): name -> 1 closed / 0 open, remembered per browser.
   // A default_off family starts closed absent a remembered choice.
-  const famClosedKey = storeKey + ':famclosed';
+  // Versioned once with curves_off3: discard the contaminated focus
+  // collapse value while preserving collapse persistence thereafter.
+  const famClosedKey = storeKey + ':famclosed2';
   let famClosedStore = {};
   try {
     famClosedStore = JSON.parse(
@@ -1359,37 +1361,6 @@
         curvesOff.add(id);
       }
     });
-  }
-  // A focused page must never ARRIVE blank because an older scope view
-  // remembered every member off or collapsed its primary family. Heal
-  // that stale state once at page load only. Filter actions after this
-  // point are authoritative: All off and per-family None stay off.
-  if (FOCUS_ENGAGED && !familiesParam) {
-    const byFamily = {};
-    Object.keys(data.curves).forEach(function (id) {
-      const name = groupName(id);
-      (byFamily[name] = byFamily[name] || []).push(id);
-    });
-    Object.keys(byFamily).forEach(function (name) {
-      if (byFamily[name].every(
-            function (id) { return curvesOff.has(id); })) {
-        byFamily[name].forEach(
-            function (id) { curvesOff.delete(id); });
-      }
-    });
-    let clearedPrimaryCollapse = false;
-    GROUPS.forEach(function (group) {
-      if (!group.start_closed && famClosedStore[group.name]) {
-        delete famClosedStore[group.name];
-        clearedPrimaryCollapse = true;
-      }
-    });
-    if (clearedPrimaryCollapse) {
-      try {
-        localStorage.setItem(famClosedKey,
-                             JSON.stringify(famClosedStore));
-      } catch (e) { /* storage unavailable */ }
-    }
   }
   // Window-strip links carry the focused-view parameters along.
   {
