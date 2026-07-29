@@ -22,8 +22,7 @@ history. The curve key above the plot is a static legend.
   }
 </style>
 <div id="{{ embed.dom_id }}-key" class="mb-1"></div>
-<div id="{{ embed.dom_id }}" style="min-height:60px; cursor:pointer"
-     title="Open the {{ embed.label }} Time history"></div>
+<div id="{{ embed.dom_id }}" style="min-height:60px; cursor:pointer"></div>
 {{ embed.data|json_script:embed.data_dom_id }}
 <script>
 (function () {
@@ -106,6 +105,130 @@ history. The curve key above the plot is a static legend.
     return div.innerHTML;
   }
 
+  let renderedPanels = [], renderedLaneIds = [], renderedMinBarMs = 0;
+  const hoverFloater = document.createElement('div');
+  hoverFloater.style.cssText =
+      'position:fixed;z-index:1000;pointer-events:none;display:none;'
+      + 'font-size:14px;padding:.3rem .55rem;border-radius:4px;'
+      + 'box-shadow:0 1px 5px rgba(0,0,0,.45);white-space:nowrap;';
+  document.body.appendChild(hoverFloater);
+
+  function eventTime(event) {
+    const xa = plotDiv._fullLayout && plotDiv._fullLayout.xaxis;
+    if (!xa) return null;
+    const box = plotDiv.getBoundingClientRect();
+    const px = event.clientX - box.left - xa._offset;
+    if (px < 0 || px > xa._length) return null;
+    const left = Date.parse(xa.range[0]), right = Date.parse(xa.range[1]);
+    return left + (px / xa._length) * (right - left);
+  }
+
+  function stepValue(points, time) {
+    let lo = 0, hi = points.length - 1, found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (Date.parse(points[mid][0]) <= time) {
+        found = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return found < 0 ? null : points[found][1];
+  }
+
+  function lineHit(event, time) {
+    const layout = plotDiv._fullLayout;
+    const box = plotDiv.getBoundingClientRect();
+    let best = null;
+    renderedPanels.forEach(function (panel) {
+      const ya = layout[panel.axisKey];
+      if (!ya) return;
+      const py = event.clientY - box.top - ya._offset;
+      if (py < 0 || py > ya._length) return;
+      panel.ids.forEach(function (id) {
+        const value = stepValue(data.curves[id].points || [], time);
+        if (value === null) return;
+        const valuePy = ya._length
+            * (ya.range[1] - value) / (ya.range[1] - ya.range[0]);
+        const distance = Math.abs(py - valuePy);
+        if (!best || distance < best.distance) {
+          best = {label: data.curves[id].label, value: value,
+                  color: curveColor[id], distance: distance};
+        }
+      });
+    });
+    return best;
+  }
+
+  function laneHit(event, time) {
+    const ya = plotDiv._fullLayout && plotDiv._fullLayout.yaxis2;
+    if (!ya || !renderedLaneIds.length) return null;
+    const box = plotDiv.getBoundingClientRect();
+    const py = event.clientY - box.top - ya._offset;
+    if (py < 0 || py > ya._length) return null;
+    const fromTop = Math.floor(
+        (py / ya._length) * renderedLaneIds.length);
+    const index = renderedLaneIds.length - 1 - fromTop;
+    const laneId = renderedLaneIds[
+        Math.max(0, Math.min(renderedLaneIds.length - 1, index))];
+    const lane = data.lanes[laneId];
+    for (const seg of lane.segments || []) {
+      const t0 = Date.parse(seg.t0);
+      const t1 = Math.max(Date.parse(seg.t1), t0 + renderedMinBarMs);
+      if (time >= t0 && time <= t1) {
+        return {label: lane.label,
+                value: seg.hover || seg.value,
+                color: tileColor(laneId, seg.value, seg.open_end)};
+      }
+    }
+    return null;
+  }
+
+  function timeText(ms) {
+    const d = new Date(ms);
+    const pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-'
+        + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':'
+        + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  function textOn(color) {
+    const match = /^#([0-9a-f]{6})$/i.exec(color || '');
+    if (!match) return '#fff';
+    const value = parseInt(match[1], 16);
+    const luma = 0.299 * (value >> 16 & 255)
+        + 0.587 * (value >> 8 & 255) + 0.114 * (value & 255);
+    return luma > 150 ? '#111' : '#fff';
+  }
+
+  function hideFloater() {
+    hoverFloater.style.display = 'none';
+  }
+
+  function showFloater(event, hit, time) {
+    hoverFloater.style.background = hit.color || '#37474f';
+    hoverFloater.style.color = textOn(hit.color);
+    hoverFloater.innerHTML = '<b>' + escapeHtml(hit.label) + '</b>: '
+        + escapeHtml(String(hit.value)) + ' · ' + timeText(time);
+    hoverFloater.style.display = 'block';
+    const width = hoverFloater.offsetWidth;
+    hoverFloater.style.left = (
+        event.clientX + 16 + width > window.innerWidth
+            ? event.clientX - width - 12 : event.clientX + 16) + 'px';
+    hoverFloater.style.top = (event.clientY - 14) + 'px';
+  }
+
+  plotDiv.addEventListener('mousemove', function (event) {
+    if (event.buttons) { hideFloater(); return; }
+    const time = eventTime(event);
+    if (time === null) { hideFloater(); return; }
+    const hit = laneHit(event, time) || lineHit(event, time);
+    if (!hit) { hideFloater(); return; }
+    showFloater(event, hit, time);
+  });
+  plotDiv.addEventListener('mouseleave', hideFloater);
+
   function renderKey(panels, laneIds) {
     let html = '';
     if (laneIds.length) {
@@ -165,6 +288,9 @@ history. The curve key above the plot is a static legend.
     // it (barmode overlay), tiles held to a legible minimum width.
     const spanMs = Date.parse(data.end) - Date.parse(data.start);
     const minBarMs = spanMs / 60;
+    renderedPanels = panels;
+    renderedLaneIds = laneIds;
+    renderedMinBarMs = minBarMs;
     laneIds.forEach(function (laneId) {
       const lane = data.lanes[laneId];
       traces.push({
@@ -180,9 +306,7 @@ history. The curve key above the plot is a static legend.
           marker: {color: tileColor(laneId, seg.value, seg.open_end),
                    line: {color: '#ffffff', width: 1}},
           yaxis: 'y2', showlegend: false,
-          hovertemplate: escapeHtml(lane.label) + ': '
-              + escapeHtml(seg.hover || seg.value) + '<extra></extra>',
-          hoverlabel: {font: {size: 14}},
+          hoverinfo: 'skip',
         });
       });
     });
@@ -201,8 +325,7 @@ history. The curve key above the plot is a static legend.
           name: curve.label,
           yaxis: axis,
           showlegend: false,
-          hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
-          hoverlabel: {font: {size: 14}},
+          hoverinfo: 'skip',
         });
       });
     });
@@ -242,7 +365,7 @@ history. The curve key above the plot is a static legend.
               spikesnap: 'cursor', spikedash: 'dot',
               spikethickness: 1, spikecolor: '#78909c'},
       shapes: gapShapes,
-      hovermode: 'closest',
+      hovermode: false,
       annotations: [],
     };
     if (laneIds.length) {

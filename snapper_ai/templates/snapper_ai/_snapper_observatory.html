@@ -582,33 +582,12 @@
     seenStates.clear();
 
     // Lane segments as horizontal bars: solid when active, light pastel
-    // fill with a colored border otherwise. Bars skip hover; a dense
-    // invisible marker overlay per lane carries the hover instead, so the
-    // floater appears at the cursor rather than at the segment's end.
+    // fill with a colored border otherwise. The in-house cursor floater
+    // resolves the exact x/y hit directly from the lane data.
     laneIds.forEach(function (laneId) {
       const lane = data.lanes[laneId];
       const label = laneLabelById[laneId];
       const isChild = Boolean(lane.parent);
-      const hoverXs = [], hoverTexts = [];
-
-      function addHoverSpan(t0, t1, text) {
-        // Always at least one hover point: a zero-length (truncated)
-        // period must still explain itself at the cursor.
-        hoverXs.push(toNaive(t0));
-        hoverTexts.push(text);
-        const step = Math.max((t1 - t0) / 40, 30000);
-        for (let t = t0 + step; t < t1; t += step) {
-          hoverXs.push(toNaive(t));
-          hoverTexts.push(text);
-        }
-        // Pin a marker at the span's last instant: the nearest-marker
-        // rule then flips the hover exactly at the visible edge instead
-        // of half a step early.
-        if (t1 - t0 > 1500) {
-          hoverXs.push(toNaive(t1 - 500));
-          hoverTexts.push(text);
-        }
-      }
 
       if (lane.segments) {
         // Episodic lane: a continuous grey idle track says "this
@@ -640,8 +619,6 @@
             marker: marker,
             yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
           });
-          addHoverSpan(t0, Math.max(t1, t0 + minBarMs),
-                       escapeHtml(lane.label) + ': ' + escapeHtml(seg.hover));
         });
       } else {
         // Continuous lane (health and its checks): the state always
@@ -662,18 +639,8 @@
                 : {color: pastel(color), line: {color: color, width: 1.5}},
             yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
           });
-          addHoverSpan(t0, t1,
-                       escapeHtml(lane.label) + ': ' + escapeHtml(point.hover));
         });
       }
-      traces.push({
-        x: hoverXs, y: hoverXs.map(() => label),
-        mode: 'markers', marker: {size: 6, color: 'rgba(0,0,0,0)'},
-        yaxis: 'y2', showlegend: false,
-        text: hoverTexts,
-        hovertemplate: '%{text}<extra></extra>',
-        hoverlabel: {font: {size: 14}},
-      });
     });
 
     // Curves, each on its family panel's own y-axis. Stacked families
@@ -806,11 +773,7 @@
                   || familyClosed(groupName(curveId), groupDef(curveId)))
             ? 'legendonly' : true,
         showlegend: false,
-        hovertemplate: curve.label + ': <b>%{y}</b><br>%{x}<extra></extra>',
-        // The hover label sits on the curve's color; the house
-        // perceptual-luma rule picks the text color, never Plotly's
-        // linearized default (wrong on mid oranges and cyans).
-        hoverlabel: {font: {color: textOn(curveColor[curveId])}},
+        hoverinfo: 'skip',
       });
     });
     failTriangleTraces().forEach(function (t) { traces.push(t); });
@@ -1198,7 +1161,7 @@
                range: [-0.5, Math.max(laneIds.length - 0.5, 0.5)],
                visible: false, fixedrange: true},
       shapes: gapShapes.concat(cutShapeList()),
-      hovermode: 'closest',
+      hovermode: false,
       ...(topLabelsPx ? {
         // Matched twin of the x axis under the TOP panel: the same
         // in-house date labels, so the lead panel screenshots whole.
@@ -1210,10 +1173,6 @@
                  spikesnap: 'cursor', spikedash: 'dot',
                  spikethickness: 1, spikecolor: '#78909c'},
       } : {}),
-      // The floater belongs on the tile, not hours away from it — but
-      // without activity tiles (curves views, sparse daily steps
-      // included) the cursor deserves a generous reach.
-      hoverdistance: isActivityScope() ? 8 : 40,
       annotations: [],
     };
     // No namespace swatches anywhere: each lane's own bars, beside
@@ -2499,10 +2458,9 @@
     });
   }
 
-  // The quilt's own floater. Stacked bands are filled areas, not
-  // lines; hover resolves the cursor to its day column and the band
-  // whose vertical interval contains it, and the floater carries that
-  // patch's identity, value, and day in the patch's own color.
+  // One in-house floater owns every x/y plot hover. It resolves the
+  // cursor directly against lane spans, staircase values, or stacked
+  // quilt geometry; Plotly's nearest-point hover is deliberately off.
   const quiltFloater = document.createElement('div');
   quiltFloater.style.cssText =
       'position:fixed; z-index:1000; pointer-events:none; display:none;'
@@ -2572,27 +2530,126 @@
     }
     return null;
   }
-  plotDiv.addEventListener('mousemove', function (event) {
-    if (event.buttons) { hideQuiltFloater(); return; }
-    const hit = quiltHit(event);
-    if (!hit) { hideQuiltFloater(); return; }
-    // The column's day is the day its closing stamp belongs to (a
-    // day-end stamp); one second back also holds at a midnight stamp.
-    const day = toNaive(hit.geom.edgesMs[hit.column + 1] - 1000)
-        .slice(0, 10);
-    const color = curveColor[hit.member.id] || '#37474f';
-    quiltFloater.style.background = color;
-    quiltFloater.style.color = textColorOn(color);
-    quiltFloater.innerHTML = '<b>' + escapeHtml(hit.member.label)
-        + '</b>: ' + hit.member.own[hit.column]
-        + (hit.geom.units ? ' ' + escapeHtml(hit.geom.units) : '')
-        + ' · ' + day;
+
+  function laneHoverHit(event, time) {
+    const laneId = laneAtY(event);
+    if (!laneId) return null;
+    const lane = data.lanes[laneId];
+    if (lane.segments) {
+      for (const seg of lane.segments) {
+        const t0 = Date.parse(seg.t0);
+        const t1 = Math.max(Date.parse(seg.t1), t0 + minBarMs);
+        if (time >= t0 && time <= t1) {
+          return {
+            label: lane.label,
+            value: seg.hover || seg.value,
+            color: tileColor(laneId, seg.value, seg.open_end),
+          };
+        }
+      }
+      return null;
+    }
+    let found = null;
+    for (const point of lane.points || []) {
+      if (Date.parse(point.t) <= time) found = point;
+      else break;
+    }
+    if (!found) return null;
+    return {
+      label: lane.label,
+      value: found.hover || found.value,
+      color: stateColor(found.value),
+    };
+  }
+
+  function plottedStepValue(curveId, time) {
+    const index = curveTraceIndex[curveId];
+    const trace = index === undefined ? null : plotDiv.data[index];
+    if (!trace || trace.visible === 'legendonly') return null;
+    let lo = 0, hi = trace.x.length - 1, found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (Date.parse(trace.x[mid]) <= time) {
+        found = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (found < 0 || trace.y[found] === null
+        || !Number.isFinite(Number(trace.y[found]))) return null;
+    return Number(trace.y[found]);
+  }
+
+  function curveHoverHit(event, time) {
+    if (!plotDiv._fullLayout) return null;
+    const box = plotDiv.getBoundingClientRect();
+    let best = null;
+    curveIds.forEach(function (curveId) {
+      const def = groupDef(curveId);
+      if ((def && def.stacked) || curveAxis[curveId] === 'hidden') return;
+      const axis = curveAxis[curveId] || 'y';
+      const axisKey = axis === 'y' ? 'yaxis' : 'yaxis' + axis.slice(1);
+      const ya = plotDiv._fullLayout[axisKey];
+      if (!ya) return;
+      const py = event.clientY - box.top - ya._offset;
+      if (py < 0 || py > ya._length) return;
+      const value = plottedStepValue(curveId, time);
+      if (value === null) return;
+      const valuePy = ya._length
+          * (ya.range[1] - value) / (ya.range[1] - ya.range[0]);
+      const distance = Math.abs(py - valuePy);
+      if (!best || distance < best.distance) {
+        best = {
+          label: data.curves[curveId].label,
+          value: value,
+          color: curveColor[curveId],
+          units: (def && def.units) || '',
+          distance: distance,
+        };
+      }
+    });
+    return best;
+  }
+
+  function placeFloater(event, color, html) {
+    quiltFloater.style.background = color || '#37474f';
+    quiltFloater.style.color = textColorOn(color || '#37474f');
+    quiltFloater.innerHTML = html;
     quiltFloater.style.display = 'block';
     const width = quiltFloater.offsetWidth;
     const left = event.clientX + 16 + width > window.innerWidth
         ? event.clientX - width - 12 : event.clientX + 16;
     quiltFloater.style.left = left + 'px';
     quiltFloater.style.top = (event.clientY - 14) + 'px';
+  }
+
+  plotDiv.addEventListener('mousemove', function (event) {
+    if (event.buttons) { hideQuiltFloater(); return; }
+    const time = eventTime(event);
+    if (time === null) { hideQuiltFloater(); return; }
+    const quilt = quiltHit(event);
+    if (quilt) {
+      // The column's day is the day its closing stamp belongs to (a
+      // day-end stamp); one second back also holds at a midnight stamp.
+      const day = toNaive(quilt.geom.edgesMs[quilt.column + 1] - 1000)
+          .slice(0, 10);
+      const color = curveColor[quilt.member.id] || '#37474f';
+      placeFloater(event, color,
+          '<b>' + escapeHtml(quilt.member.label) + '</b>: '
+          + quilt.member.own[quilt.column]
+          + (quilt.geom.units
+             ? ' ' + escapeHtml(quilt.geom.units) : '')
+          + ' · ' + day);
+      return;
+    }
+    const hit = laneHoverHit(event, time) || curveHoverHit(event, time);
+    if (!hit) { hideQuiltFloater(); return; }
+    placeFloater(event, hit.color,
+        '<b>' + escapeHtml(hit.label) + '</b>: '
+        + escapeHtml(String(hit.value))
+        + (hit.units ? ' ' + escapeHtml(hit.units) : '')
+        + ' · ' + toNaive(time).replace('T', ' '));
   });
   plotDiv.addEventListener('mouseleave', hideQuiltFloater);
 
