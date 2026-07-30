@@ -36,14 +36,14 @@
     {% endif %}
 
     {% if card.kind == 'health' %}
-      {% if card.reason %}<div class="mb-1">{{ card.reason }}</div>{% endif %}
+      {% if card.reason %}<div class="mb-1">{{ card.reason|urlize }}</div>{% endif %}
       {% if card.non_ok_checks %}
       <table class="table table-sm mb-1 w-auto">
         {% for check in card.non_ok_checks %}
         <tr>
           <td>{% if health_url %}<a href="{{ health_url }}">{{ check.name }}</a>{% else %}{{ check.name }}{% endif %}</td>
           <td><span class="snapper-chip" style="background:{{ check.chip.color }}">{{ check.chip.value }}</span></td>
-          <td>{{ check.summary }}</td>
+          <td>{{ check.summary|urlize }}</td>
         </tr>
         {% endfor %}
       </table>
