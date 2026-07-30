@@ -503,6 +503,7 @@
   let quiltGeom = [];
   let gapShapes = [], fullRange = [0, 0], groupMembers = {};
   let laneLabelById = {}, parentKids = {}, curveAxis = {}, panels = [];
+  let cutDomains = [];
   // Minimum on-screen bar length for episodic run periods, in ms of the
   // rendered view span — a minutes-long run stays visible at a 7-day
   // zoom. Recomputed (with a re-render) when the view span changes.
@@ -532,11 +533,14 @@
       basisMs = Math.min(basisMs, visible[1] - onePx);
       basisMs = Math.max(basisMs, visible[0] + onePx);
     }
-    return [{
-      type: 'line', xref: 'x', yref: 'paper',
-      x0: toNaive(basisMs), x1: toNaive(basisMs), y0: 0, y1: 1,
-      line: {color: '#c62828', width: 3, dash: '12px 3px'},
-    }];
+    return cutDomains.map(function (domain) {
+      return {
+        type: 'line', xref: 'x', yref: 'paper',
+        x0: toNaive(basisMs), x1: toNaive(basisMs),
+        y0: domain[0], y1: domain[1],
+        line: {color: '#c62828', width: 3, dash: '12px 3px'},
+      };
+    });
   }
   function noteFailures(key, htmlText) {
     // The story card is the failure authority: any STF task row with
@@ -866,6 +870,7 @@
     // first family rides axis y, the rest y3, y4, ... (y2 stays the
     // lanes' category axis).
     panels = [];
+    cutDomains = [];
     curveAxis = {};
     GROUPS.concat([{name: 'Other', match: function () { return true; }}])
         .forEach(function (group) {
@@ -1125,6 +1130,9 @@
     const bottomPx = !DOCK_CONTROLS ? 45
         : (sections.length && sections[sections.length - 1].panel
            ? 38 : 8);
+    const laneDomain = laneIds.length
+        ? domainOf(0, lanePx) : [0.999, 1];
+    if (laneIds.length) cutDomains.push(laneDomain);
     const layout = {
       margin: {l: 110, r: 20, t: 10, b: bottomPx},
       height: innerPx + 10 + bottomPx,
@@ -1151,7 +1159,7 @@
       // sliver of domain: a [1,1] span is degenerate for Plotly.
       yaxis2: {type: 'category', fixedrange: true,
                visible: laneIds.length > 0,
-               domain: laneIds.length ? domainOf(0, lanePx) : [0.999, 1],
+               domain: laneDomain,
                categoryorder: 'array', showgrid: laneIds.length > 0,
                categoryarray: laneIds.map(id => laneLabelById[id])},
       // Hidden numeric twin of the lane band: the failure-triangle
@@ -1159,7 +1167,7 @@
       yaxis9: {overlaying: 'y2',
                range: [-0.5, Math.max(laneIds.length - 0.5, 0.5)],
                visible: false, fixedrange: true},
-      shapes: gapShapes.concat(cutShapeList()),
+      shapes: gapShapes,
       hovermode: false,
       ...(topLabelsPx ? {
         // Matched twin of the x axis under the TOP panel: the same
@@ -1206,8 +1214,10 @@
         s.detailTopPx = panelTopPx + 8;
         panelTopPx += s.detailPx;
       }
+      const panelDomain = domainOf(topPx, topPx + panel.px);
+      cutDomains.push(panelDomain);
       layout[panel.axisKey] = {
-        domain: domainOf(topPx, topPx + panel.px),
+        domain: panelDomain,
         rangemode: 'tozero',
         // Locked: drag zooms time only, and undo/reset are exact — a
         // rectangle zoom must never bend the y scale.
@@ -1235,6 +1245,7 @@
     // arithmetic on our own geometry — nothing asks Plotly where
     // things ended up.
     dockedSections = DOCK_CONTROLS ? sections : [];
+    layout.shapes = gapShapes.concat(cutShapeList());
     if (!panels.length) {
       layout.yaxis = {visible: false, fixedrange: true,
                       domain: [0, Math.max(domainOf(0, lanePx)[0] - 0.02, 0.01)]};
