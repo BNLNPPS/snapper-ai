@@ -271,15 +271,17 @@ The revision-driving projection is:
 ```
 
 Job and task status maps are limited to 32 entries, each site map to 32 sites,
-the task-type map to 32 types, and canonical component JSON to 64 KiB. Job
-sites with current in-flight work rank ahead of inactive sites, followed by
-trailing job volume; task sites rank by current nonterminal task count. Current
-in-flight job states are defined, waiting, assigned, activated, sent, starting,
-running, holding, transferring, and merging. Current tasks are all JEDI states
-except done, finished, failed, broken, aborted, exhausted, and passed. The component records
-raw integer counts at five-minute observation resolution: a count change
-between maintainer runs is meaningful, while changes inside that interval
-intentionally collapse into the next maintained state.
+the task-type map to 32 types, and canonical component JSON to 64 KiB. Both site
+maps retain every non-test queue in the Canary catalog, including explicit zero
+state for inactive queues. Remaining job-site slots rank by current in-flight
+work and then trailing job volume; remaining task-site slots rank by current
+nonterminal task count. Current in-flight job states are defined, waiting,
+assigned, activated, sent, starting, running, holding, transferring, and
+merging. Current tasks are all JEDI states except done, finished, failed,
+broken, aborted, exhausted, and passed. The component records raw integer
+counts at five-minute observation resolution: a count change between
+maintainer runs is meaningful, while changes inside that interval intentionally
+collapse into the next maintained state.
 
 Version 4 adds current in-flight job counts by processing type and by type
 and status, bounded to 16 types with the smallest rolled into 'other'.
@@ -291,13 +293,17 @@ Each publication counts completed jobs with end times after the previous
 publication's source time (active and archived tables, deduplicated) and adds
 them to the counters read from the component's current state; a current state
 without counters seeds from the full recorded job history, so the absolute
-origin is the database epoch and every consumer differences two instants. A
-site evicted from the bounded ranked map loses its per-site counters and
-restarts them on return; the scope-level counters are unaffected. The
-swf-monitor script `scripts/backfill-panda-counters.py` reconstructs the
-counters at an hourly grid of historical instants as `backfill-panda-v1`
-snaps sharing the same absolute origin, covering activity recorded before the
-version-5 publisher deployment.
+origin is the database epoch and every consumer differences two instants.
+When a Canary catalog queue first enters the current component, its per-site
+counters are initialized from full PanDA history through the previous
+publication mark before the current delta is applied. Catalog queues are not
+evicted. An activity-derived site outside the catalog can be evicted from the
+bounded map and loses its per-site counters when that happens; the scope-level
+counters are unaffected. The swf-monitor script
+`scripts/backfill-panda-counters.py` reconstructs the counters at an hourly
+grid of historical instants as `backfill-panda-v1` snaps sharing the same
+absolute origin, covering activity recorded before the version-5 publisher
+deployment.
 
 The assessment and source times are the completed-query time. Visibility is
 public and the assessment policy is swf-panda-activity-24h-v3. The historical
