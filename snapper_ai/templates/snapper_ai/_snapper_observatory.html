@@ -315,16 +315,17 @@
   } catch (e) { localPrefs = {}; }
   const familiesParam = (new URL(window.location.href)
       .searchParams.get('families') || '');
-  // curves_off3 invalidates the one contaminated curves_off2 value
-  // while retaining the existing save/restore behavior.
+  // curves_off4 invalidates the curves_off3 value contaminated when
+  // the old broad report auto-saved its focus-only default-off curves.
+  // Save/restore behavior itself remains unchanged.
   // A signed-in account's truth is the server record ALONE: local
   // storage is the anonymous browser's memory and must never override
   // it — a non-empty test cannot distinguish the server saying
   // "all on" from the server having no record, so a locally recorded
   // all-off state would otherwise stand forever.
   const curvesOff = new Set(
-      (authenticated ? serverPrefs.curves_off3
-                     : localPrefs.curves_off3) || []);
+      (authenticated ? serverPrefs.curves_off4
+                     : localPrefs.curves_off4) || []);
   // Per-member filter state for pc_groups families, keyed by the
   // MEMBER (PC) label — quantity-independent, so an unticked set
   // stays unticked across the counting toggle's different curve ids.
@@ -341,7 +342,7 @@
     // A ?families= preset is a one-shot focused link; it must never
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
-    const payload = {curves_off3: Array.from(curvesOff),
+    const payload = {curves_off4: Array.from(curvesOff),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
                      window: pageWindow};
