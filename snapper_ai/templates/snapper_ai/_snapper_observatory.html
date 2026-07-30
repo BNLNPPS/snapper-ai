@@ -1163,7 +1163,7 @@
       ...(topLabelsPx ? {
         // Matched twin of the x axis under the TOP panel: the same
         // in-house date labels, so the lead panel screenshots whole.
-        xaxis2: {type: 'date', matches: 'x',
+        xaxis2: {type: 'date', matches: 'x', overlaying: 'x',
                  anchor: panels[0].traceAxis,
                  tickmode: 'array', tickvals: dateTickSpec.vals,
                  ticktext: dateTickSpec.text, showgrid: false,
