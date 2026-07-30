@@ -240,9 +240,8 @@
   let expandedKeys = new Set();
   let pendingSliceLane = null;
   // Lane tick filters (boxes beside the lane names): the tick defines
-  // the shown truth — unticked lanes are hidden from the overview
-  // table AND the slice panel (their bars stay on the plot). URL
-  // state: ?hide=name,name.
+  // the shown truth — unticked lanes are hidden from the plot,
+  // overview table, and slice panel. URL state: ?hide=name,name.
   const laneFilterOff = new Set();
   (new URL(window.location.href).searchParams.get('hide') || '')
     .split(',').filter(Boolean)
@@ -842,11 +841,6 @@
       // The tick defines the shown truth, on the plot too: an
       // unticked lane vanishes and its vertical room is reclaimed.
       if (data.lanes[id].segments && laneFilterOff.has(id)) return;
-      // A namespace with nothing in the window earns no lane row —
-      // an empty lane says nothing its absence doesn't.
-      if (data.lanes[id].segments && !data.lanes[id].segments.length) {
-        return;
-      }
       laneIds.push(id);
       const kids = parentKids[id] || [];
       if (kids.length) {
@@ -2160,10 +2154,9 @@
 
   function buildLaneRow() {
     // The horizontal lane tick row lists EVERY namespace — what
-    // exists is information in itself. The tick states presence in
-    // the view: a namespace with nothing in the window renders
-    // unticked, muted, and inert. The tick defines the shown truth
-    // (plot, table, and slice alike).
+    // exists is information in itself. Activity affects only the
+    // muted styling: the tick is always a real shown/hidden control,
+    // including for an empty grey lane.
     if (!laneRowDiv) return;
     const ids = episodicLaneIdList().sort(function (a, b) {
       return data.lanes[a].label.localeCompare(data.lanes[b].label);
@@ -2179,13 +2172,11 @@
       // the lanes themselves carry the colors.
       const active = (data.lanes[id].segments || []).length > 0;
       html += '<label class="me-3'
-        + (active ? '' : ' text-muted') + '" style="cursor:'
-        + (active ? 'pointer' : 'default') + '"'
+        + (active ? '' : ' text-muted') + '" style="cursor:pointer"'
         + (active ? '' : ' title="No activity in this window"') + '>'
         + '<input type="checkbox" class="form-check-input snapper-lane-tick"'
         + ' data-lane-id="' + escapeHtml(id) + '"'
-        + (active ? '' : ' disabled')
-        + (active && !laneFilterOff.has(id) ? ' checked' : '')
+        + (!laneFilterOff.has(id) ? ' checked' : '')
         + '> ' + escapeHtml(data.lanes[id].label) + '</label>';
     });
     laneRowDiv.innerHTML = html;
