@@ -52,6 +52,10 @@ class ScopeProvider:
                      '_'-terminated prefixes within a mixed family),
                      'tall' (double panel height), and 'focus_closed'
                      (section closed by default inside a focus view).
+    scope_curve_groups  Optional compact subset of curve_groups for the
+                     unfocused scope report. When supplied, curves
+                     outside these families stay on their dedicated
+                     focus views instead of overloading the front door.
     episodic_lanes   (start, end, dangle_seconds) -> {lane_name:
                      [segment, ...]} discrete activity lanes.
     activity_at      (instant) -> per-lane activity truth at an
@@ -76,6 +80,7 @@ class ScopeProvider:
     curve_label: object = None
     curve_color: object = None
     curve_groups: tuple = ()
+    scope_curve_groups: object = None
     episodic_lanes: object = None
     activity_at: object = None
     activity_card: object = None
@@ -136,6 +141,23 @@ def resolve_curve_groups(provider):
             groups = groups()
         except Exception as e:                               # noqa: BLE001
             logger.error('snapper curve_groups callable failed for '
+                         'scope %r: %s', provider.scope, e)
+            groups = ()
+    return groups or ()
+
+
+def resolve_scope_curve_groups(provider):
+    """The compact family projection for an unfocused scope report.
+    Absent an explicit projection, the full curve registry remains the
+    report vocabulary for backwards compatibility."""
+    if provider is None or provider.scope_curve_groups is None:
+        return resolve_curve_groups(provider)
+    groups = provider.scope_curve_groups
+    if callable(groups):
+        try:
+            groups = groups()
+        except Exception as e:                               # noqa: BLE001
+            logger.error('snapper scope_curve_groups callable failed for '
                          'scope %r: %s', provider.scope, e)
             groups = ()
     return groups or ()

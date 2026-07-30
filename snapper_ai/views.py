@@ -417,6 +417,24 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             lambda: observatory_series(scope, window_start, window_end)))
     else:
         observatory = observatory_series(scope, window_start, window_end)
+    all_groups = list(registry.resolve_curve_groups(provider))
+    scope_groups = list(registry.resolve_scope_curve_groups(provider))
+    if (focus_option is None and provider is not None
+            and provider.scope_curve_groups is not None):
+        # The front door is an explicit compact projection. Focus-only
+        # Campaign/Site curves do not fall through into a giant Other
+        # family after their control rows are removed.
+        def _in_scope(curve_id):
+            return any(
+                curve_id in (group.get('ids') or ())
+                or str(curve_id).startswith(
+                    tuple(group.get('prefixes') or ()))
+                for group in scope_groups)
+
+        observatory['curves'] = {
+            curve_id: curve
+            for curve_id, curve in observatory['curves'].items()
+            if _in_scope(curve_id)}
     observatory['colors'] = _curve_colors(provider, observatory['curves'])
 
     focus_context = None
@@ -424,7 +442,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         # Only the focused families' curves and control rows render.
         wanted = set(focus_option.get('families') or ())
         groups = [dict(g)
-                  for g in registry.resolve_curve_groups(provider)
+                  for g in all_groups
                   if g.get('name') in wanted]
         # A chosen stacked family is the focus view's primary display:
         # a scope-view default_off marking does not apply to it. A
@@ -638,8 +656,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_next_url': observatory_next_url,
         'observatory_range_label': observatory_range_label,
         'observatory_groups': (
-            focus_context['groups'] if focus_context else list(
-                registry.resolve_curve_groups(registry.get(scope)))),
+            focus_context['groups'] if focus_context else scope_groups),
         'observatory_focus': focus_context,
         'health_url': _health_url(),
     })
