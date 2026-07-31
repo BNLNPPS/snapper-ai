@@ -27,10 +27,13 @@ CUT_FALLBACK_COLOR = '#1565c0'
 
 
 def et_naive(value):
-    """Eastern wall-time string for plotting (no offset suffix)."""
+    """Eastern time string for plotting, WITH offset suffix: a naive
+    string is parsed in the browser's local zone by Date.parse, shifting
+    the strip by hours for any non-Eastern viewer (CT, UTC) and clipping
+    the newest data off the axis."""
     if not value:
         return None
-    return value.astimezone(ET_ZONE).strftime('%Y-%m-%dT%H:%M:%S')
+    return value.astimezone(ET_ZONE).isoformat(timespec='seconds')
 
 
 def component_data(state, name):
