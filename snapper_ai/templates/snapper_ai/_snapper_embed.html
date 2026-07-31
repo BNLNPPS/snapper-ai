@@ -306,7 +306,7 @@ history. The curve key above the plot is a static legend.
         // instead of clipping into invisibility beyond the axis.
         const segSpan = Math.max(t1 - t0, minBarMs);
         const baseMs = Math.min(t0, Date.parse(data.end) - segSpan);
-        const segBase = baseMs < t0 ? new Date(baseMs).toISOString() : seg.t0;
+        const segBase = baseMs < t0 ? baseMs : seg.t0;
         traces.push({
           type: 'bar', orientation: 'h', y: [lane.label],
           x: [segSpan], base: [segBase], width: 0.82,

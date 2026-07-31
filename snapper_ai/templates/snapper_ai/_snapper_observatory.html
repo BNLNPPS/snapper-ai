@@ -630,7 +630,7 @@
           traces.push({
             type: 'bar', orientation: 'h',
             y: [label], x: [segSpan],
-            base: [segBase < t0 ? new Date(segBase).toISOString() : seg.t0],
+            base: [segBase < t0 ? segBase : seg.t0],
             width: 0.82,
             marker: marker,
             yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
