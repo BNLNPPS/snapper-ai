@@ -286,12 +286,23 @@
   // pixel math runs in the browser's Date.parse basis of those naive
   // strings; basisCorrection converts a basis time to the true instant.
   let basisCorrection = data.end_ms - Date.parse(data.end);
+  // Every date value handed to plotly goes through here, formatted in
+  // ET regardless of the viewer's timezone. Browser-local formatting
+  // shifted the axis relative to the ET tile bases by the viewer's
+  // offset from ET — hours of the newest data clipped off for any
+  // non-Eastern viewer.
+  const ET_PARTS = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'});
   function toNaive(ms) {
-    const d = new Date(ms);
-    const p = n => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-'
-        + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes())
-        + ':' + p(d.getSeconds());
+    const q = {};
+    ET_PARTS.formatToParts(new Date(ms)).forEach(function (x) {
+      q[x.type] = x.value;
+    });
+    if (q.hour === '24') q.hour = '00';
+    return q.year + '-' + q.month + '-' + q.day + 'T'
+        + q.hour + ':' + q.minute + ':' + q.second;
   }
 
   if (!Object.keys(data.lanes).length && !Object.keys(data.curves).length) {
@@ -575,7 +586,7 @@
         const t0ms = Date.parse(seg.t0);
         const span = Math.max(Date.parse(seg.t1) - t0ms, minBarMs);
         const t1s = toNaive(t0ms + span);
-        xs.push(seg.t0, t1s, t1s, null);
+        xs.push(toNaive(t0ms), t1s, t1s, null);
         ys.push(idx - 0.41, idx - 0.41, idx + 0.41, null);
       });
     });
@@ -612,7 +623,7 @@
         traces.push({
           type: 'bar', orientation: 'h',
           y: [label], x: [Date.parse(data.end) - Date.parse(data.start)],
-          base: [data.start],
+          base: [toNaive(Date.parse(data.start))],
           width: 0.82,
           marker: {color: '#dde3e9'},
           yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
@@ -630,7 +641,7 @@
           traces.push({
             type: 'bar', orientation: 'h',
             y: [label], x: [segSpan],
-            base: [segBase < t0 ? segBase : seg.t0],
+            base: [toNaive(segBase)],
             width: 0.82,
             marker: marker,
             yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
@@ -648,7 +659,7 @@
           traces.push({
             type: 'bar', orientation: 'h',
             y: [label], x: [Math.max(t1 - t0, 1)],
-            base: [point.t],
+            base: [toNaive(Date.parse(point.t))],
             width: isChild ? 0.6 : 0.82,
             marker: point.active
                 ? {color: color, line: {color: '#ffffff', width: 1}}
@@ -900,7 +911,7 @@
     gapShapes = data.gaps.map(function (gap) {
       return {
         type: 'rect', xref: 'x', yref: 'paper',
-        x0: gap[0] || data.start, x1: gap[1], y0: 0, y1: 1,
+        x0: toNaive(Date.parse(gap[0] || data.start)), x1: toNaive(Date.parse(gap[1])), y0: 0, y1: 1,
         fillcolor: 'rgba(120,120,120,0.35)', line: {width: 0},
         layer: 'below',
       };
@@ -928,6 +939,36 @@
     // recent first; the numbers re-derive on every zoom or filter.
     visibleActivities = collectVisibleActivities(r0, r1);
     const traces = buildTraces(viewTrue);
+    // ?diag=1: print what this browser actually built — the ground
+    // truth when one viewer's plot disagrees with another's.
+    if (new URLSearchParams(location.search).has('diag')) {
+      let diagEl = document.getElementById('snapper-diag');
+      if (!diagEl) {
+        diagEl = document.createElement('pre');
+        diagEl.id = 'snapper-diag';
+        diagEl.style.cssText = 'font-size:14px;background:#fff3cd;'
+            + 'padding:.5em .8em;border:1px solid #b8a366;';
+        plotDiv.parentNode.insertBefore(diagEl, plotDiv);
+      }
+      const pxPerMs = (plotDiv.clientWidth - 150) / renderedSpan;
+      const lines = ['view ' + toNaive(r0) + ' .. ' + toNaive(r1)
+                     + '  plotWidth=' + plotDiv.clientWidth
+                     + '  minBarMs=' + Math.round(minBarMs)];
+      laneIds.forEach(function (laneId) {
+        const lane = data.lanes[laneId];
+        if (!lane.segments) return;
+        const drawn = lane.segments.map(function (seg) {
+          const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
+          const span = Math.max(t1 - t0, minBarMs);
+          const base = Math.min(t0, Date.parse(data.end) - span);
+          return seg.t0.slice(5, 16) + '->' + Math.round(span * pxPerMs)
+              + 'px@' + Math.round((base - r0) * pxPerMs) + 'px';
+        });
+        lines.push(lane.label + ': ' + lane.segments.length + ' seg  '
+                   + drawn.slice(-3).join('  '));
+      });
+      diagEl.textContent = lines.join('\n');
+    }
     // Invisible activator: an axis renders only when a trace uses it,
     // so the top panel's date-label twin gets one silent point.
     if (panels.length > 1) {
@@ -3047,7 +3088,7 @@
         if (!viewIsZoomed()) {
           suppressPush = true;
           Plotly.relayout(plotDiv, {
-            'xaxis.range': [toNaive(fullRange[0]), data.end]});
+            'xaxis.range': [toNaive(fullRange[0]), toNaive(Date.parse(data.end))]});
           setTimeout(function () {
             lastRange = currentRange();
             suppressPush = false;

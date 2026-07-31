@@ -185,12 +185,30 @@ history. The curve key above the plot is a static legend.
     return null;
   }
 
+  // ET-pinned: browser-local formatting shifts the axis against the
+  // ET tile bases by the viewer's offset from ET, clipping the newest
+  // hours for any non-Eastern viewer.
+  const ET_PARTS = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'});
+  function etParts(ms) {
+    const q = {};
+    ET_PARTS.formatToParts(new Date(ms)).forEach(function (x) {
+      q[x.type] = x.value;
+    });
+    if (q.hour === '24') q.hour = '00';
+    return q;
+  }
+  function toNaive(ms) {
+    const q = etParts(ms);
+    return q.year + '-' + q.month + '-' + q.day + 'T'
+        + q.hour + ':' + q.minute + ':' + q.second;
+  }
   function timeText(ms) {
-    const d = new Date(ms);
-    const pad = function (n) { return String(n).padStart(2, '0'); };
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-'
-        + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':'
-        + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    const q = etParts(ms);
+    return q.year + '-' + q.month + '-' + q.day + ' '
+        + q.hour + ':' + q.minute + ':' + q.second;
   }
 
   function textOn(color) {
@@ -297,7 +315,7 @@ history. The curve key above the plot is a static legend.
       const lane = data.lanes[laneId];
       traces.push({
         type: 'bar', orientation: 'h', y: [lane.label], x: [spanMs],
-        base: [data.start], width: 0.82, marker: {color: '#dde3e9'},
+        base: [toNaive(Date.parse(data.start))], width: 0.82, marker: {color: '#dde3e9'},
         yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
       });
       lane.segments.forEach(function (seg) {
@@ -306,10 +324,9 @@ history. The curve key above the plot is a static legend.
         // instead of clipping into invisibility beyond the axis.
         const segSpan = Math.max(t1 - t0, minBarMs);
         const baseMs = Math.min(t0, Date.parse(data.end) - segSpan);
-        const segBase = baseMs < t0 ? baseMs : seg.t0;
         traces.push({
           type: 'bar', orientation: 'h', y: [lane.label],
-          x: [segSpan], base: [segBase], width: 0.82,
+          x: [segSpan], base: [toNaive(baseMs)], width: 0.82,
           marker: {color: tileColor(laneId, seg.value, seg.open_end),
                    line: {color: '#ffffff', width: 1}},
           yaxis: 'y2', showlegend: false,
@@ -364,7 +381,7 @@ history. The curve key above the plot is a static legend.
       font: {size: 15},
       showlegend: false,
       barmode: 'overlay',
-      xaxis: {type: 'date', range: [data.start, data.end],
+      xaxis: {type: 'date', range: [toNaive(Date.parse(data.start)), toNaive(Date.parse(data.end))],
               domain: [0, 1], fixedrange: true,
               anchor: panels.length
                   ? panels[panels.length - 1].traceAxis : 'y2',
