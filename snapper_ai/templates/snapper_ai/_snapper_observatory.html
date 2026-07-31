@@ -623,10 +623,14 @@
           seenStates.add(seg.value.split('/')[0]);
           const marker = {color: color,
                           line: {color: '#ffffff', width: 1}};
+          // A minimum-width tile near the window edge grows leftward
+          // instead of clipping into invisibility beyond the axis.
+          const segSpan = Math.max(t1 - t0, minBarMs);
+          const segBase = Math.min(t0, Date.parse(data.end) - segSpan);
           traces.push({
             type: 'bar', orientation: 'h',
-            y: [label], x: [Math.max(t1 - t0, minBarMs)],
-            base: [seg.t0],
+            y: [label], x: [segSpan],
+            base: [segBase < t0 ? new Date(segBase).toISOString() : seg.t0],
             width: 0.82,
             marker: marker,
             yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
@@ -917,8 +921,9 @@
     renderedSpan = r1 - r0;
     renderedLeft = r0;
     // The plot enhances the truth into legibility: no activity tile
-    // renders below a legible minimum width, whatever its true span.
-    minBarMs = renderedSpan / 60;
+    // renders below a legible minimum width — a 10px floor at the
+    // current plot width — whatever its true span.
+    minBarMs = renderedSpan * 10 / Math.max(plotDiv.clientWidth || 1200, 300);
     // Dynamic numbering: the activities visible in this view, most
     // recent first; the numbers re-derive on every zoom or filter.
     visibleActivities = collectVisibleActivities(r0, r1);
@@ -942,7 +947,7 @@
         r0 = lead;
         renderedSpan = r1 - r0;
         renderedLeft = r0;
-        minBarMs = renderedSpan / 60;
+        minBarMs = renderedSpan * 10 / Math.max(plotDiv.clientWidth || 1200, 300);
       }
     }
 

@@ -287,7 +287,9 @@ history. The curve key above the plot is a static legend.
     // Lane bands: a grey idle track per namespace, activity tiles over
     // it (barmode overlay), tiles held to a legible minimum width.
     const spanMs = Date.parse(data.end) - Date.parse(data.start);
-    const minBarMs = spanMs / 60;
+    // 10px floor: no tile renders below clear human resolution,
+    // whatever its true span.
+    const minBarMs = spanMs * 10 / Math.max(plotDiv.clientWidth || 1200, 300);
     renderedPanels = panels;
     renderedLaneIds = laneIds;
     renderedMinBarMs = minBarMs;
@@ -300,9 +302,14 @@ history. The curve key above the plot is a static legend.
       });
       lane.segments.forEach(function (seg) {
         const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
+        // A minimum-width tile near the window edge grows leftward
+        // instead of clipping into invisibility beyond the axis.
+        const segSpan = Math.max(t1 - t0, minBarMs);
+        const baseMs = Math.min(t0, Date.parse(data.end) - segSpan);
+        const segBase = baseMs < t0 ? new Date(baseMs).toISOString() : seg.t0;
         traces.push({
           type: 'bar', orientation: 'h', y: [lane.label],
-          x: [Math.max(t1 - t0, minBarMs)], base: [seg.t0], width: 0.82,
+          x: [segSpan], base: [segBase], width: 0.82,
           marker: {color: tileColor(laneId, seg.value, seg.open_end),
                    line: {color: '#ffffff', width: 1}},
           yaxis: 'y2', showlegend: false,
