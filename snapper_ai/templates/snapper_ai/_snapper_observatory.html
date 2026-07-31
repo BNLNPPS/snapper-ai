@@ -282,10 +282,6 @@
     history.replaceState(null, '', initialUrl);
   }
 
-  // Plotted strings are Eastern wall time (the app's timezone). Plot
-  // pixel math runs in the browser's Date.parse basis of those naive
-  // strings; basisCorrection converts a basis time to the true instant.
-  let basisCorrection = data.end_ms - Date.parse(data.end);
   // Every date value handed to plotly goes through here, formatted in
   // ET regardless of the viewer's timezone. Browser-local formatting
   // shifted the axis relative to the ET tile bases by the viewer's
@@ -304,6 +300,10 @@
     return q.year + '-' + q.month + '-' + q.day + 'T'
         + q.hour + ':' + q.minute + ':' + q.second;
   }
+  // Plotly parses those offset-free ET strings in the browser's own
+  // timezone. Keep all application arithmetic in true epoch ms and use
+  // this correction only when reading a coordinate back from Plotly.
+  let basisCorrection = data.end_ms - Date.parse(toNaive(data.end_ms));
 
   if (!Object.keys(data.lanes).length && !Object.keys(data.curves).length) {
     plotDiv.innerHTML = '<p class="text-muted">No recorded state in this window.</p>';
@@ -529,7 +529,7 @@
 
   function cutShapeList() {
     if (cutTrueMs === null) return [];
-    let basisMs = cutTrueMs - basisCorrection;
+    let lineTrueMs = cutTrueMs;
     // A cut at the visible range edge loses half its 2px width to plot
     // clipping (Now and a drag-selected range both slice at the exact
     // right edge): nudge the LINE inward by exactly one pixel's worth
@@ -537,16 +537,14 @@
     const xa = plotDiv._fullLayout && plotDiv._fullLayout.xaxis;
     if (renderedSpan && xa && xa._length) {
       const onePx = renderedSpan / xa._length;
-      const visible = xa.range
-          ? [Date.parse(xa.range[0]), Date.parse(xa.range[1])]
-          : fullRange;
-      basisMs = Math.min(basisMs, visible[1] - onePx);
-      basisMs = Math.max(basisMs, visible[0] + onePx);
+      const visible = currentRange();
+      lineTrueMs = Math.min(lineTrueMs, visible[1] - onePx);
+      lineTrueMs = Math.max(lineTrueMs, visible[0] + onePx);
     }
     return cutDomains.map(function (domain) {
       return {
         type: 'line', xref: 'x', yref: 'paper',
-        x0: toNaive(basisMs), x1: toNaive(basisMs),
+        x0: toNaive(lineTrueMs), x1: toNaive(lineTrueMs),
         y0: domain[0], y1: domain[1],
         line: {color: '#c62828', width: 3, dash: '12px 3px'},
       };
@@ -718,7 +716,8 @@
           ? stampsMs[0] - (stampsMs[1] - stampsMs[0])
           : stampsMs[0] - 86400000;
       const edgesMs = [lead].concat(stampsMs);
-      const edgesX = [toNaive(lead)].concat(unionX);
+      const edgesX = [toNaive(lead)].concat(
+          unionX.map(function (x) { return toNaive(Date.parse(x)); }));
       const running = unionX.map(function () { return 0; });
       const geom = {axisKey: null, edgesMs: edgesMs, members: [],
                     units: (stackedDefs[familyName] || {}).units || ''};
@@ -779,7 +778,7 @@
       // staircase rises from zero wherever the view begins.
       let ys = curve.points.map(p => p[1]);
       if (viewTrue && isWindowRelative(curveId, groupDef(curveId))) {
-        const leftMs = viewTrue[0] - basisCorrection;
+        const leftMs = viewTrue[0];
         let base = 0;
         for (const point of curve.points) {
           if (Date.parse(point[0]) <= leftMs) base = point[1];
@@ -789,7 +788,7 @@
             p => Math.max(0, p[1] - base));
       }
       traces.push({
-        x: curve.points.map(p => p[0]),
+        x: curve.points.map(p => toNaive(Date.parse(p[0]))),
         y: ys,
         mode: 'lines',
         line: {shape: 'hv', width: 2.5, color: curveColor[curveId]},
@@ -812,7 +811,7 @@
   // window. Plotly.react updates the existing plot in place.
   function render(viewTrue) {
     hideQuiltFloater();
-    basisCorrection = data.end_ms - Date.parse(data.end);
+    basisCorrection = data.end_ms - Date.parse(toNaive(data.end_ms));
     curveIds = Object.keys(data.curves).sort();
     fullRange = [Date.parse(data.start), Date.parse(data.end)];
     curveColor = {};
@@ -919,8 +918,8 @@
 
     let r0 = fullRange[0], r1 = fullRange[1];
     if (viewTrue) {
-      r0 = viewTrue[0] - basisCorrection;
-      r1 = viewTrue[1] - basisCorrection;
+      r0 = viewTrue[0];
+      r1 = viewTrue[1];
       const span = r1 - r0;
       if (span >= fullRange[1] - fullRange[0]) {
         r0 = fullRange[0]; r1 = fullRange[1];
@@ -1325,8 +1324,7 @@
         if (lanesOpen.has(laneId)) lanesOpen.delete(laneId);
         else lanesOpen.add(laneId);
         persistPrefs();
-        const viewTrue = viewIsZoomed()
-            ? currentRange().map(ms => ms + basisCorrection) : null;
+        const viewTrue = viewIsZoomed() ? currentRange() : null;
         suppressPush = true;
         render(viewTrue);
         setTimeout(function () {
@@ -1585,9 +1583,7 @@
             'click', function (e) {
               e.preventDefault();
               setFamilyClosed(name, !closed);
-              const viewTrue = viewIsZoomed()
-                  ? currentRange().map(ms => ms + basisCorrection)
-                  : null;
+              const viewTrue = viewIsZoomed() ? currentRange() : null;
               suppressPush = true;
               render(viewTrue);
               setTimeout(function () {
@@ -1823,7 +1819,7 @@
     if (px < 0 || px > xa._length) return null;
     const r0 = new Date(xa.range[0]).getTime();
     const r1 = new Date(xa.range[1]).getTime();
-    return r0 + (px / xa._length) * (r1 - r0);
+    return r0 + (px / xa._length) * (r1 - r0) + basisCorrection;
   }
 
   // A click on an activity tile means "cut into this activity": a
@@ -1895,7 +1891,7 @@
     // slice crosses this arc (and dark blue if an arc has no tiles).
     let seg = null;
     if (typeof cutTrueMs === 'number') {
-      const t = cutTrueMs - basisCorrection;
+      const t = cutTrueMs;
       seg = (a.segs || []).find(function (s) {
         return t >= s.t0 && t <= Math.max(s.t1, s.t0 + minBarMs);
       }) || null;
@@ -2017,7 +2013,7 @@
           });
           if (arc) {
             cutTrueMs = confirmedCutTrueMs =
-                Math.round((arc.t0 + arc.t1) / 2) + basisCorrection;
+                Math.round((arc.t0 + arc.t1) / 2);
             applyShapes();
             updateClearAll();
             stampCutUrl(new Date(cutTrueMs).toISOString());
@@ -2127,14 +2123,14 @@
     // above the table carries only the health card (when the slice
     // is taken on the health lane) or the empty-slice notice; never
     // silent.
-    const basisMs = Date.parse(timeIso) - basisCorrection;
-    const hits = findActivitiesAt(basisMs);
+    const trueMs = Date.parse(timeIso);
+    const hits = findActivitiesAt(trueMs);
     expandedKeys = new Set(hits);
     renderActivityTable();
     scrollTableToSlice();
     const onHealth = laneHint === 'health'
         || String(laneHint || '').indexOf('check:') === 0;
-    const sliceText = toNaive(basisMs).slice(5, 16).replace('T', ' ');
+    const sliceText = toNaive(trueMs).slice(5, 16).replace('T', ' ');
     if (onHealth) {
       cutPanel.hidden = false;
       cutPanel.innerHTML = '<p class="mb-2">Health at <strong>'
@@ -2284,7 +2280,7 @@
 
   function rerenderView() {
     suppressPush = true;
-    render(currentRange().map(ms => ms + basisCorrection));
+    render(currentRange());
     setTimeout(function () {
       lastRange = currentRange();
       suppressPush = false;
@@ -2376,11 +2372,10 @@
     // edge is the integration basis and its right edge is the cut
     // after a range gesture (the view-change hook below).
     if (confirmedCutTrueMs === null) return;
-    const displayMs = confirmedCutTrueMs - basisCorrection;
-    const quiltStamp = snapToQuiltStamp(displayMs);
+    const quiltStamp = snapToQuiltStamp(confirmedCutTrueMs);
     const lookupIso = new Date(
-        (quiltStamp !== null ? quiltStamp : snapToActivity(displayMs))
-        + basisCorrection).toISOString();
+        quiltStamp !== null ? quiltStamp
+                            : snapToActivity(confirmedCutTrueMs)).toISOString();
     // A focus view narrows the cut to its component and its
     // selection: on a campaign view a click answers with the delivery
     // card for the ticked campaigns alone.
@@ -2400,8 +2395,7 @@
     const axisRange = (plotDiv._fullLayout && plotDiv._fullLayout.xaxis)
         ? currentRange() : null;
     const sinceIso = new Date(
-        (axisRange ? axisRange[0] : Date.parse(data.start))
-        + basisCorrection).toISOString();
+        axisRange ? axisRange[0] : Date.parse(data.start)).toISOString();
     // Average-time queries make a card fetch materially slower than a
     // range gesture. Cancel the previous request so an older interval
     // cannot arrive late and overwrite the current one.
@@ -2447,7 +2441,7 @@
     // edge before fetching the card.
     if (confirmedCutTrueMs === null || isActivityScope()) return;
     const view = currentRange();
-    cutTrueMs = confirmedCutTrueMs = view[1] + basisCorrection;
+    cutTrueMs = confirmedCutTrueMs = view[1];
     applyShapes();
     updateClearAll();
     stampCutUrl(new Date(confirmedCutTrueMs).toISOString());
@@ -2742,7 +2736,8 @@
   let suppressPush = false;
   function currentRange() {
     const xa = plotDiv._fullLayout.xaxis;
-    return [Date.parse(xa.range[0]), Date.parse(xa.range[1])];
+    return [Date.parse(xa.range[0]) + basisCorrection,
+            Date.parse(xa.range[1]) + basisCorrection];
   }
   function viewIsZoomed() {
     if (!plotDiv._fullLayout || !plotDiv._fullLayout.xaxis) return false;
@@ -2785,8 +2780,8 @@
     const url = new URL(window.location.href);
     if (zoomed) {
       url.searchParams.set('view',
-          new Date(view[0] + basisCorrection).toISOString() + ','
-          + new Date(view[1] + basisCorrection).toISOString());
+          new Date(view[0]).toISOString() + ','
+          + new Date(view[1]).toISOString());
     } else {
       url.searchParams.delete('view');
     }
@@ -2981,12 +2976,12 @@
     // state cards elsewhere. Do not pre-snap the line — it must stay
     // where the cursor is.
     pendingSliceLane = laneAtY(event);
-    cutTrueMs = time + basisCorrection;
+    cutTrueMs = time;
     applyShapes();
     updateClearAll();
     clearTimeout(cutTimer);
     cutTimer = setTimeout(function () {
-      showCut(new Date(time + basisCorrection).toISOString());
+      showCut(new Date(time).toISOString());
     }, 480);
   }, true);
 
@@ -3020,7 +3015,7 @@
     clearTimeout(spanRenderTimer);
     spanRenderTimer = setTimeout(function () {
       suppressPush = true;
-      render(currentRange().map(ms => ms + basisCorrection));
+      render(currentRange());
       setTimeout(function () {
         lastRange = currentRange();
         suppressPush = false;
@@ -3044,8 +3039,7 @@
   if (viewParam) {
     const parts = viewParam.split(',').map(Date.parse);
     if (parts.length === 2 && parts.every(isFinite)) {
-      const view = [parts[0] - basisCorrection,
-                    parts[1] - basisCorrection];
+      const view = parts;
       if (view[0] >= fullRange[0] - 60000 && view[1] <= fullRange[1] + 60000
           && view[1] > view[0]) {
         setRange(view);
@@ -3072,7 +3066,7 @@
           && JSON.stringify(incoming.lanes) === JSON.stringify(data.lanes)) {
         dataText = text;
         data = incoming;
-        basisCorrection = data.end_ms - Date.parse(data.end);
+        basisCorrection = data.end_ms - Date.parse(toNaive(data.end_ms));
         fullRange = [Date.parse(data.start), Date.parse(data.end)];
         // The axis opens at the first stacked column's leading edge
         // here too — the refresh must not undo render()'s opening and
@@ -3099,8 +3093,7 @@
       dataText = text;
       data = incoming;
       buildLaneRow();
-      const viewTrue = viewIsZoomed()
-          ? currentRange().map(ms => ms + basisCorrection) : null;
+      const viewTrue = viewIsZoomed() ? currentRange() : null;
       suppressPush = true;
       render(viewTrue);
       setTimeout(function () {
