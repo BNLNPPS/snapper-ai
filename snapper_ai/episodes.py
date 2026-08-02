@@ -218,6 +218,12 @@ def append_events(
                 episode=episode, participant_id=pid, defaults=fields
             )
             if not made and fields:
+                # Birth only moves earlier and death only later, so
+                # repeated sightings are idempotent for any client.
+                if "born_at" in fields and record.born_at is not None:
+                    fields["born_at"] = min(fields["born_at"], record.born_at)
+                if "died_at" in fields and record.died_at is not None:
+                    fields["died_at"] = max(fields["died_at"], record.died_at)
                 for name, value in fields.items():
                     setattr(record, name, value)
                 record.save(update_fields=list(fields))
