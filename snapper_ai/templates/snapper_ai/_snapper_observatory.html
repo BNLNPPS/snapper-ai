@@ -66,22 +66,25 @@
      style="position:sticky; top:0; z-index:45;">
   <div class="card-header d-flex align-items-center flex-wrap gap-3">
     <strong>Time history</strong>
-    <span>
+    {# The written range IS the stepped object: the arrows flank it, #}
+    {# so earlier/later reads as shifting this range, never as       #}
+    {# moving among the window buttons that follow after the gap.    #}
+    <span class="d-inline-flex align-items-center column-gap-2">
       {% if observatory_prev_url %}
       <a href="{{ observatory_prev_url }}" class="btn btn-sm btn-secondary"
-         title="Earlier — step the window back through history">◀</a>
+         title="Earlier — step the range back through history">◀</a>
       {% endif %}
+      <span id="snapper-range-text">{{ observatory_range_label }}</span>
+      {% if observatory_next_url %}
+      <a href="{{ observatory_next_url }}" class="btn btn-sm btn-secondary"
+         title="Later — step the range forward toward now">▶</a>
+      {% endif %}
+    </span>
+    <span>
       {% for w in observatory_windows %}
       <a href="?window={{ w }}"
          class="btn btn-sm {% if observatory_window == w %}btn-secondary active{% else %}btn-outline-secondary{% endif %}">{{ w }}</a>
       {% endfor %}
-      {% if observatory_next_url %}
-      <a href="{{ observatory_next_url }}" class="btn btn-sm btn-secondary"
-         title="Later — step the window forward toward now">▶</a>
-      {% endif %}
-      {% if observatory_window == 'custom' %}
-      <span class="badge bg-secondary">{{ observatory_range_label }}</span>
-      {% endif %}
     </span>
     <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> snaps</span>
     <button type="button" id="snapper-now-btn"
@@ -527,6 +530,16 @@
     const span = Math.max(t1 - t0, minBarMs);
     const base = Math.min(t0, Date.parse(data.end) - span);
     return [base, base + span];
+  }
+  // The written range in the Time history bar tracks the refreshed
+  // data, matching the server's MM-DD HH:MM – MM-DD HH:MM ET label.
+  function updateRangeText(fresh) {
+    const el = document.getElementById('snapper-range-text');
+    if (!el || !fresh.start || !fresh.end) return;
+    const f = function (iso) {
+      return toNaive(Date.parse(iso)).slice(5, 16).replace('T', ' ');
+    };
+    el.textContent = f(fresh.start) + ' – ' + f(fresh.end) + ' ET';
   }
   const seenStates = new Set();
   // The vertical cut line, as a true instant; confirmed is the last cut
@@ -1309,6 +1322,7 @@
     paintCutSwatches();
     const countEl = document.getElementById('snapper-snap-count');
     if (countEl) countEl.textContent = data.snap_count;
+    updateRangeText(data);
     updateClearAll();
   }
 
@@ -3088,6 +3102,7 @@
         }
         const countEl = document.getElementById('snapper-snap-count');
         if (countEl) countEl.textContent = data.snap_count;
+        updateRangeText(data);
         if (!viewIsZoomed()) {
           suppressPush = true;
           Plotly.relayout(plotDiv, {
