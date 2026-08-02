@@ -386,6 +386,13 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                        for key in ('window', 'start', 'end', 'view'))
         if explicit:
             window_start = max(window_start, focus_option['start'])
+            if window_start >= window_end:
+                # A requested range wholly before the focus floor
+                # squashes to nothing — fall back to the record's
+                # natural span rather than rendering a zero-width page.
+                window_start = focus_option['start']
+                window_end = now
+                window_key = 'custom'
         else:
             # A focus view's natural window is the focused record's own
             # span: its start through now. A remembered short window
@@ -618,8 +625,15 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
 
     observatory_prev_url = None
     observatory_next_url = None
-    if earliest_snap and window_start > earliest_snap.snap_time:
-        prev_start = max(window_start - span, earliest_snap.snap_time)
+    # Stepping floor: the earliest snap, raised to the focused record's
+    # start on a focus page — the arrows never offer territory the page
+    # cannot show.
+    step_floor = earliest_snap.snap_time if earliest_snap else None
+    if focus_option is not None and focus_option.get('start'):
+        step_floor = (max(step_floor, focus_option['start'])
+                      if step_floor else focus_option['start'])
+    if step_floor and window_start > step_floor:
+        prev_start = max(window_start - span, step_floor)
         observatory_prev_url = _range_url(prev_start, prev_start + span)
     if window_key == 'custom':
         if window_end + span >= now:

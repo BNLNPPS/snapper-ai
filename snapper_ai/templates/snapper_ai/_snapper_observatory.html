@@ -1457,14 +1457,14 @@
       }
     });
   }
-  // Window-strip links carry the focused-view parameters along.
-  {
+  // The focus selection and selector axes (counting, grouping, ...)
+  // ride every window navigation whenever the page URL carries them —
+  // an explicitly empty selection (all off) rides too. Shared by the
+  // window-strip rewriter and goNow so no navigation drops them.
+  function stripCarriedParams() {
     const pageUrl = new URL(window.location.href);
     const live = [];
     if (familiesParam) live.push(['families', familiesParam]);
-    // The focus selection and selector axes (counting, grouping, ...)
-    // ride the window strip whenever the page URL carries them — an
-    // explicitly empty selection (all off) rides too.
     const focusParam = '{{ observatory_focus.param|default:""|escapejs }}';
     if (focusParam && pageUrl.searchParams.has(focusParam)) {
       live.push([focusParam, pageUrl.searchParams.get(focusParam)]);
@@ -1475,6 +1475,11 @@
         live.push([name, pageUrl.searchParams.get(name)]);
       }
     });
+    return live;
+  }
+  // Window-strip links carry the focused-view parameters along.
+  {
+    const live = stripCarriedParams();
     if (live.length) {
       // Named windows AND the step arrows (?start=...&end=...) alike.
       document.querySelectorAll(
@@ -2269,6 +2274,19 @@
   }
 
   function goNow() {
+    // A stepped-back page doesn't hold the present: Now navigates to
+    // the rolling named window instead of slicing a stale range,
+    // carrying the focused-view parameters like every strip link.
+    if (windowNextUrl) {
+      const named = new URLSearchParams(location.search).get('window');
+      const target = new URL((named && named !== 'custom')
+          ? '?window=' + named : windowNextUrl, window.location.href);
+      stripCarriedParams().forEach(function (pair) {
+        target.searchParams.set(pair[0], pair[1]);
+      });
+      window.location = target.pathname + target.search;
+      return;
+    }
     // Slice at the window's end and home the view to it; stay in
     // track-now until the user navigates elsewhere.
     trackNow = true;
@@ -3083,9 +3101,21 @@
     dataText: function () { return dataText; },
     refresh: function (text) {
       const incoming = JSON.parse(text);
+      // A tile clamped to the window edge is drawn against data.end,
+      // so when the end advances its geometry is stale — sliding the
+      // axis would strand it short of the edge. Those refreshes take
+      // the full rebuild below.
+      const oldEndMs = Date.parse(data.end);
+      const edgeClamped = Date.parse(incoming.end) !== oldEndMs
+          && Object.keys(data.lanes || {}).some(function (id) {
+            return (data.lanes[id].segments || []).some(function (seg) {
+              return oldEndMs - Date.parse(seg.t1) < minBarMs;
+            });
+          });
       // Curves and lanes unchanged (daily records change once a day):
       // slide the axis instead of rebuilding hundreds of traces.
-      if (JSON.stringify(incoming.curves) === JSON.stringify(data.curves)
+      if (!edgeClamped
+          && JSON.stringify(incoming.curves) === JSON.stringify(data.curves)
           && JSON.stringify(incoming.lanes) === JSON.stringify(data.lanes)) {
         dataText = text;
         data = incoming;
