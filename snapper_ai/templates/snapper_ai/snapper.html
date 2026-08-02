@@ -81,6 +81,28 @@
         max-height: 34rem;
         overflow: auto;
     }
+    /* Scrolling detail panes announce themselves: the scrollbar is
+       always painted, never an overlay that appears only on scroll.
+       The webkit pseudos force classic painted bars in Chrome and
+       Safari; the standard properties are confined to browsers
+       without the webkit selectors (Firefox), because their mere
+       presence makes Chrome ignore the webkit rules. */
+    @supports not selector(::-webkit-scrollbar) {
+        .snapper-scrollpane {
+            scrollbar-width: thin;
+            scrollbar-color: #90a4b8 #e9edf1;
+        }
+    }
+    .snapper-scrollpane::-webkit-scrollbar { width: 12px; }
+    .snapper-scrollpane::-webkit-scrollbar-track {
+        background: #e9edf1;
+        border-radius: 6px;
+    }
+    .snapper-scrollpane::-webkit-scrollbar-thumb {
+        background: #90a4b8;
+        border-radius: 6px;
+        border: 2px solid #e9edf1;
+    }
 </style>
 
 <div class="container-fluid mt-0 snapper-page">
