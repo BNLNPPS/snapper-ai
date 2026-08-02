@@ -127,6 +127,117 @@ class SystemSnap(models.Model):
         return f"{self.scope}@{self.snap_time.isoformat()}"
 
 
+class Episode(models.Model):
+    """One bounded activity: a durable event-sequence record for a scope.
+
+    The record is the event sequence at its native resolution; snap
+    capture plays no role. The host's episode builder writes it, live
+    or promptly after the activity ends (docs/EPISODES.md).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    scope = models.CharField(max_length=100)
+    episode_id = models.CharField(max_length=255)
+    label = models.CharField(max_length=255, blank=True, default="")
+    kind = models.CharField(max_length=100, blank=True, default="")
+    builder_identity = models.CharField(max_length=255)
+
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    summary = models.JSONField(default=dict)
+    episode_schema_version = models.PositiveIntegerField(default=1)
+    event_count = models.PositiveBigIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "snapper_episode"
+        ordering = ["scope", "-started_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "episode_id"],
+                name="snapper_episode_scope_id_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["scope", "-started_at"],
+                name="snapper_episode_scope_time_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.scope}:{self.episode_id}"
+
+
+class EpisodeParticipant(models.Model):
+    """One lane identity within an episode, with its birth and death."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    episode = models.ForeignKey(
+        Episode, on_delete=models.CASCADE, related_name="participants"
+    )
+    participant_id = models.CharField(max_length=255)
+    label = models.CharField(max_length=255, blank=True, default="")
+    kind = models.CharField(max_length=100, blank=True, default="")
+    born_at = models.DateTimeField(null=True, blank=True)
+    died_at = models.DateTimeField(null=True, blank=True)
+    detail = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "snapper_episode_participant"
+        ordering = ["episode", "born_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["episode", "participant_id"],
+                name="snapper_epi_part_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.participant_id}"
+
+
+class EpisodeEvent(models.Model):
+    """One recorded event within an episode.
+
+    ``counterpart_id`` names a second participant for events that
+    connect two lanes, such as recorded message consumption.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    episode = models.ForeignKey(
+        Episode, on_delete=models.CASCADE, related_name="events"
+    )
+    seq = models.PositiveBigIntegerField()
+    event_time = models.DateTimeField()
+    kind = models.CharField(max_length=100)
+    participant_id = models.CharField(max_length=255)
+    counterpart_id = models.CharField(max_length=255, blank=True, default="")
+    payload = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "snapper_episode_event"
+        ordering = ["episode", "seq"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["episode", "seq"],
+                name="snapper_epi_event_seq_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["episode", "event_time"],
+                name="snapper_epi_event_time_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.kind}@{self.event_time.isoformat()}"
+
+
 class CaptureCursor(models.Model):
     """Bounded scheduler state for one scope."""
 
