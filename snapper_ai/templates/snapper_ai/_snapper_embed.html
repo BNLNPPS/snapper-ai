@@ -106,6 +106,15 @@ history. The curve key above the plot is a static legend.
   }
 
   let renderedPanels = [], renderedLaneIds = [], renderedMinBarMs = 0;
+  // The drawn extent of a tile: inflated to the legible minimum width
+  // and, near the window edge, grown leftward exactly as drawn. Hit
+  // tests share this with drawing so the floater activates across the
+  // full visible tile, never just the true span inside it.
+  function segDrawnExtent(t0, t1) {
+    const span = Math.max(t1 - t0, renderedMinBarMs);
+    const base = Math.min(t0, Date.parse(data.end) - span);
+    return [base, base + span];
+  }
   const hoverFloater = document.createElement('div');
   hoverFloater.style.cssText =
       'position:fixed;z-index:1000;pointer-events:none;display:none;'
@@ -173,10 +182,13 @@ history. The curve key above the plot is a static legend.
     const laneId = renderedLaneIds[
         Math.max(0, Math.min(renderedLaneIds.length - 1, index))];
     const lane = data.lanes[laneId];
-    for (const seg of lane.segments || []) {
-      const t0 = Date.parse(seg.t0);
-      const t1 = Math.max(Date.parse(seg.t1), t0 + renderedMinBarMs);
-      if (time >= t0 && time <= t1) {
+    // Scanned topmost-drawn first so where inflated tiles overlap the
+    // floater names the tile actually visible.
+    const segs = lane.segments || [];
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const seg = segs[i];
+      const ext = segDrawnExtent(Date.parse(seg.t0), Date.parse(seg.t1));
+      if (time >= ext[0] && time <= ext[1]) {
         return {label: lane.label,
                 value: seg.hover || seg.value,
                 color: tileColor(laneId, seg.value, seg.open_end)};
@@ -319,14 +331,12 @@ history. The curve key above the plot is a static legend.
         yaxis: 'y2', showlegend: false, hoverinfo: 'skip',
       });
       lane.segments.forEach(function (seg) {
-        const t0 = Date.parse(seg.t0), t1 = Date.parse(seg.t1);
         // A minimum-width tile near the window edge grows leftward
         // instead of clipping into invisibility beyond the axis.
-        const segSpan = Math.max(t1 - t0, minBarMs);
-        const baseMs = Math.min(t0, Date.parse(data.end) - segSpan);
+        const ext = segDrawnExtent(Date.parse(seg.t0), Date.parse(seg.t1));
         traces.push({
           type: 'bar', orientation: 'h', y: [lane.label],
-          x: [segSpan], base: [toNaive(baseMs)], width: 0.82,
+          x: [ext[1] - ext[0]], base: [toNaive(ext[0])], width: 0.82,
           marker: {color: tileColor(laneId, seg.value, seg.open_end),
                    line: {color: '#ffffff', width: 1}},
           yaxis: 'y2', showlegend: false,
