@@ -2345,6 +2345,9 @@
       stripCarriedParams().forEach(function (pair) {
         target.searchParams.set(pair[0], pair[1]);
       });
+      // Now means now on the destination too: land tracking the live
+      // edge, not at the fresh page's midpoint display default.
+      target.searchParams.set('cut', 'now');
       window.location = target.pathname + target.search;
       return;
     }
@@ -2812,7 +2815,7 @@
     // shows yesterday). Only a deliberate past cut pins a timestamp.
     if (trackNow
         || Math.abs(Date.parse(timeIso) - fullRange[1]) < 60000) {
-      url.searchParams.delete('cut');
+      url.searchParams.set('cut', 'now');
     } else {
       url.searchParams.set('cut', timeIso);
     }
@@ -3167,7 +3170,10 @@
   // server merely defaulted (no cut in the URL) renders identically
   // but does not stamp the URL: the page stays un-pinned and live.
   const initialCut = '{{ observatory_cut|escapejs }}';
-  if (initialCut) {
+  if (new URL(window.location.href).searchParams.get('cut') === 'now') {
+    // cut=now IS track-now: enter it exactly as the Now button does.
+    goNow();
+  } else if (initialCut) {
     showCut(initialCut,
             new URL(window.location.href).searchParams.has('cut'));
   }

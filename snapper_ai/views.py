@@ -660,9 +660,12 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_default_window': DEFAULT_WINDOW,
         # A focus page lands with the slice already taken — at the
         # window midpoint — so the click-for-details gesture is shown,
-        # not discovered. An explicit ?cut= wins as ever.
+        # not discovered. An explicit ?cut= wins as ever; the literal
+        # value 'now' means the live edge (the client enters track-now).
         'observatory_cut': (
-            (request.GET.get('cut') or '').strip()
+            window_end.isoformat()
+            if (request.GET.get('cut') or '').strip() == 'now'
+            else (request.GET.get('cut') or '').strip()
             or ((window_start
                  + (window_end - window_start) / 2).isoformat()
                 if focus_option is not None else '')),
@@ -796,8 +799,11 @@ def snapper_episode(request, scope, episode_id):
         'observatory_window': 'custom',
         'observatory_windows': [],
         'observatory_default_window': DEFAULT_WINDOW,
-        'observatory_cut': ((request.GET.get('cut') or '').strip()
-                            or midpoint.isoformat()),
+        'observatory_cut': (
+            axis_end.isoformat()
+            if (request.GET.get('cut') or '').strip() == 'now'
+            else (request.GET.get('cut') or '').strip()
+            or midpoint.isoformat()),
         'observatory_prefs': {},
         'observatory_prev_url': None,
         'observatory_next_url': None,
