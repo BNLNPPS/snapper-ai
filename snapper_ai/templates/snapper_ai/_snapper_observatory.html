@@ -359,6 +359,12 @@
   const lanesOpen = new Set(
       (authenticated ? serverPrefs.lanes_open
                      : localPrefs.lanes_open) || []);
+  // Last explicit focus selection per focus param (e.g. site): a bare
+  // focus-view entry restores the last-viewed selection, not the
+  // ranking default.
+  const focusLast = Object.assign({},
+      (authenticated ? serverPrefs.focus_last
+                     : localPrefs.focus_last) || {});
 
   let saveTimer = null;
   function persistPrefs() {
@@ -368,6 +374,7 @@
     const payload = {curves_off4: Array.from(curvesOff),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
+                     focus_last: focusLast,
                      window: pageWindow};
     try { localStorage.setItem(storeKey, JSON.stringify(payload)); }
     catch (e) { /* storage unavailable */ }
@@ -384,6 +391,31 @@
       });
     }, 600);
   }
+  // Focus memory: an explicit ?<param>= selection is recorded; a bare
+  // entry (no param in the URL) restores the remembered selection by
+  // URL replace, so returning to a focus view shows the last-viewed
+  // focus rather than its default.
+  (function () {
+    const focusParam0 =
+        '{{ observatory_focus.param|default:""|escapejs }}';
+    if (!focusParam0) return;
+    const urlNow = new URL(window.location.href);
+    const inUrl = urlNow.searchParams.get(focusParam0);
+    if (inUrl) {
+      if (focusLast[focusParam0] !== inUrl) {
+        focusLast[focusParam0] = inUrl;
+        persistPrefs();
+      }
+      return;
+    }
+    const wanted = focusLast[focusParam0];
+    const effective =
+        '{{ observatory_focus.value|default:""|escapejs }}';
+    if (wanted && wanted !== effective) {
+      urlNow.searchParams.set(focusParam0, wanted);
+      window.location.replace(urlNow.toString());
+    }
+  })();
 
   // State colors: house status colors for status-like values, a
   // high-contrast categorical palette for the rest. Inactive lane
@@ -2771,7 +2803,16 @@
 
   function stampCutUrl(timeIso) {
     const url = new URL(window.location.href);
-    url.searchParams.set('cut', timeIso);
+    // A cut at the live edge IS now: the URL carries no explicit cut,
+    // so a copied link stays live instead of freezing this instant
+    // (the frozen-link trap: a shared "current" view read a day later
+    // shows yesterday). Only a deliberate past cut pins a timestamp.
+    if (trackNow
+        || Math.abs(Date.parse(timeIso) - fullRange[1]) < 60000) {
+      url.searchParams.delete('cut');
+    } else {
+      url.searchParams.set('cut', timeIso);
+    }
     stampWindow(url);
     history.replaceState(null, '', url);
   }
