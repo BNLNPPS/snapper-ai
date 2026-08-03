@@ -1,0 +1,36 @@
+{# One episode participant's detail card: identity, lifetime, and its #}
+{# recorded events. Generic — the episode record is self-describing.  #}
+<div class="mb-2">
+  <strong>{{ card.participant.label }}</strong>
+  {% if card.participant.kind %}
+  <span class="text-muted ms-2">{{ card.participant.kind }}</span>
+  {% endif %}
+  <span class="text-muted ms-3">
+    {% if card.participant.born_at %}from {{ card.participant.born_at|date:"m-d H:i:s" }}{% endif %}
+    {% if card.participant.died_at %} to {{ card.participant.died_at|date:"m-d H:i:s" }}{% endif %}
+    {% if not card.participant.died_at %} · no recorded end{% endif %}
+  </span>
+</div>
+{% if card.events %}
+<table class="table table-sm table-striped w-auto mb-1">
+  <thead><tr><th>time</th><th>event</th><th>detail</th></tr></thead>
+  <tbody>
+    {% for event in card.events %}
+    <tr>
+      <td class="text-nowrap">{{ event.time|date:"H:i:s" }}</td>
+      <td class="text-nowrap">{{ event.kind }}</td>
+      <td>
+        {% for k, v in event.payload.items %}
+        <span class="me-3 text-nowrap"><span class="text-muted">{{ k }}</span> {{ v }}</span>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if card.event_count > card.events|length %}
+<div class="text-muted">Showing the last {{ card.events|length }} of {{ card.event_count }} events.</div>
+{% endif %}
+{% else %}
+<div class="text-muted">No recorded events for this participant.</div>
+{% endif %}

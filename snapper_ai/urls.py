@@ -20,6 +20,8 @@ urlpatterns = [
     path('<str:scope>/prefs/', views.snapper_prefs_save,
          name='snapper_prefs'),
     path('<str:scope>/cut/', views.snapper_cut, name='snapper_cut'),
+    path('<str:scope>/episode/<str:episode_id>/', views.snapper_episode,
+         name='snapper_episode'),
     path('<str:scope>/activity/', views.snapper_activity,
          name='snapper_activity'),
     path('<str:scope>/snaps/', views.snapper_snaps,

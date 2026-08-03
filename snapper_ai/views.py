@@ -677,6 +677,143 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     })
 
 
+def snapper_episode(request, scope, episode_id):
+    """One episode's Time history: the observatory in activity mode,
+    lanes from the episode's participants in birth order, the slice
+    listing who was active at the cut (docs/EPISODES.md). Task
+    participants parent their job lanes, collapsed by default."""
+    from django.utils import timezone
+
+    from .episodes import EpisodeNotFound, InvalidEpisode, episode_record
+    from .series import DEFAULT_WINDOW
+
+    scope = _validated_scope(scope)
+    try:
+        record = episode_record(scope, episode_id)
+    except (EpisodeNotFound, InvalidEpisode):
+        from django.http import Http404
+        raise Http404(f'no episode {episode_id} in scope {scope}')
+
+    now = timezone.now()
+    started = record['started_at']
+    ended = record['ended_at'] or now
+    # The axis runs to the last participant death: the workload tail
+    # beyond the run window is the fanout's story.
+    deaths = [p['died_at'] for p in record['participants']
+              if p.get('died_at')]
+    axis_end = max([ended] + deaths)
+
+    # Task lanes wear their site as the plain label, and worker lanes
+    # wear their task's hue — color is meaning. Every participant —
+    # agents, tasks, workers — holds a main-plot lane: the fanout is
+    # the point of the view.
+    task_site = {}
+    job_task = {}
+    for event in record['events']:
+        payload = event.get('payload') or {}
+        if event['kind'] == 'task_created' and payload.get('site'):
+            task_site[event['participant']] = payload['site']
+        if event['kind'] == 'job_created' and payload.get('jeditaskid'):
+            job_task[event['participant']] = f"task-{payload['jeditaskid']}"
+
+    def _value(participant):
+        detail_status = ''
+        for event in reversed(record['events']):
+            if (event['participant'] == participant['id']
+                    and (event.get('payload') or {}).get('status')):
+                detail_status = str(event['payload']['status']).lower()
+                break
+        if detail_status in ('failed', 'error', 'terminated', 'warning'):
+            return detail_status
+        if detail_status in ('finished', 'done', 'completed'):
+            return 'completed'
+        return 'running'
+
+    def _iso(value):
+        return value.isoformat() if hasattr(value, 'isoformat') else value
+
+    lanes = {}
+    # The category axis stacks insertion order bottom-up; reversed
+    # birth order puts the first participant at the top, the stack
+    # building downward as lanes come into existence.
+    ordered = sorted(
+        record['participants'],
+        key=lambda p: _iso(p.get('born_at')) or _iso(started),
+        reverse=True)
+    for participant in ordered:
+        lane_id = f"p:{participant['id']}"
+        born = participant.get('born_at') or started
+        died = participant.get('died_at')
+        label = participant.get('label') or participant['id']
+        kind = participant.get('kind') or ''
+        if kind == 'panda_task':
+            site = task_site.get(participant['id'])
+            label = f'{site} PanDA task' if site else 'PanDA task'
+        elif kind == 'panda_job':
+            label = label.replace('job ', 'worker ')
+        elif kind:
+            label = kind.replace('_', ' ') + ' agent'
+        lane = {
+            'label': label,
+            'segments': [{
+                't0': _iso(born),
+                't1': _iso(died or axis_end),
+                'value': _value(participant),
+                'open_end': died is None,
+                'key': participant['id'],
+                'summary': kind,
+                'hover': f"{label} · {kind}" if kind else label,
+            }],
+        }
+        if participant['id'] in job_task:
+            lane['hue_with'] = f"p:{job_task[participant['id']]}"
+        lanes[lane_id] = lane
+
+    observatory = {
+        'lanes': lanes,
+        'curves': {},
+        'gaps': [],
+        'start': _iso(started),
+        'end': _iso(axis_end),
+        'end_ms': int(axis_end.timestamp() * 1000),
+        'snap_count': record['event_count'],
+    }
+
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _et = _ZoneInfo('America/New_York')
+    range_label = (
+        f"{started.astimezone(_et).strftime('%m-%d %H:%M')}"
+        f" – {axis_end.astimezone(_et).strftime('%m-%d %H:%M')} ET")
+
+    midpoint = started + (axis_end - started) / 2
+    return render(request, 'snapper_ai/snapper.html', {
+        'active_tab': 'report',
+        'scope': scope,
+        'scope_label': _scope_label(scope),
+        'scope_options': _scope_options(
+            scope, request.META.get('QUERY_STRING', '')),
+        'observatory': observatory,
+        'observatory_window': 'custom',
+        'observatory_windows': [],
+        'observatory_default_window': DEFAULT_WINDOW,
+        'observatory_cut': ((request.GET.get('cut') or '').strip()
+                            or midpoint.isoformat()),
+        'observatory_prefs': {},
+        'observatory_prev_url': None,
+        'observatory_next_url': None,
+        'observatory_range_label': range_label,
+        'observatory_groups': [],
+        'observatory_focus': None,
+        'observatory_episode': True,
+        'observatory_count_label': 'events',
+        'observatory_activity_extra': f'&episode={record["episode_id"]}',
+        'observatory_episode_title': (
+            f"{record['label'] or record['episode_id']}"
+            f" · {record['kind'] or 'episode'}"),
+        'health_url': _health_url(),
+    })
+
+
 def snapper_snaps(request, scope, snap_id=None):
     """The snap record: recorded state of one snap (latest by default,
     any snap by id) with its components and audit documents, and the
@@ -962,8 +1099,38 @@ def snapper_activity(request, scope):
     scope = _validated_scope(scope)
     provider = registry.get(scope)
     key = (request.GET.get('key') or '').strip()
+    episode_id = (request.GET.get('episode') or '').strip()
     card = None
     error = ''
+    if key and episode_id:
+        # Episode participant cards are generic: the episode record is
+        # self-describing, so no provider is involved.
+        from .episodes import (EpisodeNotFound, InvalidEpisode,
+                               episode_record)
+        try:
+            record = episode_record(scope, episode_id)
+        except (EpisodeNotFound, InvalidEpisode) as e:
+            record = None
+            error = str(e)
+        if record is not None:
+            participant = next(
+                (p for p in record['participants'] if p['id'] == key),
+                None)
+            if participant is None:
+                error = 'no participant matches this key'
+            else:
+                events = [e for e in record['events']
+                          if e['participant'] == key]
+                card = {
+                    'kind': 'episode_participant',
+                    'template': 'snapper_ai/_snapper_episode_card.html',
+                    'participant': participant,
+                    'events': events[-40:],
+                    'event_count': len(events),
+                    'episode_id': record['episode_id'],
+                }
+        return render(request, 'snapper_ai/_snapper_activity.html',
+                      {'card': card, 'error': error})
     if not key:
         error = 'key is required'
     elif provider is None or provider.activity_card is None:

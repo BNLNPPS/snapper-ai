@@ -86,10 +86,15 @@
          class="btn btn-sm {% if observatory_window == w %}btn-secondary active{% else %}btn-outline-secondary{% endif %}">{{ w }}</a>
       {% endfor %}
     </span>
-    <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> snaps</span>
+    <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> {{ observatory_count_label|default:'snaps' }}</span>
+    {% if observatory_episode_title %}
+    <span class="fw-semibold">{{ observatory_episode_title }}</span>
+    {% endif %}
+    {% if not observatory_episode %}
     <button type="button" id="snapper-now-btn"
             class="btn btn-sm btn-outline-success ms-auto"
             title="Slice at now, home the view, and keep tracking now as the page updates; click again to stop tracking and keep the slice">Now</button>
+    {% endif %}
   </div>
 </div>
 <div class="card mb-3" id="snapper-observatory-card">
@@ -232,6 +237,11 @@
   // recent first — the numbers are dynamic and track zoom/filter.
   const activityTableDiv = document.getElementById('snapper-activity-table');
   const activityUrl = '{% url "snapper_ai:snapper_activity" scope=scope %}';
+  {# Episode pages scope every activity lookup to their episode. #}
+  const activityExtra = '{{ observatory_activity_extra|default:""|escapejs }}';
+  {# Episode pages: lanes are participants, and the legend speaks   #}
+  {# participant vocabulary instead of run phases.                  #}
+  const EPISODE_MODE = {{ observatory_episode|yesno:'true,false' }};
   const activityCardCache = {};
   // Events with recorded failures, learned from their story cards as
   // the background loads land; each key's tiles split diagonally.
@@ -452,9 +462,13 @@
     } catch (e) { /* storage full/blocked: colors stay per-page */ }
   }
   function nsRamp(laneId) {
-    if (nsHue[laneId] === undefined) {
+    // A lane declaring hue_with wears another lane's hue: color is
+    // meaning, and a worker's meaning is the task it belongs to.
+    const hueSource = (data.lanes[laneId] || {}).hue_with || laneId;
+    if (nsHue[hueSource] === undefined) {
       episodicLaneIdList().filter(function (id) {
         return !laneFilterOff.has(id)
+            && !data.lanes[id].hue_with
             && (data.lanes[id].segments || []).length;
       }).sort(function (x, y) {
         return data.lanes[x].label.localeCompare(data.lanes[y].label);
@@ -465,7 +479,7 @@
       });
       persistHues();
     }
-    const base = nsHue[laneId] || NS_PALETTE[0];
+    const base = nsHue[hueSource] || NS_PALETTE[0];
     return {dark: base, mid: mixWhite(base, 0.45),
             light: mixWhite(base, 0.72)};
   }
@@ -1193,7 +1207,7 @@
         ? domainOf(0, lanePx) : [0.999, 1];
     if (laneIds.length) cutDomains.push(laneDomain);
     const layout = {
-      margin: {l: 110, r: 20, t: 10, b: bottomPx},
+      margin: {l: EPISODE_MODE ? 170 : 110, r: 20, t: 10, b: bottomPx},
       height: innerPx + 10 + bottomPx,
       font: {size: 15},
       showlegend: false,
@@ -1217,6 +1231,7 @@
       // With no lanes at all (a focus view) the band collapses to a
       // sliver of domain: a [1,1] span is degenerate for Plotly.
       yaxis2: {type: 'category', fixedrange: true,
+               automargin: EPISODE_MODE,
                visible: laneIds.length > 0,
                domain: laneDomain,
                categoryorder: 'array', showgrid: laneIds.length > 0,
@@ -1772,14 +1787,18 @@
       stateKeyEl.appendChild(item);
     }
     if (shownNs.length) {
-      phaseItem(function (r) { return r.dark; }, 'datataking');
-      phaseItem(function (r) { return r.mid; }, 'processing');
+      phaseItem(function (r) { return r.dark; },
+                EPISODE_MODE ? 'active' : 'datataking');
+      if (!EPISODE_MODE) {
+        phaseItem(function (r) { return r.mid; }, 'processing');
+      }
       const hasOpenEnds = laneIds.some(function (id) {
         return (data.lanes[id].segments || []).some(s => s.open_end);
       });
       if (hasOpenEnds) {
         phaseItem(function (r) { return r.light; },
-                  'run without recorded end');
+                  EPISODE_MODE ? 'no recorded end'
+                               : 'run without recorded end');
       }
       if (failedKeys.size) {
         const item = document.createElement('span');
@@ -1907,7 +1926,11 @@
     const acts = Object.values(byId).filter(function (a) {
       return a.t1 >= r0 && a.t0 <= r1;
     });
-    acts.sort(function (a, b) { return b.t0 - a.t0; });
+    // Report pages read newest first; an episode reads in story
+    // order, matching the plot's top-down build.
+    acts.sort(EPISODE_MODE
+        ? function (a, b) { return a.t0 - b.t0; }
+        : function (a, b) { return b.t0 - a.t0; });
     return acts;
   }
 
@@ -2074,7 +2097,7 @@
     function next() {
       if (gen !== prefetchGen || i >= keys.length) return;
       const key = String(keys[i++]);
-      fetch(activityUrl + '?key=' + encodeURIComponent(key))
+      fetch(activityUrl + '?key=' + encodeURIComponent(key) + activityExtra)
         .then(function (r) { return r.text(); })
         .then(function (htmlText) {
           if (activityCardCache[key] === undefined) {
@@ -2196,7 +2219,7 @@
           return;
         }
         slot.innerHTML = '<div class="text-muted">Loading…</div>';
-        fetch(activityUrl + '?key=' + encodeURIComponent(key))
+        fetch(activityUrl + '?key=' + encodeURIComponent(key) + activityExtra)
           .then(function (r) { return r.text(); })
           .then(function (htmlText) {
             activityCardCache[key] = htmlText;
@@ -2230,6 +2253,12 @@
       return data.lanes[a].label.localeCompare(data.lanes[b].label);
     });
     if (!ids.length) { laneRowDiv.innerHTML = ''; return; }
+    // Episode pages carry no tick row: every participant holds a
+    // lane, and a wall of per-worker checkboxes is clutter.
+    if (EPISODE_MODE) {
+      laneRowDiv.innerHTML = '';
+      return;
+    }
     let html = '<span class="me-2 fw-semibold">Namespaces:</span>'
       + '<button type="button" id="snapper-lanes-all-on"'
       + ' class="btn btn-sm btn-secondary me-1">All on</button>'
