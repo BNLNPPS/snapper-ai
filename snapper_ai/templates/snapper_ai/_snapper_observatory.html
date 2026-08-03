@@ -264,6 +264,10 @@
   // the view and slice pinned there across the 60 s refreshes until
   // the user navigates elsewhere.
   let trackNow = false;
+  // True while the standing cut was deliberately chosen — clicked,
+  // range-selected, or URL-carried. A chosen cut is sticky under
+  // zoom/pan; only an unpinned default follows the view.
+  let cutExplicit = false;
   const nowBtn = document.getElementById('snapper-now-btn');
   function isActivityScope() {
     return Object.keys(data.lanes).some(function (id) {
@@ -1537,6 +1541,10 @@
       }
     });
     // The tick selection is URL state and rides every navigation.
+    // The cut deliberately does NOT: a new time range opens unpinned
+    // at its display default — predefining a red line for a range the
+    // viewer hasn't seen is at best the midpoint, which is redundant,
+    // derivable, and therefore banned from the URL.
     if (pageUrl.searchParams.has('off')) {
       live.push(['off', pageUrl.searchParams.get('off')]);
     }
@@ -2121,6 +2129,7 @@
           if (arc) {
             cutTrueMs = confirmedCutTrueMs =
                 Math.round((arc.t0 + arc.t1) / 2);
+            cutExplicit = true;
             applyShapes();
             updateClearAll();
             stampCutUrl(new Date(cutTrueMs).toISOString());
@@ -2486,8 +2495,12 @@
     updateClearAll();
     // stampUrl false: the load-time DEFAULT cut renders but never
     // writes itself into the URL — an un-pinned page must stay live
-    // when its link is copied. Every user-chosen cut stamps.
-    if (stampUrl !== false) stampCutUrl(timeIso);
+    // when its link is copied. Every user-chosen cut stamps and is
+    // thereafter sticky under view gestures.
+    if (stampUrl !== false) {
+      cutExplicit = true;
+      stampCutUrl(timeIso);
+    }
     if (isActivityScope()) {
       // Activity scopes render the slice as stories: the same panel,
       // filled client-side from what the slice crosses.
@@ -2568,11 +2581,29 @@
     // A range gesture selects an interval, not merely a new left-edge
     // basis. Its detail is the state at the selected right edge and
     // the terminal outcomes accumulated from the selected left edge.
-    // Move the visible cut and its durable URL state to that right
-    // edge before fetching the card.
+    // But a deliberately chosen cut is sticky: gestures magnify around
+    // it and leave it alone while it stays in view; pushed out of
+    // view, it reverts to the unpinned display default at the view
+    // middle. Only an unpinned cut follows a gesture's right edge —
+    // and that gesture is itself a deliberate selection.
     if (confirmedCutTrueMs === null || isActivityScope()) return;
     const view = currentRange();
+    if (cutExplicit) {
+      if (confirmedCutTrueMs >= view[0]
+          && confirmedCutTrueMs <= view[1]) {
+        return;
+      }
+      cutExplicit = false;
+      cutTrueMs = confirmedCutTrueMs =
+          Math.round((view[0] + view[1]) / 2);
+      applyShapes();
+      updateClearAll();
+      unstampCutUrl();
+      fetchCutDetail();
+      return;
+    }
     cutTrueMs = confirmedCutTrueMs = view[1];
+    cutExplicit = true;
     applyShapes();
     updateClearAll();
     stampCutUrl(new Date(confirmedCutTrueMs).toISOString());
@@ -2848,6 +2879,14 @@
     history.replaceState(null, '', url);
   }
 
+  function unstampCutUrl() {
+    // An unpinned cut is a display default and holds no URL space.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('cut');
+    stampWindow(url);
+    history.replaceState(null, '', url);
+  }
+
   function stampOffUrl() {
     // The tick selection lives in the URL (off= curve-id list; present
     // and empty means explicitly all-on) and the window strip links
@@ -2888,6 +2927,15 @@
   let rangeStack = [];
   let lastRange = [0, 0];
   let suppressPush = false;
+  // Plotly fires settle relayouts on load and rebuilds that look like
+  // range changes; only view changes shortly after real pointer input
+  // on the plot may move an unpinned cut.
+  let lastPlotInputMs = 0;
+  ['pointerdown', 'wheel', 'dblclick'].forEach(function (t) {
+    plotDiv.addEventListener(t, function () {
+      lastPlotInputMs = Date.now();
+    }, true);
+  });
   function currentRange() {
     const xa = plotDiv._fullLayout.xaxis;
     return [Date.parse(xa.range[0]) + basisCorrection,
@@ -2919,8 +2967,12 @@
       // The detail card represents the whole selected interval. Once
       // the view settles, its left edge is the integration basis and
       // its right edge becomes the cut, on zoom, pan, undo, and reset.
-      if (!wasInit && !isActivityScope()
+      if (!wasInit && !isActivityScope() && !suppressPush
+          && (Date.now() - lastPlotInputMs) < 2000
           && confirmedCutTrueMs !== null) {
+        // suppressPush marks programmatic view changes; the input-age
+        // test drops load/rebuild settles. Only a real user gesture
+        // may move the cut.
         clearTimeout(cutRangeTimer);
         cutRangeTimer = setTimeout(syncCutToViewRange, 400);
       }
@@ -3211,8 +3263,21 @@
     // cut=now IS track-now: enter it exactly as the Now button does.
     goNow();
   } else if (initialCut) {
-    showCut(initialCut,
-            new URL(window.location.href).searchParams.has('cut'));
+    const urlHadCut =
+        new URL(window.location.href).searchParams.has('cut');
+    const cutMs = Date.parse(initialCut);
+    if (urlHadCut
+        && (isNaN(cutMs)
+            || cutMs < fullRange[0] || cutMs > fullRange[1])) {
+      // A URL cut outside the displayed range is dead state: ignore
+      // it, drop it from the URL, and render the unpinned default.
+      unstampCutUrl();
+      showCut(new Date(
+          Math.round((fullRange[0] + fullRange[1]) / 2)).toISOString(),
+          false);
+    } else {
+      showCut(initialCut, urlHadCut);
+    }
   }
 
   // The page-level 60-second soft refresh hands new observatory data in
