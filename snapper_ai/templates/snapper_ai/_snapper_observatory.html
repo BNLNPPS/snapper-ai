@@ -349,6 +349,17 @@
   const curvesOff = new Set(
       (authenticated ? serverPrefs.curves_off4
                      : localPrefs.curves_off4) || []);
+  // URL state overrides all: an off= parameter (even empty — explicit
+  // all-on) replaces the remembered selection outright. Absent, the
+  // remembered selection stands and is materialized into the URL
+  // below, so every copied link reproduces the ticks.
+  const urlHasOff = new URL(window.location.href).searchParams.has('off');
+  if (urlHasOff) {
+    curvesOff.clear();
+    (new URL(window.location.href).searchParams.get('off') || '')
+        .split(',').filter(Boolean)
+        .forEach(function (id) { curvesOff.add(id); });
+  }
   // Per-member filter state for pc_groups families, keyed by the
   // MEMBER (PC) label — quantity-independent, so an unticked set
   // stays unticked across the counting toggle's different curve ids.
@@ -371,6 +382,7 @@
     // A ?families= preset is a one-shot focused link; it must never
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
+    stampOffUrl();
     const payload = {curves_off4: Array.from(curvesOff),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
@@ -1486,8 +1498,9 @@
     });
   }
   // With no remembered selection, default_off families start unticked
-  // (e.g. cumulative series behind a primary stacked display).
-  if (!familiesParam && !curvesOff.size) {
+  // (e.g. cumulative series behind a primary stacked display). A URL
+  // off= list is the selection — no seeding over it.
+  if (!familiesParam && !urlHasOff && !curvesOff.size) {
     Object.keys(data.curves).forEach(function (id) {
       const def = groupDef(id);
       if (def && def.default_off) curvesOff.add(id);
@@ -1495,8 +1508,9 @@
   }
   // The pc_groups filter carries across the counting toggle: the
   // remembered set is keyed by member label and applied to whichever
-  // curve ids the current quantity draws.
-  if (!familiesParam) {
+  // curve ids the current quantity draws. A URL off= list already
+  // states the full selection — nothing re-applies over it.
+  if (!familiesParam && !urlHasOff) {
     Object.keys(data.curves).forEach(function (id) {
       const def = groupDef(id);
       if (def && def.pc_groups && pcOff.has(pcOfCurve(id, def))) {
@@ -1522,25 +1536,36 @@
         live.push([name, pageUrl.searchParams.get(name)]);
       }
     });
+    // The tick selection is URL state and rides every navigation.
+    if (pageUrl.searchParams.has('off')) {
+      live.push(['off', pageUrl.searchParams.get('off')]);
+    }
     return live;
   }
   // Window-strip links carry the focused-view parameters along.
-  {
+  // Re-run after every off= stamp so the strip always navigates with
+  // the current tick selection.
+  function carryStripParams() {
     const live = stripCarriedParams();
-    if (live.length) {
-      // Named windows AND the step arrows (?start=...&end=...) alike.
-      document.querySelectorAll(
-          '#snapper-th-bar a[href^="?window="], '
-          + '#snapper-th-bar a[href^="?start="]')
-        .forEach(function (link) {
-          const url = new URL(link.href, window.location.href);
-          live.forEach(function (pair) {
-            url.searchParams.set(pair[0], pair[1]);
-          });
-          link.href = url.pathname + url.search;
+    if (!live.length) return;
+    // Named windows AND the step arrows (?start=...&end=...) alike.
+    // Contains-matches, not prefix: a rewritten link's href is an
+    // absolute path, and later re-carries must still find it.
+    document.querySelectorAll(
+        '#snapper-th-bar a[href*="window="], '
+        + '#snapper-th-bar a[href*="start="]')
+      .forEach(function (link) {
+        const url = new URL(link.href, window.location.href);
+        live.forEach(function (pair) {
+          url.searchParams.set(pair[0], pair[1]);
         });
-    }
+        link.href = url.pathname + url.search;
+      });
   }
+  carryStripParams();
+  // Materialize the effective tick selection into the URL at load —
+  // like the window — so any copied link reproduces the view.
+  if (!familiesParam) stampOffUrl();
   function setCurve(curveId, on) {
     const index = curveTraceIndex[curveId];
     if (index === undefined) return;
@@ -2821,6 +2846,18 @@
     }
     stampWindow(url);
     history.replaceState(null, '', url);
+  }
+
+  function stampOffUrl() {
+    // The tick selection lives in the URL (off= curve-id list; present
+    // and empty means explicitly all-on) and the window strip links
+    // refresh to carry it — navigation can never lose the selection,
+    // and a copied link reproduces it for any viewer.
+    const url = new URL(window.location.href);
+    url.searchParams.set('off', Array.from(curvesOff).join(','));
+    stampWindow(url);
+    history.replaceState(null, '', url);
+    carryStripParams();
   }
 
   function stampHideUrl() {
