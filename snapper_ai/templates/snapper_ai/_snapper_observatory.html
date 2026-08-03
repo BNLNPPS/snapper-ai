@@ -2442,7 +2442,7 @@
     rerenderView();
     paintCutSwatches();
   }
-  function showCut(timeIso) {
+  function showCut(timeIso, stampUrl) {
     // timeIso is the true instant the user clicked (UTC ISO): the red
     // line and the URL land exactly there — the click's x is respected.
     // The STATE, though, is looked up at the activity the click falls
@@ -2456,7 +2456,10 @@
     cutTrueMs = confirmedCutTrueMs = Date.parse(timeIso);
     applyShapes();
     updateClearAll();
-    stampCutUrl(timeIso);
+    // stampUrl false: the load-time DEFAULT cut renders but never
+    // writes itself into the URL — an un-pinned page must stay live
+    // when its link is copied. Every user-chosen cut stamps.
+    if (stampUrl !== false) stampCutUrl(timeIso);
     if (isActivityScope()) {
       // Activity scopes render the slice as stories: the same panel,
       // filled client-side from what the slice crosses.
@@ -3160,9 +3163,14 @@
 
   // A URL-carried cut restores exactly like a click: showCut lands the
   // line and renders the slice — the cut fully determines the panel,
-  // so no separate selection state exists to restore.
+  // so no separate selection state exists to restore. A cut the
+  // server merely defaulted (no cut in the URL) renders identically
+  // but does not stamp the URL: the page stays un-pinned and live.
   const initialCut = '{{ observatory_cut|escapejs }}';
-  if (initialCut) showCut(initialCut);
+  if (initialCut) {
+    showCut(initialCut,
+            new URL(window.location.href).searchParams.has('cut'));
+  }
 
   // The page-level 60-second soft refresh hands new observatory data in
   // here; the plot updates in place, preserving zoom, cut, and curve
