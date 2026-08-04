@@ -8,13 +8,14 @@ The host includes ``snapper_ai.urls`` and provides a ``base.html``.
 
 import json
 import logging
+from hashlib import sha256
 
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
 from . import registry
 from .models import CaptureCursor, CurrentComponent, SystemSnap
-from .presentation import cut_chip, cut_delta
+from .presentation import cut_chip, cut_delta, et_naive
 
 
 RECENT_SNAP_LIMIT = 100
@@ -411,6 +412,12 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             window_start = focus_option['start']
             window_end = now
             window_key = 'custom'
+    # Resolve the groups before the series cache: a provider may opt a
+    # focus into a focus-sized product, whose curve predicate comes
+    # from the exact families selected for this request.
+    all_groups = list(registry.resolve_curve_groups(provider))
+    scope_groups = list(registry.resolve_scope_curve_groups(provider))
+
     # The series is a cached product where the host provides the
     # mechanism: named windows and the focus default span key stably
     # (their spans slide, their identity does not); explicit ranges
@@ -418,21 +425,73 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     # narrowing mutates it.
     series_cache = registry.hook('series_cache')
     cache_key = None
+    series_curve_filter = None
     if (series_cache is not None
             and not (request.GET.get('start') or request.GET.get('end'))):
+        cache_span = None
         if window_key in WINDOW_HOURS:
-            cache_key = f'snapper_series:v6:{scope}:{window_key}'
+            cache_span = window_key
         elif focus_option is not None and focus_option.get('start'):
-            cache_key = (f'snapper_series:v6:{scope}:span:'
-                         f'{window_start.date().isoformat()}')
+            cache_span = f'span:{window_start.date().isoformat()}'
+        if cache_span:
+            if (focus_option is not None
+                    and focus_def.get('cache_series')):
+                wanted = set(focus_option.get('families') or ())
+                cache_groups = [
+                    group for group in all_groups
+                    if group.get('name') in wanted]
+
+                def series_curve_filter(curve_id):
+                    return any(
+                        curve_id in (group.get('ids') or ())
+                        or str(curve_id).startswith(
+                            tuple(group.get('prefixes') or ()))
+                        for group in cache_groups)
+
+                identity = '\n'.join(sorted(wanted)) or 'empty'
+                focus_token = sha256(identity.encode()).hexdigest()[:16]
+                focus_param = focus_def.get('param') or 'focus'
+                cache_key = (f'snapper_series:v7:{scope}:focus:'
+                             f'{focus_param}:{focus_token}:{cache_span}')
+            else:
+                cache_key = f'snapper_series:v6:{scope}:{cache_span}'
     if cache_key:
-        observatory = dict(series_cache(
+        cached = series_cache(
             cache_key,
-            lambda: observatory_series(scope, window_start, window_end)))
+            lambda: observatory_series(
+                scope, window_start, window_end,
+                curve_filter=series_curve_filter))
+        cache_refreshing = False
+        if (isinstance(cached, dict)
+                and set(cached).issubset(
+                    {'value', 'refreshing', 'built_at', 'age_seconds'})):
+            cached_value = cached.get('value')
+            cache_refreshing = bool(cached.get('refreshing'))
+        else:
+            # Backward compatibility for a host still returning the
+            # former bare-series hook value.
+            cached_value = cached
+        if cached_value is None:
+            # Another worker owns the first fill.  Return a truthful,
+            # immediately renderable shell; the page's short follow-up
+            # fetch will pick up the product when that build lands.
+            observatory = {
+                'scope': scope,
+                'start': et_naive(window_start),
+                'end': et_naive(window_end),
+                'end_ms': int(window_end.timestamp() * 1000),
+                'timezone': 'ET', 'snap_count': 0,
+                'curves': {}, 'lanes': {}, 'gaps': [],
+            }
+            cache_refreshing = True
+        else:
+            observatory = dict(cached_value)
+        observatory['cache_refreshing'] = cache_refreshing
     else:
-        observatory = observatory_series(scope, window_start, window_end)
-    all_groups = list(registry.resolve_curve_groups(provider))
-    scope_groups = list(registry.resolve_scope_curve_groups(provider))
+        observatory = observatory_series(
+            scope, window_start, window_end,
+            curve_filter=series_curve_filter)
+        observatory['cache_refreshing'] = False
     default_off_ids = sorted({
         curve_id
         for group in all_groups

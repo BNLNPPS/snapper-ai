@@ -513,7 +513,16 @@
     const refreshIntervalMs = 60000;
     const countdown = document.getElementById('snapper-reload-countdown');
     const rest = document.getElementById('snapper-report-rest');
-    let nextAt = Date.now() + refreshIntervalMs;
+    const cacheFollowupMs = 3000;
+    const cacheRefreshPending = script => {
+        if (!script) return false;
+        try { return Boolean(JSON.parse(script.textContent).cache_refreshing); }
+        catch (_) { return false; }
+    };
+    let cacheBuilding = cacheRefreshPending(
+        document.getElementById('snapper-observatory-data'));
+    let nextAt = Date.now()
+        + (cacheBuilding ? cacheFollowupMs : refreshIntervalMs);
     let failed = false;
     let refreshing = false;
     // Snapshot the server-rendered content before DataTables decorates
@@ -545,6 +554,7 @@
             .then(html => {
                 const doc = new DOMParser().parseFromString(html, 'text/html');
                 const newData = doc.getElementById('snapper-observatory-data');
+                cacheBuilding = cacheRefreshPending(newData);
                 if (newData && window.snapperObservatory
                         && newData.textContent !== window.snapperObservatory.dataText()) {
                     window.snapperObservatory.refresh(newData.textContent);
@@ -564,7 +574,11 @@
             .catch(() => { failed = true; })
             .finally(() => {
                 refreshing = false;
-                nextAt = Date.now() + refreshIntervalMs;
+                // A stale response starts the persistent rebuild. Fetch
+                // once more shortly after it lands instead of making the
+                // user wait for the next 60-second interval.
+                nextAt = Date.now()
+                    + (cacheBuilding ? cacheFollowupMs : refreshIntervalMs);
                 updateCountdown();
             });
     };

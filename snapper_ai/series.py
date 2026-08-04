@@ -72,8 +72,14 @@ def _curve_label(provider, curve_id):
     return curve_id
 
 
-def observatory_series(scope, start, end):
-    """Curves, lanes, and gap spans for one scope and window."""
+def observatory_series(scope, start, end, curve_filter=None):
+    """Curves, lanes, and gap spans for one scope and window.
+
+    ``curve_filter`` lets a focused view build and persist only its own
+    curves.  Extraction still reads the coherent scope record, but the
+    cached product and every later request stay focus-sized instead of
+    loading the much larger all-scope product only to discard it.
+    """
     provider = registry.get(scope)
 
     rows = list(
@@ -96,6 +102,8 @@ def observatory_series(scope, start, end):
     gaps = []
 
     def add_curve_point(curve_id, time_iso, value):
+        if curve_filter is not None and not curve_filter(curve_id):
+            return
         curve = curves.setdefault(
             curve_id, {'label': _curve_label(provider, curve_id),
                        'points': []})

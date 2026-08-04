@@ -121,9 +121,10 @@ _HOOKS = {
     # health_url() -> URL of the host's health/system page, linked from
     # health check rows; None leaves them unlinked
     'health_url': None,
-    # series_cache(key, builder) -> series dict: the host serves its
-    # stored copy immediately and rebuilds behind responses (its
-    # cached-product mechanism); None builds inline per request
+    # series_cache(key, builder) -> {'value': series dict or None,
+    # 'refreshing': bool}: the host serves its stored copy immediately
+    # and rebuilds behind responses (its cached-product mechanism).
+    # A legacy bare series dict is also accepted; None builds inline.
     'series_cache': None,
 }
 
