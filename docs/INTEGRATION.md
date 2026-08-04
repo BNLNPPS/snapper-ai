@@ -94,6 +94,11 @@ its feature quietly (no remembered preferences, unlinked health rows,
 default configuration values); a component without a card builder
 renders as a quantity table; a curve id without a label labels itself.
 
+Report URLs encode curve selection in two lists: `off=` names
+default-on curves that are hidden, while `on=` names provider-declared
+default-off curves that are explicitly included. Both lists override
+remembered preferences and travel with window navigation.
+
 The provider surface, in full (`snapper_ai/registry.py` is the
 authority):
 
@@ -103,7 +108,7 @@ authority):
 | `lane_entries` | extra continuous lanes beyond the core health lanes |
 | `curve_label` | curve id → display label |
 | `curve_color` | curve id → CSS color for curves with semantic color (state-bearing curves take the host's state vocabulary); the palette deal otherwise |
-| `curve_groups` | curve family rows of the observatory legend; a callable is resolved per render so families track live host state. A family entry may declare `order` (member display order), `window_relative` (cumulative counters rendered relative to the window's left edge — `True` for the whole family, or a list of ids and `_`-terminated prefixes within a mixed family), `tall` (double panel height), and `focus_closed` (section closed by default inside a focus view) |
+| `curve_groups` | curve family rows of the observatory legend; a callable is resolved per render so families track live host state. A family entry may declare `order` (member display order), `window_relative` (cumulative counters rendered relative to the window's left edge — `True` for the whole family, or a list of ids and `_`-terminated prefixes within a mixed family), `default_off` (the whole family starts unticked), `default_off_ids` (individual members stay unticked until explicitly enabled), `tall` (double panel height), and `focus_closed` (section closed by default inside a focus view) |
 | `episodic_lanes` | discrete activity lanes from the host's own records |
 | `activity_at` | instant → activity truth, for cards that must agree with the lanes |
 | `activity_card` | keyed episodic activity → detail card |
@@ -144,7 +149,9 @@ hue-per-namespace, lightness-per-phase vocabulary) above any panels. The window 
 days (`embed.MAX_EMBED_DAYS`) with a visible note, and each curve is
 downsampled to at most `embed.MAX_POINTS_PER_CURVE` points by bucketed
 min-max, which preserves the visual envelope in a display without
-zoom. Coverage gaps paint
+zoom. Members listed in `default_off_ids` are omitted; a host that
+deliberately needs them in a read-only embed passes
+`include_default_off=True`. Coverage gaps paint
 as the same grey spans as the report page, and curve colors match the
 report page (assigned over the scope's full curve list). A click
 anywhere on the plot opens the scope's report page with the matching

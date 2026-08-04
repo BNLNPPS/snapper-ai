@@ -80,15 +80,18 @@ def _report_query(start, end, now):
     return urlencode({'start': start.isoformat(), 'end': end.isoformat()})
 
 
-def embed_context(scope, start, end, families=(), lanes=False):
+def embed_context(scope, start, end, families=(), lanes=False,
+                  include_default_off=False):
     """Context for ``_snapper_embed.html``: the scope's curves filtered
     to the named ``families`` (provider ``curve_groups`` names, plotted
     as one panel each in the order given) over [start, end], clamped to
     the most recent MAX_EMBED_DAYS days. A curve joins the first listed
     family that matches it. ``lanes=True`` additionally includes the
     scope's episodic activity lanes (namespace bands), rendered above
-    any curve panels. Errors return a context whose ``error`` the
-    partial renders visibly."""
+    any curve panels. Members declared in a family's
+    ``default_off_ids`` are omitted unless ``include_default_off`` is
+    true. Errors return a context whose ``error`` the partial renders
+    visibly."""
     from django.utils import timezone
 
     from . import registry
@@ -121,6 +124,10 @@ def embed_context(scope, start, end, families=(), lanes=False):
         match = _family_matcher(group)
         ids = [curve_id for curve_id in all_curve_ids
                if curve_id not in assigned and match(curve_id)]
+        if not include_default_off:
+            default_off_ids = set(group.get('default_off_ids') or ())
+            ids = [curve_id for curve_id in ids
+                   if curve_id not in default_off_ids]
         order = list(group.get('order') or ())
         if order:
             rank = {curve_id: i for i, curve_id in enumerate(order)}

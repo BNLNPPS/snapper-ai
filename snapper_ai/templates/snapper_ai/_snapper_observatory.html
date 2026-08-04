@@ -342,27 +342,36 @@
   } catch (e) { localPrefs = {}; }
   const familiesParam = (new URL(window.location.href)
       .searchParams.get('families') || '');
-  // curves_off4 invalidates the curves_off3 value contaminated when
-  // the old broad report auto-saved its focus-only default-off curves.
-  // Save/restore behavior itself remains unchanged.
+  // curves_off5 invalidates selections from the previous curve
+  // vocabulary. curves_on5 records the deliberate exception for a
+  // provider-declared default-off member: absence means leave that
+  // member off; presence means the visitor explicitly turned it on.
   // A signed-in account's truth is the server record ALONE: local
   // storage is the anonymous browser's memory and must never override
   // it — a non-empty test cannot distinguish the server saying
   // "all on" from the server having no record, so a locally recorded
   // all-off state would otherwise stand forever.
-  const curvesOff = new Set(
-      (authenticated ? serverPrefs.curves_off4
-                     : localPrefs.curves_off4) || []);
-  // URL state overrides all: an off= parameter (even empty — explicit
-  // all-on) replaces the remembered selection outright. Absent, the
-  // remembered selection stands and is materialized into the URL
-  // below, so every copied link reproduces the ticks.
+  const selectionPrefs = authenticated ? serverPrefs : localPrefs;
+  const hasCurvePrefs = Object.prototype.hasOwnProperty.call(
+      selectionPrefs, 'curves_off5');
+  const curvesOff = new Set(selectionPrefs.curves_off5 || []);
+  const curvesOn = new Set(selectionPrefs.curves_on5 || []);
+  // URL state overrides all: off= names disabled default-on curves;
+  // on= names enabled default-off curves. Presence of either replaces
+  // remembered selection, and the effective state is materialized
+  // below so every copied link reproduces the ticks.
   const urlHasOff = new URL(window.location.href).searchParams.has('off');
-  if (urlHasOff) {
+  const urlHasOn = new URL(window.location.href).searchParams.has('on');
+  const urlHasCurveState = urlHasOff || urlHasOn;
+  if (urlHasCurveState) {
     curvesOff.clear();
+    curvesOn.clear();
     (new URL(window.location.href).searchParams.get('off') || '')
         .split(',').filter(Boolean)
         .forEach(function (id) { curvesOff.add(id); });
+    (new URL(window.location.href).searchParams.get('on') || '')
+        .split(',').filter(Boolean)
+        .forEach(function (id) { curvesOn.add(id); });
   }
   // Per-member filter state for pc_groups families, keyed by the
   // MEMBER (PC) label — quantity-independent, so an unticked set
@@ -387,7 +396,8 @@
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
     stampOffUrl();
-    const payload = {curves_off4: Array.from(curvesOff),
+    const payload = {curves_off5: Array.from(curvesOff),
+                     curves_on5: Array.from(curvesOn),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
                      focus_last: focusLast,
@@ -1437,6 +1447,7 @@
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             stacked: !!g.stacked, compact: !!g.compact,
             default_off: !!g.default_off, units: g.units || '',
+            default_off_ids: g.default_off_ids || [],
             order: g.order || [],
             window_relative: g.window_relative || false,
             start_closed: !!g.start_closed,
@@ -1456,6 +1467,27 @@
       if (group.match(curveId)) return group;
     }
     return null;
+  }
+  function isDefaultOffCurve(curveId, def) {
+    return !!(def && def.default_off_ids.indexOf(curveId) >= 0);
+  }
+  function rememberCurveChoice(curveId, on) {
+    const def = groupDef(curveId);
+    if (!isDefaultOffCurve(curveId, def)) return;
+    if (on) curvesOn.add(curveId);
+    else curvesOn.delete(curveId);
+  }
+  // Default-off is member-specific and durable. Normal remembered
+  // selections leave a newly appearing member off until it is ticked;
+  // only an explicit on= entry or remembered tick includes a
+  // default-off member.
+  function applyMemberDefaults(ids) {
+    ids.forEach(function (id) {
+      const def = groupDef(id);
+      if (!isDefaultOffCurve(id, def)) return;
+      if (curvesOn.has(id)) curvesOff.delete(id);
+      else curvesOff.add(id);
+    });
   }
   // Whether one curve is window-relative: its family declares
   // window_relative as true (whole family) or as a list of curve ids
@@ -1502,19 +1534,20 @@
     });
   }
   // With no remembered selection, default_off families start unticked
-  // (e.g. cumulative series behind a primary stacked display). A URL
-  // off= list is the selection — no seeding over it.
-  if (!familiesParam && !urlHasOff && !curvesOff.size) {
+  // (e.g. cumulative series behind a primary stacked display). URL
+  // curve state is authoritative — no family seeding over it.
+  if (!familiesParam && !urlHasCurveState && !hasCurvePrefs) {
     Object.keys(data.curves).forEach(function (id) {
       const def = groupDef(id);
       if (def && def.default_off) curvesOff.add(id);
     });
   }
+  applyMemberDefaults(Object.keys(data.curves));
   // The pc_groups filter carries across the counting toggle: the
   // remembered set is keyed by member label and applied to whichever
-  // curve ids the current quantity draws. A URL off= list already
+  // curve ids the current quantity draws. URL curve state already
   // states the full selection — nothing re-applies over it.
-  if (!familiesParam && !urlHasOff) {
+  if (!familiesParam && !urlHasCurveState) {
     Object.keys(data.curves).forEach(function (id) {
       const def = groupDef(id);
       if (def && def.pc_groups && pcOff.has(pcOfCurve(id, def))) {
@@ -1548,11 +1581,14 @@
     if (pageUrl.searchParams.has('off')) {
       live.push(['off', pageUrl.searchParams.get('off')]);
     }
+    if (pageUrl.searchParams.has('on')) {
+      live.push(['on', pageUrl.searchParams.get('on')]);
+    }
     return live;
   }
   // Window-strip links carry the focused-view parameters along.
-  // Re-run after every off= stamp so the strip always navigates with
-  // the current tick selection.
+  // Re-run after every curve-state stamp so the strip always
+  // navigates with the current tick selection.
   function carryStripParams() {
     const live = stripCarriedParams();
     if (!live.length) return;
@@ -1603,6 +1639,7 @@
     (groupMembers[name] || []).forEach(function (curveId) {
       if (on) curvesOff.delete(curveId);
       else curvesOff.add(curveId);
+      rememberCurveChoice(curveId, on);
       const def = groupDef(curveId) || {};
       if (def.pc_groups) {
         const pc = pcOfCurve(curveId, def);
@@ -1813,6 +1850,7 @@
         label.querySelector('input').addEventListener('change', function (e) {
           if (e.target.checked) curvesOff.delete(curveId);
           else curvesOff.add(curveId);
+          rememberCurveChoice(curveId, e.target.checked);
           // A stacked member's neighbors re-seat on the new running
           // sums: rebuild; a line curve restyles in place.
           if ((groupDef(curveId) || {}).stacked) {
@@ -2888,12 +2926,16 @@
   }
 
   function stampOffUrl() {
-    // The tick selection lives in the URL (off= curve-id list; present
-    // and empty means explicitly all-on) and the window strip links
-    // refresh to carry it — navigation can never lose the selection,
-    // and a copied link reproduces it for any viewer.
+    // Tick selection lives in the URL: off= disables ordinary curves;
+    // on= is the explicit opt-in for provider-declared default-off
+    // curves. Window navigation carries both lists.
     const url = new URL(window.location.href);
     url.searchParams.set('off', Array.from(curvesOff).join(','));
+    if (curvesOn.size) {
+      url.searchParams.set('on', Array.from(curvesOn).join(','));
+    } else {
+      url.searchParams.delete('on');
+    }
     stampWindow(url);
     history.replaceState(null, '', url);
     carryStripParams();
@@ -3332,6 +3374,7 @@
       }
       dataText = text;
       data = incoming;
+      applyMemberDefaults(Object.keys(data.curves));
       buildLaneRow();
       const viewTrue = viewIsZoomed() ? currentRange() : null;
       suppressPush = true;

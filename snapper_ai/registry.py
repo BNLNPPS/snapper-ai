@@ -50,6 +50,8 @@ class ScopeProvider:
                      displayed window is the integration range; True
                      for the whole family or a list of ids and
                      '_'-terminated prefixes within a mixed family),
+                     'default_off_ids' (members that remain unticked
+                     until the visitor explicitly enables them),
                      'tall' (double panel height), and 'focus_closed'
                      (section closed by default inside a focus view).
     scope_curve_groups  Optional compact subset of curve_groups for the
