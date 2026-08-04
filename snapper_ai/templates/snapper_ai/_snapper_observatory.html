@@ -100,15 +100,6 @@
 <div class="card mb-3" id="snapper-observatory-card">
   <div class="card-body">
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
-      {% if observatory_focus %}
-      <span>
-        <a href="{{ observatory_focus.all_on_url }}" class="btn btn-sm btn-secondary">All on</a>
-        <a href="{{ observatory_focus.all_off_url }}" class="btn btn-sm btn-secondary">All off</a>
-        {% comment %} Clear all parked 2026-07-26: its reset-to-default
-        window surprise reads as data loss; role to be rethought.
-        {% endcomment %}
-      </span>
-      {% endif %}
       <span id="snapper-gesture-help" class="text-body" style="display:inline-block; border:1px solid #9fb4c7; border-radius:.6em; background:#f2f7fb; padding:.15em .8em;"><strong>click</strong>: time cut · <strong>click-drag</strong>: time range · <strong>double-click</strong>: zoom 2x</span>
       <span id="snapper-state-key" class="d-flex flex-wrap column-gap-2 row-gap-1 text-muted"></span>
     </div>
@@ -116,7 +107,9 @@
     {# Focus selection as tick boxes above the family rows: one or    #}
     {# several options at once; info and filters follow the ticks.    #}
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3">
-      <strong>{{ observatory_focus.label }}:</strong>
+      <span><strong>{{ observatory_focus.label }}:</strong>
+        <a href="{{ observatory_focus.all_on_url }}">all</a>/<a href="{{ observatory_focus.all_off_url }}">none</a>
+      </span>
       {% for option in observatory_focus.options %}
       <label class="form-check form-check-inline mb-0">
         <input type="checkbox" class="form-check-input"
@@ -2489,17 +2482,17 @@
     cutPanel.innerHTML = fragment;
     const siteDetails = Array.from(
         cutPanel.querySelectorAll('[data-snapper-detail-key]'));
-    const allDockable = siteDetails.every(function (detail) {
+    const dockable = siteDetails.filter(function (detail) {
       return GROUPS.some(function (group) {
         return group.detail_key === detail.dataset.snapperDetailKey
             && groupMembers[group.name];
       });
     });
-    // A single site's detail already follows its single plot. In a
-    // multi-site view, dock every site card immediately after the
-    // family declaring the same detail_key.
-    if (siteDetails.length > 1 && DOCK_CONTROLS && allDockable) {
-      siteDetails.forEach(function (detail) {
+    // Dock every detail that owns a plotted family independently. One
+    // selected site without curves must not force every other site's
+    // detail below the complete plot stack.
+    if (DOCK_CONTROLS) {
+      dockable.forEach(function (detail) {
         detail.classList.add('snapper-cut-card');
         detail.style.position = 'absolute';
         detail.style.left = '0';
@@ -2510,10 +2503,13 @@
         dockedCutDetails[detail.dataset.snapperDetailKey] = detail;
         plotWrap.appendChild(detail);
       });
-      cutPanel.hidden = true;
-    } else {
-      cutPanel.hidden = false;
     }
+    // A no-curve site's detail has no plot to follow and stays here.
+    // When every detail docked, hide the now-empty residual card.
+    cutPanel.hidden = siteDetails.length > 0
+        && !siteDetails.some(function (detail) {
+          return cutPanel.contains(detail);
+        });
     rerenderView();
     paintCutSwatches();
   }

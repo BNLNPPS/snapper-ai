@@ -325,9 +325,13 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         if raw_value is not None or focus_slug is not None:
             options = focus_def.get('options') or []
             by_value = {o.get('value'): o for o in options}
-            focus_selected = [v for v in
-                              (s.strip() for s in raw.split(','))
-                              if v in by_value]
+            if raw.lower() == 'all':
+                focus_selected = [o.get('value') for o in options
+                                  if o.get('value')]
+            else:
+                focus_selected = [v for v in
+                                  (s.strip() for s in raw.split(','))
+                                  if v in by_value]
             # Only the clean page (no parameter at all) lands on the
             # default. An explicitly empty parameter is all off — a
             # valid state, as in every Snapper tick row — and stays
@@ -539,7 +543,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             # Change only focus membership (and any explicitly changed
             # selector); keep the live window, cut, and zoom query.
             query = request.GET.copy()
-            query[param] = ','.join(values)
+            query[param] = (values if isinstance(values, str)
+                            else ','.join(values))
             for i, sel in enumerate(selector_defs):
                 value = selected_values[i]
                 sel_param = sel.get('param') or 'quantity'
@@ -582,9 +587,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             'value': focus_option.get('value') or '',
             'component': focus_option.get('component') or '',
             'groups': groups,
-            'all_on_url': _focus_url([
-                o.get('value') for o in (focus_def.get('options') or ())
-                if o.get('value')]),
+            'all_on_url': _focus_url('all'),
             'all_off_url': _focus_url([]),
             'options': [
                 {'value': o.get('value'), 'label': o.get('label'),
