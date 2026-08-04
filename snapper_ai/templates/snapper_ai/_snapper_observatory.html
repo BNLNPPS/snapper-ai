@@ -2665,7 +2665,14 @@
   // long-tail band takes the band's grey; an unknown curve hides
   // its swatch.
   function paintCutSwatches() {
-    cutPanel.querySelectorAll('[data-curve]').forEach(function (el) {
+    // Docked site details live in plotWrap, not the cut panel — paint
+    // every container carrying cut-card content or swatches go dark.
+    let roots = [cutPanel];
+    Object.keys(dockedCutDetails).forEach(function (key) {
+      roots.push(dockedCutDetails[key]);
+    });
+    roots.forEach(function (root) {
+    root.querySelectorAll('[data-curve]').forEach(function (el) {
       // data-curve lists candidate curve ids (e.g. the same member in
       // either plotted quantity); the first the plot carries wins.
       const ids = (el.getAttribute('data-curve') || '').split(/\s+/)
@@ -2695,6 +2702,7 @@
         }
       }
       else el.style.visibility = 'hidden';
+    });
     });
   }
 
