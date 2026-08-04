@@ -21,6 +21,26 @@ from .presentation import cut_chip, cut_delta, et_naive
 RECENT_SNAP_LIMIT = 100
 
 
+def _view_default_off_ids(member_ids, rendered_groups, curves):
+    """The default-off vocabulary the URL stamper serializes against:
+    provider member-level ids plus every rendered curve whose rendered
+    group carries the group-level ``default_off`` mark. Both channels
+    must be in one set — a curve unticked by its group's default is a
+    default, not a viewer exclusion, and must never be stamped into
+    ``off=`` (URL state carries only deliberate selections)."""
+    out = set(member_ids)
+    for group in (rendered_groups or ()):
+        if not group.get('default_off'):
+            continue
+        ids = group.get('ids') or ()
+        prefixes = tuple(group.get('prefixes') or ())
+        out.update(
+            curve_id for curve_id in curves
+            if curve_id in ids
+            or (prefixes and str(curve_id).startswith(prefixes)))
+    return sorted(out)
+
+
 def _validated_scope(scope):
     if registry.get(scope) is None:
         raise Http404(f'Unknown Snapper scope {scope!r}')
@@ -744,7 +764,10 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_range_label': observatory_range_label,
         'observatory_groups': (
             focus_context['groups'] if focus_context else scope_groups),
-        'observatory_default_off_ids': default_off_ids,
+        'observatory_default_off_ids': _view_default_off_ids(
+            default_off_ids,
+            focus_context['groups'] if focus_context else scope_groups,
+            observatory.get('curves') or {}),
         'observatory_focus': focus_context,
         'health_url': _health_url(),
     })
