@@ -193,6 +193,14 @@
   let data = JSON.parse(dataText);
   const serverPrefs = JSON.parse(
       document.getElementById('snapper-observatory-prefs').textContent) || {};
+  const rawGroups = JSON.parse(
+      document.getElementById('snapper-observatory-groups').textContent) || [];
+  const defaultOffCurveIds = new Set();
+  rawGroups.forEach(function (group) {
+    (group.default_off_ids || []).forEach(function (id) {
+      defaultOffCurveIds.add(id);
+    });
+  });
   const authenticated = {{ user.is_authenticated|yesno:"true,false" }};
   const storeKey = 'snapper-ui-' + data.scope;
   const plotDiv = document.getElementById('snapper-observatory-plot');
@@ -384,12 +392,17 @@
                      : localPrefs.focus_last) || {});
 
   let saveTimer = null;
+  function explicitOffIds() {
+    return Array.from(curvesOff).filter(function (id) {
+      return !defaultOffCurveIds.has(id);
+    });
+  }
   function persistPrefs() {
     // A ?families= preset is a one-shot focused link; it must never
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
     stampOffUrl();
-    const payload = {curves_off5: Array.from(curvesOff),
+    const payload = {curves_off5: explicitOffIds(),
                      curves_on5: Array.from(curvesOn),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
@@ -1428,8 +1441,7 @@
   // Curve families come from the host-registered scope provider
   // (observatory_groups: [{name, prefixes, ids}]); a curve joins a
   // family by id prefix or exact id.
-  const groupsEl = document.getElementById('snapper-observatory-groups');
-  const GROUPS = (groupsEl ? JSON.parse(groupsEl.textContent) : [])
+  const GROUPS = rawGroups
       .map(function (g) {
     // name is the unique registry identity; title, when given, is the
     // display form (a name can carry selector qualifiers the display
@@ -2926,7 +2938,7 @@
     // on= is the explicit opt-in for provider-declared default-off
     // curves. Window navigation carries both lists.
     const url = new URL(window.location.href);
-    url.searchParams.set('off', Array.from(curvesOff).join(','));
+    url.searchParams.set('off', explicitOffIds().join(','));
     if (curvesOn.size) {
       url.searchParams.set('on', Array.from(curvesOn).join(','));
     } else {
