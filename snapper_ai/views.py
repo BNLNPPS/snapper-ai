@@ -667,6 +667,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         from urllib.parse import urlencode as _enc
         focus_context = {
             'label': focus_def.get('label') or 'Focus',
+            'selector_label': (focus_def.get('selector_label')
+                               or focus_def.get('label') or 'Focus'),
             'note': focus_def.get('note') or '',
             'param': param,
             'value': focus_option.get('value') or '',

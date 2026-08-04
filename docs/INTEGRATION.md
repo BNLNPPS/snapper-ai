@@ -116,7 +116,7 @@ authority):
 | `card_template` | host template rendering this scope's cards |
 | `annotate_references` | event references → references with host links |
 | `preset_links` | report-page tabs with fixed query strings |
-| `focus_view` | one declaration or a tuple: scope-switcher tabs, each with its own clean page, options, selector axes, and an optional one-line `note` explaining the display. The focus parameter accepts `all` as a durable selection of every currently registered option. |
+| `focus_view` | one declaration or a tuple: scope-switcher tabs, each with its own clean page, options, selector axes, and an optional one-line `note` explaining the display. `label` names the page; optional `selector_label` names the selectable entities when those concepts differ. The focus parameter accepts `all` as a durable selection of every currently registered option. |
 
 Card builders return pure data with a `kind`; the host card template
 renders the kinds it knows and carries whatever host page links belong

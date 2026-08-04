@@ -107,7 +107,7 @@
     {# Focus selection as tick boxes above the family rows: one or    #}
     {# several options at once; info and filters follow the ticks.    #}
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3">
-      <span><strong>{{ observatory_focus.label }}:</strong>
+      <span><strong>{{ observatory_focus.selector_label }}:</strong>
         <a href="{{ observatory_focus.all_on_url }}">all</a>/<a href="{{ observatory_focus.all_off_url }}">none</a>
       </span>
       {% for option in observatory_focus.options %}
