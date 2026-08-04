@@ -272,6 +272,7 @@ def snapper_prefs_save(request, scope):
     allowed = {key: payload[key]
                for key in ('curves_off', 'curves_off2', 'curves_off3',
                            'curves_off4', 'curves_off5', 'curves_on5',
+                           'curves_off6', 'curves_on6',
                            'window', 'lanes_open',
                            'pc_off', 'pc_off2', 'focus_last')
                if key in payload}
@@ -432,6 +433,11 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         observatory = observatory_series(scope, window_start, window_end)
     all_groups = list(registry.resolve_curve_groups(provider))
     scope_groups = list(registry.resolve_scope_curve_groups(provider))
+    default_off_ids = sorted({
+        curve_id
+        for group in all_groups
+        for curve_id in (group.get('default_off_ids') or ())
+    })
     if (focus_option is None and provider is not None
             and provider.scope_curve_groups is not None):
         # The front door is an explicit compact projection. Focus-only
@@ -679,6 +685,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_range_label': observatory_range_label,
         'observatory_groups': (
             focus_context['groups'] if focus_context else scope_groups),
+        'observatory_default_off_ids': default_off_ids,
         'observatory_focus': focus_context,
         'health_url': _health_url(),
     })
@@ -813,6 +820,7 @@ def snapper_episode(request, scope, episode_id):
         'observatory_next_url': None,
         'observatory_range_label': range_label,
         'observatory_groups': [],
+        'observatory_default_off_ids': [],
         'observatory_focus': None,
         'observatory_episode': True,
         'observatory_count_label': 'events',

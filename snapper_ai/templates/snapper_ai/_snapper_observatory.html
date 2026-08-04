@@ -186,6 +186,7 @@
 {{ observatory|json_script:"snapper-observatory-data" }}
 {{ observatory_prefs|json_script:"snapper-observatory-prefs" }}
 {{ observatory_groups|json_script:"snapper-observatory-groups" }}
+{{ observatory_default_off_ids|json_script:"snapper-observatory-default-off-ids" }}
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script>
 (function () {
@@ -195,12 +196,9 @@
       document.getElementById('snapper-observatory-prefs').textContent) || {};
   const rawGroups = JSON.parse(
       document.getElementById('snapper-observatory-groups').textContent) || [];
-  const defaultOffCurveIds = new Set();
-  rawGroups.forEach(function (group) {
-    (group.default_off_ids || []).forEach(function (id) {
-      defaultOffCurveIds.add(id);
-    });
-  });
+  const defaultOffCurveIds = new Set(JSON.parse(
+      document.getElementById('snapper-observatory-default-off-ids')
+          .textContent) || []);
   const authenticated = {{ user.is_authenticated|yesno:"true,false" }};
   const storeKey = 'snapper-ui-' + data.scope;
   const plotDiv = document.getElementById('snapper-observatory-plot');
@@ -343,8 +341,8 @@
   } catch (e) { localPrefs = {}; }
   const familiesParam = (new URL(window.location.href)
       .searchParams.get('families') || '');
-  // curves_off5 invalidates selections from the previous curve
-  // vocabulary. curves_on5 records the deliberate exception for a
+  // curves_off6 invalidates selections recorded before provider-wide
+  // default-off serialization. curves_on6 records the exception for a
   // provider-declared default-off member: absence means leave that
   // member off; presence means the visitor explicitly turned it on.
   // A signed-in account's truth is the server record ALONE: local
@@ -354,9 +352,9 @@
   // all-off state would otherwise stand forever.
   const selectionPrefs = authenticated ? serverPrefs : localPrefs;
   const hasCurvePrefs = Object.prototype.hasOwnProperty.call(
-      selectionPrefs, 'curves_off5');
-  const curvesOff = new Set(selectionPrefs.curves_off5 || []);
-  const curvesOn = new Set(selectionPrefs.curves_on5 || []);
+      selectionPrefs, 'curves_off6');
+  const curvesOff = new Set(selectionPrefs.curves_off6 || []);
+  const curvesOn = new Set(selectionPrefs.curves_on6 || []);
   // URL state overrides all: off= names disabled default-on curves;
   // on= names enabled default-off curves. Presence of either replaces
   // remembered selection, and the effective state is materialized
@@ -397,13 +395,18 @@
       return !defaultOffCurveIds.has(id);
     });
   }
+  function currentCurveIds(ids) {
+    return ids.filter(function (id) {
+      return Object.prototype.hasOwnProperty.call(data.curves, id);
+    });
+  }
   function persistPrefs() {
     // A ?families= preset is a one-shot focused link; it must never
     // overwrite the visitor's remembered curve selection.
     if (familiesParam) return;
     stampOffUrl();
-    const payload = {curves_off5: explicitOffIds(),
-                     curves_on5: Array.from(curvesOn),
+    const payload = {curves_off6: explicitOffIds(),
+                     curves_on6: Array.from(curvesOn),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
                      focus_last: focusLast,
@@ -2938,9 +2941,11 @@
     // on= is the explicit opt-in for provider-declared default-off
     // curves. Window navigation carries both lists.
     const url = new URL(window.location.href);
-    url.searchParams.set('off', explicitOffIds().join(','));
-    if (curvesOn.size) {
-      url.searchParams.set('on', Array.from(curvesOn).join(','));
+    url.searchParams.set(
+        'off', currentCurveIds(explicitOffIds()).join(','));
+    const currentOn = currentCurveIds(Array.from(curvesOn));
+    if (currentOn.length) {
+      url.searchParams.set('on', currentOn.join(','));
     } else {
       url.searchParams.delete('on');
     }
