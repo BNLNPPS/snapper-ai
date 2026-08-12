@@ -105,7 +105,13 @@ class ScopeProvider:
     # carries ?<param>=<value>: only the option's families' curves and
     # control rows render, the window start clamps to the option's
     # start, the cut narrows to the option's component, and the
-    # options render as a tab row.
+    # options render as a tab row. Optional keys: 'cache_series'
+    # persists each option's families as a focus-sized product through
+    # the series_cache hook; 'components' names the snap components the
+    # focused record lives in, so the series build walks only those
+    # snaps (valid because focus views keep no lanes or gap shading) —
+    # see views.prewarm_focus_series for rebuilding these products when
+    # the record changes.
     focus_view: object = None
 
 
@@ -121,10 +127,12 @@ _HOOKS = {
     # health_url() -> URL of the host's health/system page, linked from
     # health check rows; None leaves them unlinked
     'health_url': None,
-    # series_cache(key, builder) -> {'value': series dict or None,
-    # 'refreshing': bool}: the host serves its stored copy immediately
-    # and rebuilds behind responses (its cached-product mechanism).
-    # A legacy bare series dict is also accepted; None builds inline.
+    # series_cache(key, builder, refresh=False) -> {'value': series
+    # dict or None, 'refreshing': bool}: the host serves its stored
+    # copy immediately and rebuilds behind responses (its
+    # cached-product mechanism); refresh=True rebuilds synchronously
+    # (the prewarm path). A hook without the refresh parameter and a
+    # legacy bare series dict are both accepted; None builds inline.
     'series_cache': None,
 }
 

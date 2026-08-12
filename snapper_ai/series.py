@@ -72,19 +72,37 @@ def _curve_label(provider, curve_id):
     return curve_id
 
 
-def observatory_series(scope, start, end, curve_filter=None):
+def observatory_series(scope, start, end, curve_filter=None,
+                       snap_components=None):
     """Curves, lanes, and gap spans for one scope and window.
 
     ``curve_filter`` lets a focused view build and persist only its own
     curves.  Extraction still reads the coherent scope record, but the
     cached product and every later request stay focus-sized instead of
     loading the much larger all-scope product only to discard it.
+
+    ``snap_components`` restricts the walk to snaps whose
+    ``changed_components`` intersect the named set (plus the boundary
+    snap, whose coherent state seeds every curve).  A focused record's
+    curves are constant between its own component's snaps, so the
+    filtered walk renders identically while skipping the full-state
+    JSON of every unrelated snap — the dominant cost on busy scopes.
+    Only correct for products that keep no lanes or gap shading, which
+    the focus views discard.
     """
+    from django.db.models import Q
+
     provider = registry.get(scope)
 
+    snap_q = SystemSnap.objects.filter(
+        scope=scope, snap_time__gte=start, snap_time__lte=end)
+    if snap_components:
+        component_q = Q()
+        for name in snap_components:
+            component_q |= Q(changed_components__contains=name)
+        snap_q = snap_q.filter(component_q)
     rows = list(
-        SystemSnap.objects
-        .filter(scope=scope, snap_time__gte=start, snap_time__lte=end)
+        snap_q
         .order_by('snap_time')
         .values('snap_time', 'state', 'recovered_gap_started_at',
                 'recovered_gap_start_unknown', 'reasons'))

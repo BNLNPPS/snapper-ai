@@ -26,6 +26,14 @@ CUT_STATE_COLORS = {
 CUT_FALLBACK_COLOR = '#1565c0'
 
 
+def prewarm_focus_series(scope, window_keys=()):
+    """Rebuild the scope's cache-opted focus series products so pages
+    land warm; the host calls this after the focused record changes.
+    Implementation in views.py; this is the host-facing surface."""
+    from .views import prewarm_focus_series as _impl
+    return _impl(scope, window_keys=window_keys)
+
+
 def et_naive(value):
     """Eastern time string for plotting, WITH offset suffix: a naive
     string is parsed in the browser's local zone by Date.parse, shifting

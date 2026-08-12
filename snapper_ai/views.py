@@ -21,6 +21,104 @@ from .presentation import cut_chip, cut_delta, et_naive
 RECENT_SNAP_LIMIT = 100
 
 
+def _focus_curve_filter(all_groups, wanted):
+    """The curve predicate for a focus-sized product: curves of the
+    wanted families only."""
+    cache_groups = [group for group in all_groups
+                    if group.get('name') in wanted]
+
+    def _filter(curve_id):
+        return any(
+            curve_id in (group.get('ids') or ())
+            or str(curve_id).startswith(
+                tuple(group.get('prefixes') or ()))
+            for group in cache_groups)
+
+    return _filter
+
+
+def _focus_cache_key(scope, focus_param, wanted, cache_span):
+    """The focus product key; the families set is its identity."""
+    identity = '\n'.join(sorted(wanted)) or 'empty'
+    token = sha256(identity.encode()).hexdigest()[:16]
+    return (f'snapper_series:v8:{scope}:focus:'
+            f'{focus_param}:{token}:{cache_span}')
+
+
+def prewarm_focus_series(scope, window_keys=()):
+    """Rebuild a scope's cache-opted focus products so pages land warm.
+
+    For each focus view declaring ``cache_series`` and each of its
+    options, rebuilds the product at the option's own span (the
+    default landing) and at each named window in ``window_keys``,
+    honoring the option's window floor. The host calls this after the
+    focused record changes — e.g. a nightly rebuild of the underlying
+    record — through a ``series_cache`` hook accepting
+    ``refresh=True``; a hook without the parameter still fills any
+    missing product.
+
+    Returns the product keys rebuilt.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from .series import WINDOW_HOURS, observatory_series
+
+    series_cache = registry.hook('series_cache')
+    provider = registry.get(scope)
+    if series_cache is None or provider is None:
+        return []
+    now = timezone.now()
+    all_groups = list(registry.resolve_curve_groups(provider))
+    warmed = []
+    for focus_def in registry.resolve_focus_views(provider):
+        if not focus_def.get('cache_series'):
+            continue
+        focus_param = focus_def.get('param') or 'focus'
+        components = tuple(focus_def.get('components') or ()) or None
+        selector_defs = list(focus_def.get('selectors') or ())
+        if not selector_defs and focus_def.get('quantity'):
+            selector_defs = [focus_def['quantity']]
+        families_key = '|'.join(
+            str(sel.get('default') or '') for sel in selector_defs)
+        for option in (focus_def.get('options') or ()):
+            by_key = option.get('families_by')
+            families = ((by_key.get(families_key) if by_key
+                         else option.get('families')) or ())
+            wanted = set(families)
+            curve_filter = _focus_curve_filter(all_groups, wanted)
+            floor = option.get('start')
+            spans = []
+            if floor:
+                spans.append((f'span:{floor.date().isoformat()}', floor))
+            for window_key in window_keys:
+                hours = WINDOW_HOURS.get(window_key)
+                if not hours:
+                    continue
+                start = now - timedelta(hours=hours)
+                if floor:
+                    start = max(start, floor)
+                spans.append((window_key, start))
+            for cache_span, start in spans:
+                key = _focus_cache_key(
+                    scope, focus_param, wanted, cache_span)
+
+                def builder(start=start, curve_filter=curve_filter,
+                            components=components):
+                    return observatory_series(
+                        scope, start, now,
+                        curve_filter=curve_filter,
+                        snap_components=components)
+
+                try:
+                    series_cache(key, builder, refresh=True)
+                except TypeError:
+                    series_cache(key, builder)
+                warmed.append(key)
+    return warmed
+
+
 def _view_default_off_ids(member_ids, rendered_groups, curves):
     """The default-off vocabulary the URL stamper serializes against:
     provider member-level ids plus every rendered curve whose rendered
@@ -446,6 +544,14 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     series_cache = registry.hook('series_cache')
     cache_key = None
     series_curve_filter = None
+    # A focus that declares its component set builds from that set's
+    # snaps alone (observatory_series snap_components) — the focused
+    # record is constant between its own snaps, and focus views keep
+    # no lanes or gap shading, so the filtered walk renders
+    # identically at a fraction of the cost on busy scopes.
+    series_snap_components = None
+    if focus_option is not None and focus_def.get('components'):
+        series_snap_components = tuple(focus_def['components'])
     if (series_cache is not None
             and not (request.GET.get('start') or request.GET.get('end'))):
         cache_span = None
@@ -457,22 +563,11 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             if (focus_option is not None
                     and focus_def.get('cache_series')):
                 wanted = set(focus_option.get('families') or ())
-                cache_groups = [
-                    group for group in all_groups
-                    if group.get('name') in wanted]
-
-                def series_curve_filter(curve_id):
-                    return any(
-                        curve_id in (group.get('ids') or ())
-                        or str(curve_id).startswith(
-                            tuple(group.get('prefixes') or ()))
-                        for group in cache_groups)
-
-                identity = '\n'.join(sorted(wanted)) or 'empty'
-                focus_token = sha256(identity.encode()).hexdigest()[:16]
-                focus_param = focus_def.get('param') or 'focus'
-                cache_key = (f'snapper_series:v7:{scope}:focus:'
-                             f'{focus_param}:{focus_token}:{cache_span}')
+                series_curve_filter = _focus_curve_filter(
+                    all_groups, wanted)
+                cache_key = _focus_cache_key(
+                    scope, focus_def.get('param') or 'focus',
+                    wanted, cache_span)
             else:
                 cache_key = f'snapper_series:v6:{scope}:{cache_span}'
     if cache_key:
@@ -480,7 +575,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             cache_key,
             lambda: observatory_series(
                 scope, window_start, window_end,
-                curve_filter=series_curve_filter))
+                curve_filter=series_curve_filter,
+                snap_components=series_snap_components))
         cache_refreshing = False
         if (isinstance(cached, dict)
                 and set(cached).issubset(
@@ -510,7 +606,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     else:
         observatory = observatory_series(
             scope, window_start, window_end,
-            curve_filter=series_curve_filter)
+            curve_filter=series_curve_filter,
+            snap_components=series_snap_components)
         observatory['cache_refreshing'] = False
     default_off_ids = sorted({
         curve_id
