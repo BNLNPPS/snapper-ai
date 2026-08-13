@@ -417,7 +417,7 @@ history. The curve key above the plot is a static legend.
 
     // The observatory's geometry: 46px lane rows on top, then 150px
     // panels with a 30px gap above each carrying its family annotation.
-    const panelPx = 150, panelGapPx = 30;
+    const panelPx = {{ embed.panel_px|default:150 }}, panelGapPx = 30;
     const lanePx = 46 * laneIds.length;
     const laneGapPx = laneIds.length ? 16 : 0;
     const innerPx = Math.max(
