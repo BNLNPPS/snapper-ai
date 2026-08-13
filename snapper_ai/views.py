@@ -41,7 +41,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
     token = sha256(identity.encode()).hexdigest()[:16]
-    return (f'snapper_series:v8:{scope}:focus:'
+    return (f'snapper_series:v9:{scope}:focus:'
             f'{focus_param}:{token}:{cache_span}')
 
 
