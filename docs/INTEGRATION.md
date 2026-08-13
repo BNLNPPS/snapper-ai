@@ -151,7 +151,13 @@ downsampled to at most `embed.MAX_POINTS_PER_CURVE` points by bucketed
 min-max, which preserves the visual envelope in a display without
 zoom. Members listed in `default_off_ids` are omitted; a host that
 deliberately needs them in a read-only embed passes
-`include_default_off=True`. Coverage gaps paint
+`include_default_off=True`. A family declaring `stacked` renders as a
+running-sum stack (the campaign-quilt form) and its key line states
+the member count rather than a chip per member.
+`snap_components=('name', ...)` restricts the series walk to the
+named components' snaps — a large cost reduction on busy scopes,
+valid only when every listed family's curves live in those components
+and `lanes` is off; the caller asserts that. Coverage gaps paint
 as the same grey spans as the report page, and curve colors match the
 report page (assigned over the scope's full curve list). A click
 anywhere on the plot opens the scope's report page with the matching
