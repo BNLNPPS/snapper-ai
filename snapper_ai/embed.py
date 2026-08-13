@@ -81,7 +81,7 @@ def _report_query(start, end, now):
 
 
 def embed_context(scope, start, end, families=(), lanes=False,
-                  include_default_off=False):
+                  include_default_off=False, snap_components=None):
     """Context for ``_snapper_embed.html``: the scope's curves filtered
     to the named ``families`` (provider ``curve_groups`` names, plotted
     as one panel each in the order given) over [start, end], clamped to
@@ -90,8 +90,12 @@ def embed_context(scope, start, end, families=(), lanes=False,
     scope's episodic activity lanes (namespace bands), rendered above
     any curve panels. Members declared in a family's
     ``default_off_ids`` are omitted unless ``include_default_off`` is
-    true. Errors return a context whose ``error`` the partial renders
-    visibly."""
+    true. A family declaring ``stacked`` renders as a running-sum
+    stack (the quilt form). ``snap_components`` restricts the series
+    walk to the named components' snaps (observatory_series) — valid
+    only when every named family's curves live in those components and
+    ``lanes`` is false; the caller asserts that. Errors return a
+    context whose ``error`` the partial renders visibly."""
     from django.utils import timezone
 
     from . import registry
@@ -108,7 +112,9 @@ def embed_context(scope, start, end, families=(), lanes=False,
         clamp_note = (f'Showing the most recent {MAX_EMBED_DAYS} days '
                       'of recorded state.')
 
-    series = observatory_series(scope, start, end)
+    series = observatory_series(
+        scope, start, end,
+        snap_components=None if lanes else snap_components)
     all_curve_ids = sorted(series['curves'])
 
     groups = {group.get('name'): group
@@ -133,7 +139,9 @@ def embed_context(scope, start, end, families=(), lanes=False,
             rank = {curve_id: i for i, curve_id in enumerate(order)}
             ids.sort(key=lambda cid: (rank.get(cid, len(order)), cid))
         assigned.update(ids)
-        panels.append({'name': name, 'ids': ids})
+        panels.append({'name': name, 'ids': ids,
+                       'stacked': bool(group.get('stacked')),
+                       'units': group.get('units') or ''})
 
     curves = {}
     for panel in panels:

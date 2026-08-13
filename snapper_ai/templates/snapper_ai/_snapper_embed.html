@@ -288,12 +288,21 @@ history. The curve key above the plot is a static legend.
       html += '<div class="d-flex flex-wrap column-gap-3 row-gap-1 '
           + 'align-items-baseline">'
           + '<strong>' + escapeHtml(panel.name) + ':</strong>';
+      if (panel.stacked) {
+        // A stacked family's members are the patches themselves; the
+        // key states the shape, the full-page view names them.
+        html += '<span class="text-muted">'
+            + panel.ids.length + ' configurations stacked'
+            + (panel.units ? ' (' + escapeHtml(panel.units) + ')' : '')
+            + ' — click through for the full view</span>';
+      } else {
       panel.ids.forEach(function (id) {
         html += '<span><span style="display:inline-block;width:1.1em;'
             + 'height:0.28em;vertical-align:middle;background:'
             + curveColor[id] + '"></span> '
             + escapeHtml(data.curves[id].label) + '</span>';
       });
+      }
       html += '</div>';
     });
     keyDiv.innerHTML = html;
@@ -349,6 +358,37 @@ history. The curve key above the plot is a static legend.
       const axis = index === 0 ? 'y' : 'y' + (index + 2);
       panel.axisKey = index === 0 ? 'yaxis' : 'yaxis' + (index + 2);
       panel.traceAxis = axis;
+      if (panel.stacked) {
+        // Running-sum stack, the quilt form: manual consecutive
+        // tonexty fills (never Plotly stackgroup, which degrades to
+        // lines under react()); members forward-fill over the union
+        // time axis so uneven point sets stack truthfully.
+        const axisTs = Array.from(new Set([].concat.apply([],
+            panel.ids.map(id => data.curves[id].points.map(p => p[0]))
+        ))).sort();
+        const running = axisTs.map(() => 0);
+        let first = true;
+        panel.ids.forEach(function (id) {
+          const pts = data.curves[id].points;
+          if (!pts.length) return;
+          let j = 0, v = 0;
+          const ys = axisTs.map(function (t) {
+            while (j < pts.length && pts[j][0] <= t) { v = pts[j][1]; j++; }
+            return v;
+          });
+          for (let k = 0; k < axisTs.length; k++) running[k] += ys[k];
+          traces.push({
+            x: axisTs.slice(), y: running.slice(),
+            mode: 'lines',
+            line: {shape: 'hv', width: 0.6, color: '#ffffff'},
+            fill: first ? 'tozeroy' : 'tonexty',
+            fillcolor: curveColor[id],
+            name: data.curves[id].label,
+            yaxis: axis, showlegend: false, hoverinfo: 'skip',
+          });
+          first = false;
+        });
+      } else {
       panel.ids.forEach(function (id) {
         const curve = data.curves[id];
         traces.push({
@@ -362,6 +402,7 @@ history. The curve key above the plot is a static legend.
           hoverinfo: 'skip',
         });
       });
+      }
     });
 
     // Known coverage gaps render as grey spans, never painted over.
