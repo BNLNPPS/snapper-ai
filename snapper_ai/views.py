@@ -802,14 +802,23 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     from zoneinfo import ZoneInfo as _ZoneInfo
     earliest_snap = snaps.last()
     span = window_end - window_start
-    named_key = request.GET.get('window') or ''
-    if named_key not in WINDOW_HOURS:
-        named_key = window_key if window_key in WINDOW_HOURS else DEFAULT_WINDOW
+    # Named-window provenance: a named key is restored on return to the
+    # present only when the view actually descends from a named window
+    # (the current page is one, or the key rode in with a step URL). A
+    # computed span with no such ancestry — the campaign page default —
+    # keeps its duration instead of falling back to the default window.
+    named_in_url = request.GET.get('window') or ''
+    has_named_provenance = (named_in_url in WINDOW_HOURS
+                            or window_key in WINDOW_HOURS)
+    named_key = (named_in_url if named_in_url in WINDOW_HOURS
+                 else window_key if window_key in WINDOW_HOURS
+                 else DEFAULT_WINDOW)
 
     def _range_url(start, end):
-        return '?' + _urlencode({'start': start.isoformat(),
-                                 'end': end.isoformat(),
-                                 'window': named_key})
+        params = {'start': start.isoformat(), 'end': end.isoformat()}
+        if has_named_provenance:
+            params['window'] = named_key
+        return '?' + _urlencode(params)
 
     observatory_prev_url = None
     observatory_next_url = None
@@ -825,7 +834,12 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         observatory_prev_url = _range_url(prev_start, prev_start + span)
     if window_key == 'custom':
         if window_end + span >= now:
-            observatory_next_url = f'?window={named_key}'
+            # Forward-to-present: restore the rolling named window when
+            # one is in the ancestry; otherwise the same duration ending
+            # now — Now never changes the span the user was reading.
+            observatory_next_url = (f'?window={named_key}'
+                                    if has_named_provenance
+                                    else _range_url(now - span, now))
         else:
             observatory_next_url = _range_url(window_end, window_end + span)
 
