@@ -832,7 +832,13 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     if step_floor and window_start > step_floor:
         prev_start = max(window_start - span, step_floor)
         observatory_prev_url = _range_url(prev_start, prev_start + span)
-    if window_key == 'custom':
+    # A custom range whose right edge is already current has nowhere to
+    # step.  In particular, Now stamps ``cut=now``; offering another
+    # server-computed range ending at the next request's ``now`` makes
+    # that URL navigate forever.  The client uses the same one-minute
+    # live-edge tolerance for track-now.
+    if (window_key == 'custom'
+            and (now - window_end).total_seconds() > 60):
         if window_end + span >= now:
             # Forward-to-present: restore the rolling named window when
             # one is in the ancestry; otherwise the same duration ending
