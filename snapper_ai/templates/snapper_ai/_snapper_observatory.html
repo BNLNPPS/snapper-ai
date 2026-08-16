@@ -1139,18 +1139,25 @@
     let sections;
     if (DOCK_CONTROLS) {
       renderControls();
+      // A detail belongs to its visible plot. Closing the family hides
+      // both; reopening it restores the same already-fetched detail in
+      // the slot immediately below the panel.
+      Object.keys(dockedCutDetails).forEach(function (key) {
+        dockedCutDetails[key].style.visibility = 'hidden';
+      });
       const panelByName = {};
       panels.forEach(function (p) { panelByName[p.name] = p; });
       sections = dockedRows.map(function (r) {
         const def = GROUPS.find(function (g) {
           return g.name === r.name;
         }) || {};
-        const detailEl = def.detail_key
+        const panel = panelByName[r.name] || null;
+        const detailEl = panel && def.detail_key
             ? dockedCutDetails[def.detail_key] : null;
         return {name: r.name, el: r.el, detailEl: detailEl,
                 rowPx: r.el.offsetHeight + 10,
                 detailPx: detailEl ? detailEl.offsetHeight + 16 : 0,
-                panel: panelByName[r.name] || null};
+                panel: panel};
       });
     } else {
       sections = panels.map(function (p) {
