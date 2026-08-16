@@ -684,7 +684,13 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         collapse = float(focus_option.get('collapse_below') or 0)
         if collapse > 0:
             for group in groups:
-                if not group.get('stacked'):
+                # Long-tail folding belongs only to the arrivals quilt,
+                # identified by its PC grouping metadata. Additive
+                # category stacks and exact-id per-category PC stacks
+                # must retain every member; an exact-id family has no
+                # prefix and must never fall through to matching every
+                # curve with startswith('').
+                if not group.get('stacked') or not group.get('pc_groups'):
                     continue
                 prefix = (group.get('prefixes') or [''])[0]
                 members = {
