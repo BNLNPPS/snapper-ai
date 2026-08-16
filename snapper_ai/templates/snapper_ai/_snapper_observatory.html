@@ -322,7 +322,9 @@
   let basisCorrection = data.end_ms - Date.parse(toNaive(data.end_ms));
 
   if (!Object.keys(data.lanes).length && !Object.keys(data.curves).length) {
-    plotDiv.innerHTML = '<p class="text-muted">No recorded state in this window.</p>';
+    plotDiv.innerHTML = data.cache_refreshing
+        ? '<p class="text-muted">Building recorded state for this window…</p>'
+        : '<p class="text-muted">No recorded state in this window.</p>';
     // First data arriving in an empty window is the rare case where the
     // page-level soft refresh falls back to a full reload.
     window.snapperObservatory = {
