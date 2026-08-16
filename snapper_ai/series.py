@@ -227,7 +227,7 @@ def observatory_series(scope, start, end, curve_filter=None,
                 reverse=True):
             lanes[f'ns:{name}'] = {'label': name, 'segments': segments}
 
-    return {
+    series = {
         'scope': scope,
         # Plotted strings are Eastern wall time; end_ms is the true-UTC
         # anchor for converting a clicked plot position to an instant.
@@ -240,6 +240,11 @@ def observatory_series(scope, start, end, curve_filter=None,
         'lanes': lanes,
         'gaps': gaps,
     }
+    if provider is not None and provider.series_transform is not None:
+        transformed = provider.series_transform(series)
+        if transformed is not None:
+            series = transformed
+    return series
 
 
 def parse_window(request, now, default_window=DEFAULT_WINDOW):

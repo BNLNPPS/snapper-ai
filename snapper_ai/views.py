@@ -534,7 +534,6 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     # focus into a focus-sized product, whose curve predicate comes
     # from the exact families selected for this request.
     all_groups = list(registry.resolve_curve_groups(provider))
-    scope_groups = list(registry.resolve_scope_curve_groups(provider))
 
     # The series is a cached product where the host provides the
     # mechanism: named windows and the focus default span key stably
@@ -569,7 +568,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v11:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v12:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,
@@ -609,6 +608,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             curve_filter=series_curve_filter,
             snap_components=series_snap_components)
         observatory['cache_refreshing'] = False
+    scope_groups = list(registry.resolve_scope_curve_groups(provider))
     default_off_ids = sorted({
         curve_id
         for group in all_groups

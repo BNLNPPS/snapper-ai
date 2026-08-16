@@ -2643,6 +2643,9 @@
              ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
              : '')
           + (focusCutQuery ? '&' + focusCutQuery : '')
+          + (data.queue_members && data.queue_members.length
+             ? '&queues=' + encodeURIComponent(data.queue_members.join(','))
+             : '')
           + '&since=' + encodeURIComponent(sinceIso),
           {signal: controller.signal})
       .then(function (r) {

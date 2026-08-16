@@ -31,6 +31,8 @@ class ScopeProvider:
     scope            URL identity of the scope (e.g. 'epicprod').
     label            Human label shown in the scope switcher.
     curve_values     (state_dict) -> {curve_id: number} for one snap.
+    series_transform (series_dict) -> series_dict after the one series
+                     walk, for host-side folding derived from those curves.
     lane_entries     (state_dict) -> {lane_id: entry} extra continuous
                      lanes beyond the core health lanes.
     curve_label      (curve_id) -> label, or None to fall through to
@@ -82,6 +84,7 @@ class ScopeProvider:
     scope: str
     label: str
     curve_values: object = None
+    series_transform: object = None
     lane_entries: object = None
     curve_label: object = None
     curve_color: object = None
