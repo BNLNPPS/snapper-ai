@@ -18,14 +18,17 @@
   {{ coverage_notice.detail }}
 </p>
 {% endif %}
-<div class="d-flex flex-wrap gap-3 align-items-stretch">
+<div class="d-flex flex-column gap-3 align-items-stretch">
   {% for card in cards %}
+  {% if card.split_panels %}
+    {% include 'snapper_ai/_snapper_component_body.html' %}
+  {% else %}
   <div class="snapper-cut-card {% if card.changed %}border-2{% endif %}">
     {# Compact (focus-narrowed) cards carry their own identity — the  #}
     {# component-name and assessed chrome would only restate it.      #}
     {% if not compact %}
     <div class="d-flex align-items-baseline gap-2 mb-1">
-      <strong>{{ card.name }}</strong>
+      <strong>{% if card.kind == 'health' %}Health{% else %}{{ card.name }}{% endif %}</strong>
       {% if card.kind == 'health' %}
       <span class="snapper-chip" style="background:{{ card.chip.color }}">{{ card.chip.value }}</span>
       {% endif %}
@@ -36,9 +39,15 @@
     {% endif %}
 
     {% if card.kind == 'health' %}
-      {% if card.reason %}<div class="mb-1">{{ card.reason|urlize }}</div>{% endif %}
-      {% if card.non_ok_checks %}
-      <table class="table table-sm mb-1 w-auto">
+      <table class="table table-striped table-bordered table-sm align-middle w-100 mb-0">
+        <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+        <tr>
+          <td>{% if health_url %}<a href="{{ health_url }}">Overall</a>{% else %}Overall{% endif %}</td>
+          <td><span class="snapper-chip" style="background:{{ card.chip.color }}">{{ card.chip.value }}</span></td>
+          <td>{% if card.reason %}{{ card.reason|urlize }}{% else %}—{% endif %}</td>
+        </tr>
+        {% if card.non_ok_checks %}
         {% for check in card.non_ok_checks %}
         <tr>
           <td>{% if health_url %}<a href="{{ health_url }}">{{ check.name }}</a>{% else %}{{ check.name }}{% endif %}</td>
@@ -46,10 +55,15 @@
           <td>{{ check.summary|urlize }}</td>
         </tr>
         {% endfor %}
+        {% else %}
+        <tr>
+          <td>{% if health_url %}<a href="{{ health_url }}">Checks</a>{% else %}Checks{% endif %}</td>
+          <td><span class="snapper-chip" style="background:{{ card.chip.color }}">ok</span></td>
+          <td>All checks ok{% if card.counts.ok %} ({{ card.counts.ok }}){% endif %}.</td>
+        </tr>
+        {% endif %}
+        </tbody>
       </table>
-      {% else %}
-      <div class="text-muted">All checks ok{% if card.counts.ok %} ({{ card.counts.ok }}){% endif %}{% if health_url %} — <a href="{{ health_url }}">System page</a>{% endif %}.</div>
-      {% endif %}
     {% else %}
       {% include 'snapper_ai/_snapper_component_body.html' %}
     {% endif %}
@@ -59,6 +73,7 @@
       <pre class="p-2 border rounded snapper-scrollpane" style="max-height:22em; overflow:auto; font-size:.9em;">{{ card.payload_json }}</pre>
     </details>
   </div>
+  {% endif %}
   {% endfor %}
 </div>
 {% if references %}
