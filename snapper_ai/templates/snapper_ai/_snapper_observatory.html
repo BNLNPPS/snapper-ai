@@ -800,7 +800,26 @@
         return !curvesOff.has(id);
       });
       const memberOrder = stackedDefs[familyName].order || [];
-      if (memberOrder.length) {
+      if (stackedDefs[familyName].cumulative_stack) {
+        // A cumulative stack has one non-negotiable visual invariant:
+        // once visible, existing bands never change vertical order.
+        // Sort by first nonzero appearance so a newly arriving member
+        // is appended at the TOP instead of materializing between
+        // pre-existing bands. Ties retain the provider's stable order.
+        const firstPositive = function (id) {
+          const point = data.curves[id].points.find(function (p) {
+            return Number(p[1]) > 0;
+          });
+          return point ? Date.parse(point[0]) : Infinity;
+        };
+        members.sort(function (a, b) {
+          const ai = memberOrder.indexOf(a), bi = memberOrder.indexOf(b);
+          return (firstPositive(a) - firstPositive(b))
+              || ((ai < 0 ? memberOrder.length : ai)
+                  - (bi < 0 ? memberOrder.length : bi))
+              || a.localeCompare(b);
+        });
+      } else if (memberOrder.length) {
         members.sort(function (a, b) {
           const ai = memberOrder.indexOf(a), bi = memberOrder.indexOf(b);
           return ((ai < 0 ? memberOrder.length : ai)
@@ -1501,6 +1520,7 @@
     return {name: g.name, title: g.title || g.name,
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             stacked: !!g.stacked, compact: !!g.compact,
+            cumulative_stack: !!g.cumulative_stack,
             end_stamped: !!g.end_stamped,
             default_off: !!g.default_off, units: g.units || '',
             default_off_ids: g.default_off_ids || [],
