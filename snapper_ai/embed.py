@@ -142,7 +142,7 @@ def embed_context(scope, start, end, families=(), lanes=False,
             rank = {curve_id: i for i, curve_id in enumerate(order)}
             ids.sort(key=lambda cid: (rank.get(cid, len(order)), cid))
         assigned.update(ids)
-        panels.append({'name': name, 'ids': ids,
+        panels.append({'name': group.get('title') or name, 'ids': ids,
                        'stacked': bool(group.get('stacked')),
                        'units': group.get('units') or ''})
 
