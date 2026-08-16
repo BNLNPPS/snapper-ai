@@ -81,7 +81,8 @@ def _report_query(start, end, now):
 
 
 def embed_context(scope, start, end, families=(), lanes=False,
-                  include_default_off=False, snap_components=None):
+                  include_default_off=False, snap_components=None,
+                  hide_key=False):
     """Context for ``_snapper_embed.html``: the scope's curves filtered
     to the named ``families`` (provider ``curve_groups`` names, plotted
     as one panel each in the order given) over [start, end], clamped to
@@ -94,7 +95,9 @@ def embed_context(scope, start, end, families=(), lanes=False,
     stack (the quilt form). ``snap_components`` restricts the series
     walk to the named components' snaps (observatory_series) — valid
     only when every named family's curves live in those components and
-    ``lanes`` is false; the caller asserts that. Errors return a
+    ``lanes`` is false; the caller asserts that. ``hide_key=True``
+    drops the static curve key above the plot, for a host page that
+    leaves curve identification to the hover readout. Errors return a
     context whose ``error`` the partial renders visibly."""
     from django.utils import timezone
 
@@ -185,6 +188,7 @@ def embed_context(scope, start, end, families=(), lanes=False,
         },
         'report_query': _report_query(start, end, timezone.now()),
         'clamp_note': clamp_note,
+        'hide_key': bool(hide_key),
         'has_points': (any(curve['points'] for curve in curves.values())
                        or bool(embed_lanes)),
         'error': '',

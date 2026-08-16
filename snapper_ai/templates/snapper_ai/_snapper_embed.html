@@ -3,7 +3,8 @@ Embeddable curves-only Time history: stacked per-family curve panels
 over one window, rendered from an embed_context() dict passed as
 ``embed`` (see embed.py). Read-only — no controls, no zoom, no
 preferences; a click anywhere on the plot opens the scope's full Time
-history. The curve key above the plot is a static legend.
+history. The curve key above the plot is a static legend, dropped when
+the context sets ``hide_key``.
 {% endcomment %}
 {% if embed.error %}
 <p class="text-danger mb-0">Snapper state history unavailable: {{ embed.error }}</p>
@@ -21,7 +22,7 @@ history. The curve key above the plot is a static legend.
     cursor: pointer !important;
   }
 </style>
-<div id="{{ embed.dom_id }}-key" class="mb-1"></div>
+{% if not embed.hide_key %}<div id="{{ embed.dom_id }}-key" class="mb-1"></div>{% endif %}
 <div id="{{ embed.dom_id }}" style="min-height:60px; cursor:pointer"></div>
 {{ embed.data|json_script:embed.data_dom_id }}
 <script>
@@ -305,7 +306,7 @@ history. The curve key above the plot is a static legend.
       }
       html += '</div>';
     });
-    keyDiv.innerHTML = html;
+    if (keyDiv) { keyDiv.innerHTML = html; }
   }
 
   function render() {

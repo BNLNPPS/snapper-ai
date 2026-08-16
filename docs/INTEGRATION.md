@@ -154,6 +154,8 @@ deliberately needs them in a read-only embed passes
 `include_default_off=True`. A family declaring `stacked` renders as a
 running-sum stack (the campaign-quilt form) and its key line states
 the member count rather than a chip per member.
+`hide_key=True` drops the static curve key above the plot, for a host
+page that leaves curve identification to the hover readout.
 `snap_components=('name', ...)` restricts the series walk to the
 named components' snaps — a large cost reduction on busy scopes,
 valid only when every listed family's curves live in those components
