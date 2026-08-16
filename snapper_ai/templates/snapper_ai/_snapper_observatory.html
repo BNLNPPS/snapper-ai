@@ -53,6 +53,9 @@
   border: 1px solid #d5dce5;
   border-radius: .35rem;
 }
+.snapper-curve-row-docked[id^="snapper-plot-"] {
+  scroll-margin-top: var(--snapper-plot-scroll-offset, 4rem);
+}
 /* A docked header sizes to its text — no fixed label column to wrap
    a short title onto two lines. */
 .snapper-curve-row-docked .snapper-curve-row-label {
@@ -216,10 +219,31 @@
   let dockedRows = [];
   let dockedSections = [];
   let dockedCutDetails = {};
+  function updatePlotScrollOffset() {
+    const nav = document.querySelector('.sticky-header');
+    const bar = document.getElementById('snapper-th-bar');
+    const height = Math.max(nav ? nav.offsetHeight : 0,
+                            bar ? bar.offsetHeight : 0) + 8;
+    document.documentElement.style.setProperty(
+        '--snapper-plot-scroll-offset', height + 'px');
+  }
   function positionDockedRows() {
     // margin.t is 10 in the layout below; each row lands in the slot
     // its measured height reserved, and only then becomes visible.
     const baseTop = plotDiv.offsetTop + 10;
+    const anchorTargets = {};
+    dockedSections.forEach(function (s) {
+      if (!s.el) return;
+      s.el.removeAttribute('id');
+      if (!s.detailKey) return;
+      if (!anchorTargets[s.detailKey]
+          || (!anchorTargets[s.detailKey].panel && s.panel)) {
+        anchorTargets[s.detailKey] = s;
+      }
+    });
+    Object.keys(anchorTargets).forEach(function (detailKey) {
+      anchorTargets[detailKey].el.id = 'snapper-plot-' + detailKey;
+    });
     dockedSections.forEach(function (s) {
       if (!s.el) return;
       s.el.style.top = (baseTop + s.rowTopPx) + 'px';
@@ -1174,6 +1198,7 @@
         const detailEl = panel && def.detail_key
             ? dockedCutDetails[def.detail_key] : null;
         return {name: r.name, el: r.el, detailEl: detailEl,
+                detailKey: def.detail_key || '',
                 rowPx: r.el.offsetHeight + 10,
                 detailPx: detailEl ? detailEl.offsetHeight + 16 : 0,
                 panel: panel};
@@ -3367,10 +3392,12 @@
   // re-renders (debounced) so rows and panels stay seated together.
   let dockResizeTimer = null;
   window.addEventListener('resize', function () {
+    updatePlotScrollOffset();
     if (!DOCK_CONTROLS) return;
     clearTimeout(dockResizeTimer);
     dockResizeTimer = setTimeout(rerenderView, 200);
   });
+  updatePlotScrollOffset();
   persistPrefs();
 
   // Restore the URL-carried view (?view=start,end) after a reload or
