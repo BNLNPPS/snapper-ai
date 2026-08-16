@@ -569,7 +569,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v6:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v9:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,

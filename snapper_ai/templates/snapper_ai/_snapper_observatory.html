@@ -805,7 +805,19 @@
       members.forEach(function (id) {
         data.curves[id].points.forEach(function (p) { xSeen[p[0]] = 1; });
       });
-      const unionX = Object.keys(xSeen).sort();
+      let unionX = Object.keys(xSeen).sort();
+      // The stack is drawn as filled columns, one per stamp. A daily
+      // record gives tens of them; a family sampled at snap cadence
+      // gives thousands, which is more SVG than a browser can move
+      // through. Cap the column count — the band shape survives.
+      const MAX_STACK_COLUMNS = 240;
+      if (unionX.length > MAX_STACK_COLUMNS) {
+        const stride = Math.ceil(unionX.length / MAX_STACK_COLUMNS);
+        const last = unionX.length - 1;
+        unionX = unionX.filter(function (x, i) {
+          return i % stride === 0 || i === last;
+        });
+      }
       // A stacked member's value at a stamp covers the INTERVAL ending
       // at that stamp (a daily record stamps each day at its end), so
       // each column is drawn over (previous stamp, stamp] — never
@@ -998,11 +1010,14 @@
       members.forEach(function (id) { curveAxis[id] = traceAxis; });
       // A stacked family (the quilt) earns triple the panel height:
       // its information is vertical composition, not a single line.
-      // A family declaring tall earns double height.
+      // A family declaring tall earns double height. A family may
+      // state its own panel_px when neither default suits it — a
+      // stack read alongside ordinary panels wants their height.
       panels.push({name: group.name, title: group.title || group.name,
                    traceAxis: traceAxis,
                    detailKey: group.detail_key || '',
-                   px: group.stacked ? 450 : (group.tall ? 300 : 150),
+                   px: group.panel_px
+                       || (group.stacked ? 450 : (group.tall ? 300 : 150)),
                    units: group.units || '',
                    axisKey: traceAxis === 'y' ? 'yaxis'
                        : 'yaxis' + traceAxis.slice(1)});
@@ -1205,7 +1220,14 @@
         for (const s of steps) { if (s >= target) { step = s; break; } }
         const first = new Date(start);
         let d;
-        if (step >= DAY && quiltGeom.length) {
+        // Quilt columns drive the ticks only when they are day bins.
+        // A stacked family sampled at snap cadence has thousands of
+        // columns; taking a label from each buries the axis.
+        const quiltEdges = quiltGeom.length ? quiltGeom[0].edgesMs : null;
+        const quiltIsDaily = !!(quiltEdges && quiltEdges.length > 2
+            && (quiltEdges[quiltEdges.length - 1] - quiltEdges[0])
+               / (quiltEdges.length - 1) >= DAY / 2);
+        if (step >= DAY && quiltIsDaily) {
           // Day bins exist: a date label belongs under the CENTER of
           // its own bin — a boundary-placed date straddles two bins
           // and reads as neither. Ticks come from the quilt columns:
@@ -1460,6 +1482,7 @@
             window_relative: g.window_relative || false,
             start_closed: !!g.start_closed,
             detail_key: g.detail_key || '',
+            panel_px: g.panel_px || 0,
             tall: !!g.tall,
             match: function (id) {
       return (g.prefixes || []).some(function (p) {
