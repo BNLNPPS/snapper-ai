@@ -592,8 +592,8 @@
   // soft refresh can update the plot in place with no page reload.
   let laneIds = [], curveIds = [], curveColor = {}, curveTraceStart = 0;
   let curveTraceIndex = {};
-  // Stacked-family geometry (day columns, member bands) for the
-  // in-house hover floater and day-snapping cuts.
+  // Stacked-family geometry for the in-house band hover. End-stamped
+  // daily stacks additionally drive centered date ticks and day cuts.
   let quiltGeom = [];
   let gapShapes = [], fullRange = [0, 0], groupMembers = {};
   let laneLabelById = {}, parentKids = {}, curveAxis = {}, panels = [];
@@ -797,6 +797,15 @@
       const members = stackedFamilies[familyName].filter(function (id) {
         return !curvesOff.has(id);
       });
+      const memberOrder = stackedDefs[familyName].order || [];
+      if (memberOrder.length) {
+        members.sort(function (a, b) {
+          const ai = memberOrder.indexOf(a), bi = memberOrder.indexOf(b);
+          return ((ai < 0 ? memberOrder.length : ai)
+                  - (bi < 0 ? memberOrder.length : bi))
+              || a.localeCompare(b);
+        });
+      }
       if (familyClosed(familyName, stackedDefs[familyName])
           || !members.length) {
         return;
@@ -805,35 +814,39 @@
       members.forEach(function (id) {
         data.curves[id].points.forEach(function (p) { xSeen[p[0]] = 1; });
       });
-      let unionX = Object.keys(xSeen).sort();
-      // The stack is drawn as filled columns, one per stamp. A daily
-      // record gives tens of them; a family sampled at snap cadence
-      // gives thousands, which is more SVG than a browser can move
-      // through. Cap the column count — the band shape survives.
-      const MAX_STACK_COLUMNS = 240;
-      if (unionX.length > MAX_STACK_COLUMNS) {
-        const stride = Math.ceil(unionX.length / MAX_STACK_COLUMNS);
-        const last = unionX.length - 1;
-        unionX = unionX.filter(function (x, i) {
-          return i % stride === 0 || i === last;
+      const unionX = Object.keys(xSeen).sort();
+      const endStamped = !!stackedDefs[familyName].end_stamped;
+      const stampsMs = unionX.map(function (x) { return Date.parse(x); });
+      const intervals = stampsMs.slice(1).map(function (stamp, i) {
+        return stamp - stampsMs[i];
+      }).filter(function (span) { return span > 0; }).sort(function (a, b) {
+        return a - b;
+      });
+      const cadenceMs = intervals.length
+          ? intervals[Math.floor(intervals.length / 2)] : 0;
+      let edgesMs, traceX;
+      if (endStamped) {
+        // A daily arrival value belongs to the interval ending at its
+        // stamp.
+        const lead = stampsMs[0] - (cadenceMs || 86400000);
+        edgesMs = [lead].concat(stampsMs);
+        traceX = edgesMs.map(function (stamp) { return toNaive(stamp); });
+      } else {
+        // Current-state values begin at their stamp, exactly like the
+        // ordinary step curves. The final hover interval reaches the
+        // displayed window end without adding a plotted sample.
+        const last = stampsMs[stampsMs.length - 1];
+        edgesMs = stampsMs.concat([
+          Math.max(Date.parse(data.end), last + 1)
+        ]);
+        traceX = unionX.map(function (x) {
+          return toNaive(Date.parse(x));
         });
       }
-      // A stacked member's value at a stamp covers the INTERVAL ending
-      // at that stamp (a daily record stamps each day at its end), so
-      // each column is drawn over (previous stamp, stamp] — never
-      // pushed forward over the following day. Column edges: a leading
-      // edge one median interval before the first stamp, then the
-      // stamps themselves; vertex i carries column i's value and the
-      // final vertex closes the last column.
-      const stampsMs = unionX.map(function (x) { return Date.parse(x); });
-      const lead = stampsMs.length > 1
-          ? stampsMs[0] - (stampsMs[1] - stampsMs[0])
-          : stampsMs[0] - 86400000;
-      const edgesMs = [lead].concat(stampsMs);
-      const edgesX = [toNaive(lead)].concat(
-          unionX.map(function (x) { return toNaive(Date.parse(x)); }));
       const running = unionX.map(function () { return 0; });
       const geom = {axisKey: null, edgesMs: edgesMs, members: [],
+                    endStamped: endStamped,
+                    daily: endStamped && cadenceMs >= 43200000,
                     units: (stackedDefs[familyName] || {}).units || ''};
       members.forEach(function (id, memberIndex) {
         const values = {};
@@ -853,7 +866,8 @@
                            own: own, tops: tops});
         curveTraceIndex[id] = traces.length;
         traces.push({
-          x: edgesX, y: tops.concat(tops[tops.length - 1]),
+          x: traceX,
+          y: endStamped ? tops.concat(tops[tops.length - 1]) : tops,
           mode: 'lines',
           line: {shape: 'hv', width: 0.5, color: curveColor[id]},
           fill: memberIndex === 0 ? 'tozeroy' : 'tonexty',
@@ -1092,10 +1106,13 @@
                    marker: {opacity: 0}, hoverinfo: 'skip',
                    showlegend: false});
     }
-    // The axis opens at the first stacked column's leading edge — a
-    // half-clipped first bin reads as an error, not a boundary.
-    if (quiltGeom.length && !viewTrue) {
-      const lead = Math.min.apply(null, quiltGeom.map(function (g) {
+    // Only an end-stamped stack has a leading edge before its first
+    // sample. Current-state stacks share the ordinary plot range.
+    const endStampedGeom = quiltGeom.filter(function (g) {
+      return g.endStamped;
+    });
+    if (endStampedGeom.length && !viewTrue) {
+      const lead = Math.min.apply(null, endStampedGeom.map(function (g) {
         return g.edgesMs[0];
       }));
       if (lead < fullRange[0]) {
@@ -1223,17 +1240,16 @@
         // Quilt columns drive the ticks only when they are day bins.
         // A stacked family sampled at snap cadence has thousands of
         // columns; taking a label from each buries the axis.
-        const quiltEdges = quiltGeom.length ? quiltGeom[0].edgesMs : null;
-        const quiltIsDaily = !!(quiltEdges && quiltEdges.length > 2
-            && (quiltEdges[quiltEdges.length - 1] - quiltEdges[0])
-               / (quiltEdges.length - 1) >= DAY / 2);
-        if (step >= DAY && quiltIsDaily) {
+        const dailyGeom = quiltGeom.find(function (geom) {
+          return geom.daily;
+        });
+        if (step >= DAY && dailyGeom) {
           // Day bins exist: a date label belongs under the CENTER of
           // its own bin — a boundary-placed date straddles two bins
           // and reads as neither. Ticks come from the quilt columns:
           // position at the column midpoint, named by the column's
           // day.
-          const edges = quiltGeom[0].edgesMs;
+          const edges = dailyGeom.edgesMs;
           const every = Math.max(1, Math.round(step / DAY));
           for (let i = 0; i < edges.length - 1; i += every) {
             const mid = (edges[i] + edges[i + 1]) / 2;
@@ -1476,6 +1492,7 @@
     return {name: g.name, title: g.title || g.name,
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             stacked: !!g.stacked, compact: !!g.compact,
+            end_stamped: !!g.end_stamped,
             default_off: !!g.default_off, units: g.units || '',
             default_off_ids: g.default_off_ids || [],
             order: g.order || [],
@@ -2769,6 +2786,17 @@
     const luma = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
     return luma > 150 ? '#111' : '#fff';
   }
+  function stackedColumnAt(edges, stamp) {
+    if (edges.length < 2 || stamp < edges[0]
+        || stamp >= edges[edges.length - 1]) return -1;
+    let low = 0, high = edges.length - 1;
+    while (high - low > 1) {
+      const mid = Math.floor((low + high) / 2);
+      if (stamp < edges[mid]) high = mid;
+      else low = mid;
+    }
+    return low;
+  }
   function quiltHit(event) {
     if (!quiltGeom.length || !plotDiv._fullLayout) return null;
     const t = eventTime(event);
@@ -2781,13 +2809,7 @@
       if (py < 0 || py > ya._length) continue;
       const lo = ya.range[0], hi = ya.range[1];
       const value = hi - (py / ya._length) * (hi - lo);
-      let column = -1;
-      for (let i = 0; i < geom.edgesMs.length - 1; i += 1) {
-        if (t >= geom.edgesMs[i] && t < geom.edgesMs[i + 1]) {
-          column = i;
-          break;
-        }
-      }
+      const column = stackedColumnAt(geom.edgesMs, t);
       if (column < 0) return null;
       let bottom = 0;
       for (const member of geom.members) {
@@ -2903,17 +2925,16 @@
     if (time === null) { hideQuiltFloater(); return; }
     const quilt = quiltHit(event);
     if (quilt) {
-      // The column's day is the day its closing stamp belongs to (a
-      // day-end stamp); one second back also holds at a midnight stamp.
-      const day = toNaive(quilt.geom.edgesMs[quilt.column + 1] - 1000)
-          .slice(0, 10);
+      const stamp = quilt.geom.endStamped
+          ? toNaive(quilt.geom.edgesMs[quilt.column + 1] - 1000).slice(0, 10)
+          : toNaive(quilt.geom.edgesMs[quilt.column]).replace('T', ' ');
       const color = curveColor[quilt.member.id] || '#37474f';
       placeFloater(event, color,
           '<b>' + escapeHtml(quilt.member.label) + '</b>: '
           + quilt.member.own[quilt.column]
           + (quilt.geom.units
              ? ' ' + escapeHtml(quilt.geom.units) : '')
-          + ' · ' + day);
+          + ' · ' + stamp);
       return;
     }
     const hit = laneHoverHit(event, time) || curveHoverHit(event, time);
@@ -2926,19 +2947,14 @@
   });
   plotDiv.addEventListener('mouseleave', hideQuiltFloater);
 
-  // A cut clicked inside a quilt column means "this day": resolve to
-  // the column's closing stamp, whose snap carries exactly that day.
-  // The plain latest-before-the-click lookup would land on the
-  // previous day's snap.
+  // End-stamped daily bins resolve to their closing snap. Current-state
+  // stacks retain the ordinary exact-time cut behavior.
   function snapToQuiltStamp(displayMs) {
     for (const geom of quiltGeom) {
+      if (!geom.endStamped) continue;
       const edges = geom.edgesMs;
-      if (displayMs < edges[0] || displayMs >= edges[edges.length - 1]) {
-        continue;
-      }
-      for (let i = 0; i < edges.length - 1; i += 1) {
-        if (displayMs < edges[i + 1]) return edges[i + 1];
-      }
+      const column = stackedColumnAt(edges, displayMs);
+      if (column >= 0) return edges[column + 1];
     }
     return null;
   }
@@ -3393,11 +3409,12 @@
         data = incoming;
         basisCorrection = data.end_ms - Date.parse(toNaive(data.end_ms));
         fullRange = [Date.parse(data.start), Date.parse(data.end)];
-        // The axis opens at the first stacked column's leading edge
-        // here too — the refresh must not undo render()'s opening and
-        // clip the first bin to half a day.
-        if (quiltGeom.length) {
-          const lead = Math.min.apply(null, quiltGeom.map(function (g) {
+        // Preserve the leading edge of an end-stamped daily stack.
+        const endStampedGeom = quiltGeom.filter(function (g) {
+          return g.endStamped;
+        });
+        if (endStampedGeom.length) {
+          const lead = Math.min.apply(null, endStampedGeom.map(function (g) {
             return g.edgesMs[0];
           }));
           if (lead < fullRange[0]) fullRange[0] = lead;

@@ -52,8 +52,11 @@ class ScopeProvider:
                      '_'-terminated prefixes within a mixed family),
                      'default_off_ids' (members that remain unticked
                      until the visitor explicitly enables them),
-                     'tall' (double panel height), and 'focus_closed'
-                     (section closed by default inside a focus view).
+                     'tall' (double panel height), 'panel_px' (explicit
+                     panel height), 'end_stamped' (stack values describe
+                     the interval ending at their stamp), and
+                     'focus_closed' (section closed by default inside a
+                     focus view).
     scope_curve_groups  Optional compact subset of curve_groups for the
                      unfocused scope report. When supplied, curves
                      outside these families stay on their dedicated
@@ -67,7 +70,8 @@ class ScopeProvider:
                      activity (the Time history's numbered-bar detail
                      panel), or None when the key resolves to nothing.
     component_cards  {component_name: builder(data, previous_data,
-                     ctx)} -> card dict including 'kind'. ctx carries
+                     ctx)} -> card dict including 'kind', or None to
+                     omit the component from this cut. ctx carries
                      'scope' and 'requested_at' (None outside a cut).
     card_template    Host template rendering this scope's provider
                      cards; the core stamps it on each built card.

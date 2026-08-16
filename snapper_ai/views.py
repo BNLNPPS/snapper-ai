@@ -569,7 +569,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v9:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v10:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,
@@ -1295,12 +1295,15 @@ def _cut_components(snap, previous_snap, scope, requested_at=None,
                 since_data = _dict(_dict(_dict(_dict(
                     (since_snap.state if since_snap else {})
                     or {}).get('components')).get(name)).get('data'))
-                card.update(builder(data, previous_data,
-                                    {'scope': scope,
-                                     'requested_at': requested_at,
-                                     'params': params or {},
-                                     'since': since,
-                                     'since_data': since_data}))
+                built = builder(data, previous_data,
+                                {'scope': scope,
+                                 'requested_at': requested_at,
+                                 'params': params or {},
+                                 'since': since,
+                                 'since_data': since_data})
+                if built is None:
+                    continue
+                card.update(built)
                 if provider.card_template:
                     card.setdefault('template', provider.card_template)
             else:
