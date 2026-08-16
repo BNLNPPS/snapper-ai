@@ -73,7 +73,8 @@ def prewarm_focus_series(scope, window_keys=()):
     all_groups = list(registry.resolve_curve_groups(provider))
     warmed = []
     for focus_def in registry.resolve_focus_views(provider):
-        if not focus_def.get('cache_series'):
+        if (not focus_def.get('cache_series')
+                or focus_def.get('prewarm_series') is False):
             continue
         focus_param = focus_def.get('param') or 'focus'
         components = tuple(focus_def.get('components') or ()) or None
