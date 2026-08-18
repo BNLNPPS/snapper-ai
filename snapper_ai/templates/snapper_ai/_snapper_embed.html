@@ -311,10 +311,20 @@ the context sets ``hide_key``.
       if (panel.stacked) {
         // A stacked family's members are the patches themselves; the
         // key states the shape, the full-page view names them.
+        // Overlay members are named individually with a line swatch.
+        const overlayIds = panel.overlay || [];
         html += '<span class="text-muted">'
-            + panel.ids.length + ' configurations stacked'
+            + (panel.ids.length - overlayIds.length)
+            + ' configurations stacked'
             + (panel.units ? ' (' + escapeHtml(panel.units) + ')' : '')
             + ' — click through for the full view</span>';
+        overlayIds.forEach(function (id) {
+          html += '<span><span style="display:inline-block;width:1.1em;'
+              + 'height:2px;vertical-align:middle;background:'
+              + ((panel.overlay_colors && panel.overlay_colors[id])
+                 || curveColor[id]) + '"></span> '
+              + escapeHtml(data.curves[id].label) + ' (line)</span>';
+        });
       } else {
       panel.ids.forEach(function (id) {
         html += '<span><span style="display:inline-block;width:1.1em;'
@@ -382,13 +392,17 @@ the context sets ``hide_key``.
         // Running-sum stack, the quilt form: manual consecutive
         // tonexty fills (never Plotly stackgroup, which degrades to
         // lines under react()); members forward-fill over the union
-        // time axis so uneven point sets stack truthfully.
+        // time axis so uneven point sets stack truthfully. Overlay
+        // members are exempt from the sum and drawn after the stack,
+        // as foreground lines.
+        const overlaySet = new Set(panel.overlay || []);
+        const stackIds = panel.ids.filter(id => !overlaySet.has(id));
         const axisTs = Array.from(new Set([].concat.apply([],
-            panel.ids.map(id => data.curves[id].points.map(p => p[0]))
+            stackIds.map(id => data.curves[id].points.map(p => p[0]))
         ))).sort();
         const running = axisTs.map(() => 0);
         let first = true;
-        panel.ids.forEach(function (id) {
+        stackIds.forEach(function (id) {
           const pts = data.curves[id].points;
           if (!pts.length) return;
           let j = 0, v = 0;
@@ -407,6 +421,21 @@ the context sets ``hide_key``.
             yaxis: axis, showlegend: false, hoverinfo: 'skip',
           });
           first = false;
+        });
+        (panel.overlay || []).forEach(function (id) {
+          const curve = data.curves[id];
+          if (!curve || !curve.points.length) return;
+          traces.push({
+            x: curve.points.map(p => p[0]),
+            y: curve.points.map(p => p[1]),
+            mode: 'lines',
+            line: {shape: 'hv', width: 2,
+                   color: (panel.overlay_colors
+                           && panel.overlay_colors[id])
+                          || curveColor[id]},
+            name: curve.label,
+            yaxis: axis, showlegend: false, hoverinfo: 'skip',
+          });
         });
       } else {
       panel.ids.forEach(function (id) {

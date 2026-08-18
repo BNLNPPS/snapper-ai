@@ -144,6 +144,14 @@ def embed_context(scope, start, end, families=(), lanes=False,
         assigned.update(ids)
         panels.append({'name': group.get('title') or name, 'ids': ids,
                        'stacked': bool(group.get('stacked')),
+                       # Overlay members ride the stacked panel as plain
+                       # foreground lines, exempt from the running sum: a
+                       # distinct quantity sharing the frame, not a patch.
+                       'overlay': [cid for cid in
+                                   (group.get('overlay_ids') or ())
+                                   if cid in ids],
+                       'overlay_colors': dict(
+                           group.get('overlay_colors') or {}),
                        'units': group.get('units') or ''})
 
     curves = {}
