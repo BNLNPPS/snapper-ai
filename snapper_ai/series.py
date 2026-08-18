@@ -11,6 +11,8 @@ painted over. Health lanes are core: any scope's health component
 follows the shared overall/checks shape.
 """
 
+from datetime import datetime, timedelta
+
 from django.utils.dateparse import parse_datetime
 
 from . import registry
@@ -215,6 +217,66 @@ def observatory_series(scope, start, end, curve_filter=None,
                 previous = value
                 rebased.append([time_iso, total])
             curve['points'] = rebased
+
+    # Counter-flow rendering: curves of a family declaring counter_flow
+    # are cumulative counters projected to per-interval deltas at
+    # render time — binning is a view decision, never baked in at
+    # collection. The bin comes from a round-duration ladder targeting
+    # ~48 columns of the window, edges on the window's ET-midnight
+    # grid; values are end-stamped (each covers the interval ending at
+    # its stamp) so the interval-true stacked rendering draws them
+    # as-is. A negative delta is a counter re-base and renders as a
+    # gap, never a negative flow; the trailing partial bin shows the
+    # current interval so far.
+    flow_groups = [group
+                   for group in registry.resolve_curve_groups(provider)
+                   if group.get('counter_flow')]
+    if flow_groups:
+        span_minutes = (end - start).total_seconds() / 60
+        for width in (15, 30, 60, 120, 240, 480, 1440, 10080):
+            if span_minutes / width <= 48:
+                break
+        step = timedelta(minutes=width)
+        window_start = datetime.fromisoformat(et_naive(start))
+        window_end = datetime.fromisoformat(et_naive(end))
+        anchor = window_start.replace(hour=0, minute=0, second=0,
+                                      microsecond=0)
+        first_edge = anchor
+        while first_edge <= window_start:
+            first_edge += step
+        for curve_id, curve in curves.items():
+            if not any(registry.group_matches(group, curve_id)
+                       for group in flow_groups):
+                continue
+            samples = [(datetime.fromisoformat(t), v)
+                       for t, v in curve['points']]
+            if not samples:
+                continue
+            flows = []
+            index = 0
+            current = None
+            baseline = None
+            edge = first_edge
+            while edge <= window_end:
+                while (index < len(samples)
+                       and samples[index][0] <= edge):
+                    current = samples[index][1]
+                    index += 1
+                if baseline is not None and current is not None:
+                    delta = current - baseline
+                    if delta >= 0:
+                        flows.append([edge.isoformat(), delta])
+                baseline = current
+                edge += step
+            if edge - step < window_end:
+                while index < len(samples):
+                    current = samples[index][1]
+                    index += 1
+                if baseline is not None and current is not None:
+                    delta = current - baseline
+                    if delta >= 0:
+                        flows.append([window_end.isoformat(), delta])
+            curve['points'] = flows
 
     # Episodic activity lanes from the host's canonical activity
     # record: discrete activity with identity, over a grey idle track.
