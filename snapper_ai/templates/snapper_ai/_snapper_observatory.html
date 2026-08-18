@@ -1357,14 +1357,15 @@
       }
       return {vals: vals, text: text};
     })();
-    // Tightness below the plot is content policy: when the stack ends
-    // in a stub, the labels are already inside the geometry and the
-    // bottom margin collapses; a trailing panel keeps label room only —
-    // a full text row beyond the tick labels, so the section below
-    // never occludes the x axis.
+    // Tightness below the plot is content policy, but the x-axis tick
+    // labels always draw in the figure's bottom margin: whenever any
+    // panel is drawn, the margin reserves the label height plus a
+    // full text row so the content below (cut card, closed stubs)
+    // never occludes the axis. Keying this on the LAST section was
+    // wrong — a stack ending in closed stubs still has labels under
+    // its bottom panel.
     const bottomPx = !DOCK_CONTROLS ? 45
-        : (sections.length && sections[sections.length - 1].panel
-           ? 58 : 8);
+        : (sections.some(function (s) { return s.panel; }) ? 58 : 8);
     const laneDomain = laneIds.length
         ? domainOf(0, lanePx) : [0.999, 1];
     if (laneIds.length) cutDomains.push(laneDomain);
