@@ -28,11 +28,8 @@ def _focus_curve_filter(all_groups, wanted):
                     if group.get('name') in wanted]
 
     def _filter(curve_id):
-        return any(
-            curve_id in (group.get('ids') or ())
-            or str(curve_id).startswith(
-                tuple(group.get('prefixes') or ()))
-            for group in cache_groups)
+        return any(registry.group_matches(group, curve_id)
+                   for group in cache_groups)
 
     return _filter
 
@@ -131,12 +128,9 @@ def _view_default_off_ids(member_ids, rendered_groups, curves):
     for group in (rendered_groups or ()):
         if not group.get('default_off'):
             continue
-        ids = group.get('ids') or ()
-        prefixes = tuple(group.get('prefixes') or ())
         out.update(
             curve_id for curve_id in curves
-            if curve_id in ids
-            or (prefixes and str(curve_id).startswith(prefixes)))
+            if registry.group_matches(group, curve_id))
     return sorted(out)
 
 
@@ -621,11 +615,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         # Campaign/Site curves do not fall through into a giant Other
         # family after their control rows are removed.
         def _in_scope(curve_id):
-            return any(
-                curve_id in (group.get('ids') or ())
-                or str(curve_id).startswith(
-                    tuple(group.get('prefixes') or ()))
-                for group in scope_groups)
+            return any(registry.group_matches(group, curve_id)
+                       for group in scope_groups)
 
         observatory['curves'] = {
             curve_id: curve
@@ -655,10 +646,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     group['start_closed'] = True
 
         def _in_focus(curve_id):
-            return any(
-                curve_id in (g.get('ids') or ())
-                or str(curve_id).startswith(tuple(g.get('prefixes') or ()))
-                for g in groups)
+            return any(registry.group_matches(g, curve_id)
+                       for g in groups)
 
         observatory['curves'] = {
             curve_id: curve

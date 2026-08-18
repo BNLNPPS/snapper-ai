@@ -1548,6 +1548,7 @@
     // member SET while every member keeps its own curve and color.
     return {name: g.name, title: g.title || g.name,
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
+            exclude_prefixes: g.exclude_prefixes || [],
             stacked: !!g.stacked, compact: !!g.compact,
             overlay_ids: g.overlay_ids || [],
             cumulative_stack: !!g.cumulative_stack,
@@ -1561,9 +1562,11 @@
             panel_px: g.panel_px || 0,
             tall: !!g.tall,
             match: function (id) {
-      return (g.prefixes || []).some(function (p) {
-        return id.indexOf(p) === 0; })
-          || (g.ids || []).indexOf(id) >= 0; }};
+      if ((g.ids || []).indexOf(id) >= 0) return true;
+      if (!(g.prefixes || []).some(function (p) {
+        return id.indexOf(p) === 0; })) return false;
+      return !(g.exclude_prefixes || []).some(function (p) {
+        return id.indexOf(p) === 0; }); }};
   });
   // The effective focus selector values (grouping lens, counting):
   // present even on the clean URL.

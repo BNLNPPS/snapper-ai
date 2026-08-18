@@ -190,14 +190,14 @@ def observatory_series(scope, start, end, curve_filter=None,
             continue
         if flag is True:
             # The whole family is window-relative.
-            prefixes = tuple(group.get('prefixes') or ())
-            ids = set(group.get('ids') or ())
-        else:
-            # An explicit selection within a mixed family: entries
-            # ending in '_' are prefixes, the rest exact curve ids.
-            entries = [flag] if isinstance(flag, str) else list(flag)
-            prefixes = tuple(e for e in entries if e.endswith('_'))
-            ids = {e for e in entries if not e.endswith('_')}
+            matchers.append(
+                lambda cid, g=group: registry.group_matches(g, cid))
+            continue
+        # An explicit selection within a mixed family: entries
+        # ending in '_' are prefixes, the rest exact curve ids.
+        entries = [flag] if isinstance(flag, str) else list(flag)
+        prefixes = tuple(e for e in entries if e.endswith('_'))
+        ids = {e for e in entries if not e.endswith('_')}
         matchers.append(
             lambda cid, p=prefixes, i=ids:
                 cid in i or bool(p and cid.startswith(p)))

@@ -12,6 +12,8 @@ list, so a curve wears the same color here and on the report page.
 import logging
 from datetime import timedelta
 
+from . import registry
+
 logger = logging.getLogger(__name__)
 
 # Bounded read: the series assembly loads every snap in the window, so
@@ -51,11 +53,8 @@ def _downsample(points, cap=MAX_POINTS_PER_CURVE):
 
 
 def _family_matcher(group):
-    prefixes = tuple(group.get('prefixes') or ())
-    ids = set(group.get('ids') or ())
-
     def match(curve_id):
-        return curve_id in ids or curve_id.startswith(prefixes)
+        return registry.group_matches(group, curve_id)
 
     return match
 

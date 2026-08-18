@@ -202,6 +202,22 @@ def resolve_focus_views(provider):
     return views
 
 
+def group_matches(group, curve_id):
+    """True when the curve belongs to this family: an exact id, or a
+    declared prefix hit not claimed away by an exclude prefix. Exclude
+    prefixes exist for prefix-colliding sibling families — one entity
+    name extending another (SITE vs SITE_test) — where a bare prefix
+    would swallow the longer sibling's curves."""
+    cid = str(curve_id)
+    if cid in (group.get('ids') or ()):
+        return True
+    prefixes = tuple(group.get('prefixes') or ())
+    if not (prefixes and cid.startswith(prefixes)):
+        return False
+    excludes = tuple(group.get('exclude_prefixes') or ())
+    return not (excludes and cid.startswith(excludes))
+
+
 def register_hooks(**hooks):
     """Register host-wide service hooks; unknown names are an error."""
     for name, value in hooks.items():
