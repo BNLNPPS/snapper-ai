@@ -1359,10 +1359,12 @@
     })();
     // Tightness below the plot is content policy: when the stack ends
     // in a stub, the labels are already inside the geometry and the
-    // bottom margin collapses; a trailing panel keeps label room only.
+    // bottom margin collapses; a trailing panel keeps label room only —
+    // a full text row beyond the tick labels, so the section below
+    // never occludes the x axis.
     const bottomPx = !DOCK_CONTROLS ? 45
         : (sections.length && sections[sections.length - 1].panel
-           ? 38 : 8);
+           ? 58 : 8);
     const laneDomain = laneIds.length
         ? domainOf(0, lanePx) : [0.999, 1];
     if (laneIds.length) cutDomains.push(laneDomain);
