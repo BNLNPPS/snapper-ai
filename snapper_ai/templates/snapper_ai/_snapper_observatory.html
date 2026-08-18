@@ -1226,12 +1226,16 @@
     const topLabelsPx = (firstPanelIdx >= 0
                          && firstPanelIdx !== lastPanelIdx)
         ? labelBandPx : 0;
-    const stubAfterLabels = DOCK_CONTROLS
-        && lastPanelIdx >= 0 && lastPanelIdx + 1 < sections.length;
+    // The last panel's x labels draw in a band directly beneath it;
+    // that band is cleared exactly once, before WHATEVER follows —
+    // the section's own docked cut detail or the next section.
+    const bandAfterLast = DOCK_CONTROLS && lastPanelIdx >= 0
+        && (sections[lastPanelIdx].detailEl
+            || lastPanelIdx + 1 < sections.length);
     // Height is content: hidden lanes' room is truly reclaimed (the
     // small floor only guards the nothing-shown case).
     const innerPx = Math.max(
-        lanePx + laneGapPx + (stubAfterLabels ? labelBandPx : 0)
+        lanePx + laneGapPx + (bandAfterLast ? labelBandPx : 0)
         + topLabelsPx
         + sections.reduce(function (px, s) {
           return px + s.rowPx + (s.panel ? s.panel.px : 0)
@@ -1357,15 +1361,13 @@
       }
       return {vals: vals, text: text};
     })();
-    // Tightness below the plot is content policy, but the x-axis tick
-    // labels always draw in the figure's bottom margin: whenever any
-    // panel is drawn, the margin reserves the label height plus a
-    // full text row so the content below (cut card, closed stubs)
-    // never occludes the axis. Keying this on the LAST section was
-    // wrong — a stack ending in closed stubs still has labels under
-    // its bottom panel.
+    // Tightness below the plot is content policy: the last panel's
+    // label band is reserved inside the geometry (bandAfterLast)
+    // whenever content follows the labels, so the figure margin needs
+    // label room only when the stack ends at the last panel with
+    // nothing after it.
     const bottomPx = !DOCK_CONTROLS ? 45
-        : (sections.some(function (s) { return s.panel; }) ? 58 : 8);
+        : (lastPanelIdx >= 0 && !bandAfterLast ? 38 : 8);
     const laneDomain = laneIds.length
         ? domainOf(0, lanePx) : [0.999, 1];
     if (laneIds.length) cutDomains.push(laneDomain);
@@ -1423,11 +1425,6 @@
     // its label, state the color mapping louder than any key could.
     let panelTopPx = lanePx + laneGapPx;
     sections.forEach(function (s, i) {
-      // A stub directly after the last panel clears the tick-label
-      // band that panel's x-axis draws beneath itself.
-      if (stubAfterLabels && i === lastPanelIdx + 1) {
-        panelTopPx += labelBandPx;
-      }
       const topPx = panelTopPx + s.rowPx;
       // The docked row's own top, for positioning after the plot
       // renders: inside the slot it reserved, above its panel.
@@ -1446,6 +1443,11 @@
       // next section.
       if (i === firstPanelIdx && topLabelsPx) {
         panelTopPx += topLabelsPx;
+      }
+      // The last panel's label band is cleared before its own docked
+      // detail and before any following section.
+      if (i === lastPanelIdx && bandAfterLast) {
+        panelTopPx += labelBandPx;
       }
       if (s.detailEl) {
         s.detailTopPx = panelTopPx + 8;
