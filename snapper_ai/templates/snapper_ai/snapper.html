@@ -582,6 +582,9 @@
                 updateCountdown();
             });
     };
+    // The observatory header's Refresh button fires the same in-place
+    // refresh the 60 s ticker uses.
+    window.snapperSoftRefresh = softRefresh;
     const tick = () => {
         if (Date.now() < nextAt || document.hidden) return;
         if (rest || window.snapperObservatory) {

@@ -150,8 +150,6 @@ def embed_context(scope, start, end, families=(), lanes=False,
                        'overlay': [cid for cid in
                                    (group.get('overlay_ids') or ())
                                    if cid in ids],
-                       'overlay_colors': dict(
-                           group.get('overlay_colors') or {}),
                        'units': group.get('units') or ''})
 
     curves = {}

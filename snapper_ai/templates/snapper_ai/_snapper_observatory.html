@@ -90,6 +90,8 @@
       {% endfor %}
     </span>
     <span class="text-muted"><span id="snapper-snap-count">{{ observatory.snap_count }}</span> {{ observatory_count_label|default:'snaps' }}</span>
+    <button type="button" class="btn btn-sm btn-secondary" style="margin-left:1cm"
+            onclick="if (window.snapperSoftRefresh) window.snapperSoftRefresh()">Refresh</button>
     {% if observatory_episode_title %}
     <span class="fw-semibold">{{ observatory_episode_title }}</span>
     {% endif %}
@@ -808,7 +810,7 @@
     const stackedDefs = {};
     curveIds.forEach(function (curveId) {
       const def = groupDef(curveId);
-      if (def && def.stacked) {
+      if (def && def.stacked && !isOverlayCurve(curveId)) {
         (stackedFamilies[def.name] = stackedFamilies[def.name] || [])
             .push(curveId);
         stackedDefs[def.name] = def;
@@ -936,7 +938,7 @@
     // never masquerades as the identity of what the eye sees.
     const flatIds = curveIds.filter(function (id) {
       const def = groupDef(id);
-      return !(def && def.stacked);
+      return !(def && def.stacked) || isOverlayCurve(id);
     }).sort(function (a, b) {
       const aTotal = a.indexOf('__total') >= 0 ? 0 : 1;
       const bTotal = b.indexOf('__total') >= 0 ? 0 : 1;
@@ -1545,6 +1547,7 @@
     return {name: g.name, title: g.title || g.name,
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             stacked: !!g.stacked, compact: !!g.compact,
+            overlay_ids: g.overlay_ids || [],
             cumulative_stack: !!g.cumulative_stack,
             end_stamped: !!g.end_stamped,
             default_off: !!g.default_off, units: g.units || '',
@@ -1569,6 +1572,14 @@
       if (group.match(curveId)) return group;
     }
     return null;
+  }
+  // An overlay member of a stacked family is a distinct quantity
+  // sharing the frame: exempt from the running sum, drawn as an
+  // ordinary foreground step line.
+  function isOverlayCurve(curveId) {
+    const def = groupDef(curveId);
+    return !!(def && def.stacked
+              && (def.overlay_ids || []).indexOf(curveId) >= 0);
   }
   function isDefaultOffCurve(curveId, def) {
     return !!(def && def.default_off_ids.indexOf(curveId) >= 0);
@@ -2933,13 +2944,16 @@
     return Number(trace.y[found]);
   }
 
-  function curveHoverHit(event, time) {
+  function curveHoverHit(event, time, overlayOnly) {
     if (!plotDiv._fullLayout) return null;
     const box = plotDiv.getBoundingClientRect();
     let best = null;
     curveIds.forEach(function (curveId) {
       const def = groupDef(curveId);
-      if ((def && def.stacked) || curveAxis[curveId] === 'hidden') return;
+      const overlay = isOverlayCurve(curveId);
+      if (overlayOnly && !overlay) return;
+      if ((def && def.stacked && !overlay)
+          || curveAxis[curveId] === 'hidden') return;
       const axis = curveAxis[curveId] || 'y';
       const axisKey = axis === 'y' ? 'yaxis' : 'yaxis' + axis.slice(1);
       const ya = plotDiv._fullLayout[axisKey];
@@ -2961,6 +2975,9 @@
         };
       }
     });
+    // Overlay proximity is a claim over the quilt band beneath the
+    // line, so it holds only when the pointer is actually close.
+    if (overlayOnly && best && best.distance > 8) return null;
     return best;
   }
 
@@ -2980,6 +2997,17 @@
     if (event.buttons) { hideQuiltFloater(); return; }
     const time = eventTime(event);
     if (time === null) { hideQuiltFloater(); return; }
+    // The overlay line draws in the foreground, so near the line it
+    // owns the hover even inside a quilt band.
+    const overlayHit = curveHoverHit(event, time, true);
+    if (overlayHit) {
+      placeFloater(event, overlayHit.color,
+          '<b>' + escapeHtml(overlayHit.label) + '</b>: '
+          + escapeHtml(String(overlayHit.value))
+          + (overlayHit.units ? ' ' + escapeHtml(overlayHit.units) : '')
+          + ' · ' + toNaive(time).replace('T', ' '));
+      return;
+    }
     const quilt = quiltHit(event);
     if (quilt) {
       const stamp = quilt.geom.endStamped

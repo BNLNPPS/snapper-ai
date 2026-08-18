@@ -157,10 +157,12 @@ the context sets ``hide_key``.
       const py = event.clientY - box.top - ya._offset;
       if (py < 0 || py > ya._length) return;
       if (panel.stacked) {
+        const overlaySet = new Set(panel.overlay || []);
         const pointerValue = ya.range[1]
             - (py / ya._length) * (ya.range[1] - ya.range[0]);
         let cumulative = 0;
         panel.ids.some(function (id) {
+          if (overlaySet.has(id)) return false;
           const raw = stepValue(data.curves[id].points || [], time);
           const value = raw === null ? 0 : Number(raw);
           if (!Number.isFinite(value) || value <= 0) return false;
@@ -172,6 +174,19 @@ the context sets ``hide_key``.
                     color: curveColor[id], distance: 0};
           }
           return hit;
+        });
+        // The overlay line draws in the foreground: close to it, the
+        // line owns the hover even inside a band.
+        (panel.overlay || []).forEach(function (id) {
+          const value = stepValue(data.curves[id].points || [], time);
+          if (value === null) return;
+          const valuePy = ya._length
+              * (ya.range[1] - value) / (ya.range[1] - ya.range[0]);
+          const distance = Math.abs(py - valuePy);
+          if (distance <= 8) {
+            best = {label: data.curves[id].label, value: value,
+                    color: curveColor[id], distance: distance};
+          }
         });
         return;
       }
@@ -321,8 +336,7 @@ the context sets ``hide_key``.
         overlayIds.forEach(function (id) {
           html += '<span><span style="display:inline-block;width:1.1em;'
               + 'height:2px;vertical-align:middle;background:'
-              + ((panel.overlay_colors && panel.overlay_colors[id])
-                 || curveColor[id]) + '"></span> '
+              + curveColor[id] + '"></span> '
               + escapeHtml(data.curves[id].label) + ' (line)</span>';
         });
       } else {
@@ -429,10 +443,7 @@ the context sets ``hide_key``.
             x: curve.points.map(p => p[0]),
             y: curve.points.map(p => p[1]),
             mode: 'lines',
-            line: {shape: 'hv', width: 2,
-                   color: (panel.overlay_colors
-                           && panel.overlay_colors[id])
-                          || curveColor[id]},
+            line: {shape: 'hv', width: 2, color: curveColor[id]},
             name: curve.label,
             yaxis: axis, showlegend: false, hoverinfo: 'skip',
           });
