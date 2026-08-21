@@ -31,6 +31,11 @@ class ScopeProvider:
     scope            URL identity of the scope (e.g. 'epicprod').
     label            Human label shown in the scope switcher.
     curve_values     (state_dict) -> {curve_id: number} for one snap.
+    event_values     (state_dict) -> {curve_id: [ISO stamps]} discrete
+                     events recorded in one snap, each at its own event
+                     time. Families declaring 'event_flow' bin these at
+                     render (series.py); boundary snaps contribute no
+                     events (their events precede the window).
     series_transform (series_dict) -> series_dict after the one series
                      walk, for host-side folding derived from those curves.
     lane_entries     (state_dict) -> {lane_id: entry} extra continuous
@@ -84,6 +89,7 @@ class ScopeProvider:
     scope: str
     label: str
     curve_values: object = None
+    event_values: object = None
     series_transform: object = None
     lane_entries: object = None
     curve_label: object = None

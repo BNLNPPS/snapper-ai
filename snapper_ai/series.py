@@ -17,13 +17,19 @@ from django.utils.dateparse import parse_datetime
 
 from . import registry
 from .models import SystemSnap
-from .presentation import component_data, et_naive
+from .presentation import ET_ZONE, component_data, et_naive
 
 # The observatory plot draws every snap point; windows are bounded so
 # assembly stays a bounded read (12-13 snaps/hour at current cadence).
 WINDOW_HOURS = {'6h': 6, '24h': 24, '48h': 48, '7d': 168, '14d': 336,
                 '30d': 720}
 DEFAULT_WINDOW = '24h'
+
+# Event-flow curves are served as sparse bins at the native rung —
+# the 5-minute capture cadence, the recorded quantum. Display binning
+# is the client's: any coarser rung is exact sums of native bins, so
+# the plot rebins as the view zooms with no further server work.
+EVENT_FLOW_NATIVE_MINUTES = 5
 
 
 def _iso(value):
@@ -147,6 +153,16 @@ def observatory_series(scope, start, end, curve_filter=None,
             return provider.curve_values(state) or {}
         return {}
 
+    def state_events(state):
+        if provider is not None and provider.event_values is not None:
+            return provider.event_values(state) or {}
+        return {}
+
+    # Discrete events accumulated across the walk, binned after it by
+    # each event's own stamp (event_flow families). The boundary snap
+    # contributes none: its events precede the window.
+    events = {}
+
     def state_lanes(state):
         entries = _lane_entries(scope, state)
         if provider is not None and provider.lane_entries is not None:
@@ -164,6 +180,10 @@ def observatory_series(scope, start, end, curve_filter=None,
         time_naive = et_naive(row['snap_time'])
         for curve_id, value in state_curves(row['state']).items():
             add_curve_point(curve_id, time_naive, value)
+        for curve_id, stamps in state_events(row['state']).items():
+            if curve_filter is not None and not curve_filter(curve_id):
+                continue
+            events.setdefault(curve_id, []).extend(stamps)
         for lane_id, entry in state_lanes(row['state']).items():
             add_lane_point(lane_id, time_naive, entry)
         if row['recovered_gap_started_at'] is not None:
@@ -277,6 +297,45 @@ def observatory_series(scope, start, end, curve_filter=None,
                     if delta >= 0:
                         flows.append([window_end.isoformat(), delta])
             curve['points'] = flows
+
+    # Event-flow rendering: families declaring event_flow plot the
+    # recorded events themselves — the exact occurrence record (one
+    # failed job = one event at its end time). The server bins events
+    # once, by each event's own stamp, into sparse bins at the native
+    # rung (EVENT_FLOW_NATIVE_MINUTES; a bin covers the interval
+    # ending at its ET-midnight-grid-aligned stamp; zero bins are
+    # omitted). Display binning belongs to the client: every coarser
+    # rung tiles exactly from these, so the plot re-sums as the view
+    # zooms with no further server work.
+    event_groups = [group
+                    for group in registry.resolve_curve_groups(provider)
+                    if group.get('event_flow')]
+    if event_groups and events:
+        step = timedelta(minutes=EVENT_FLOW_NATIVE_MINUTES)
+        window_start_et = datetime.fromisoformat(et_naive(start))
+        window_end_et = datetime.fromisoformat(et_naive(end))
+        anchor = window_start_et.replace(hour=0, minute=0, second=0,
+                                         microsecond=0)
+        for curve_id, stamps in events.items():
+            if not any(registry.group_matches(group, curve_id)
+                       for group in event_groups):
+                continue
+            counts = {}
+            for stamp in stamps:
+                when = datetime.fromisoformat(
+                    str(stamp).replace('Z', '+00:00')).astimezone(ET_ZONE)
+                if when <= window_start_et or when > window_end_et:
+                    continue
+                offset = when - anchor
+                bins = -(-offset // step)  # ceil: an edge owns its stamp
+                edge = anchor + bins * step
+                counts[edge] = (counts.get(edge) or 0) + 1
+            curve = curves.setdefault(
+                curve_id, {'label': _curve_label(provider, curve_id),
+                           'points': []})
+            curve['points'] = [
+                [edge.isoformat(timespec='seconds'), counts[edge]]
+                for edge in sorted(counts)]
 
     # Episodic activity lanes from the host's canonical activity
     # record: discrete activity with identity, over a grey idle track.

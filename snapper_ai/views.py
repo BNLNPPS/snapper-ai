@@ -38,7 +38,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
     token = sha256(identity.encode()).hexdigest()[:16]
-    return (f'snapper_series:v11:{scope}:focus:'
+    return (f'snapper_series:v12:{scope}:focus:'
             f'{focus_param}:{token}:{cache_span}')
 
 
@@ -434,6 +434,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 focus_def = candidate
                 break
     focus_selected = []
+    open_groups = []
     if focus_def:
         raw_value = request.GET.get(focus_def.get('param') or 'focus')
         raw = (raw_value or '').strip()
@@ -444,9 +445,24 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 focus_selected = [o.get('value') for o in options
                                   if o.get('value')]
             else:
-                focus_selected = [v for v in
-                                  (s.strip() for s in raw.split(','))
-                                  if v in by_value]
+                # An off-list value may be served by the view's
+                # open_option hook: (value) -> {'option': {...},
+                # 'groups': (...)} or None. The synthesized option and
+                # its family groups exist for this request only — the
+                # open-parameter path for views whose value space is
+                # unbounded (e.g. any task id reached by link).
+                open_option = focus_def.get('open_option')
+                focus_selected = []
+                for value in (s.strip() for s in raw.split(',')):
+                    if value in by_value:
+                        focus_selected.append(value)
+                    elif value and open_option is not None:
+                        synthesized = open_option(value)
+                        if synthesized:
+                            by_value[value] = synthesized.get('option') or {}
+                            open_groups.extend(
+                                synthesized.get('groups') or ())
+                            focus_selected.append(value)
             # Only the clean page (no parameter at all) lands on the
             # default. An explicitly empty parameter is all off — a
             # valid state, as in every Snapper tick row — and stays
@@ -527,8 +543,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             window_key = 'custom'
     # Resolve the groups before the series cache: a provider may opt a
     # focus into a focus-sized product, whose curve predicate comes
-    # from the exact families selected for this request.
-    all_groups = list(registry.resolve_curve_groups(provider))
+    # from the exact families selected for this request. Groups
+    # synthesized by an open_option hook join for this request only.
+    all_groups = list(registry.resolve_curve_groups(provider)) + open_groups
 
     # The series is a cached product where the host provides the
     # mechanism: named windows and the focus default span key stably

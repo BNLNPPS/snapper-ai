@@ -857,9 +857,17 @@
           || !members.length) {
         return;
       }
+      // Event-flow families draw the display-rung rebin of their
+      // sparse native bins; everything else draws its points as
+      // served.
+      const sourcePoints = {};
+      members.forEach(function (id) {
+        sourcePoints[id] = stackedDefs[familyName].event_flow
+            ? efDisplayPoints(id) : data.curves[id].points;
+      });
       const xSeen = {};
       members.forEach(function (id) {
-        data.curves[id].points.forEach(function (p) { xSeen[p[0]] = 1; });
+        sourcePoints[id].forEach(function (p) { xSeen[p[0]] = 1; });
       });
       const unionX = Object.keys(xSeen).sort();
       // Every member can be empty — a counter family whose window
@@ -904,7 +912,7 @@
                     units: (stackedDefs[familyName] || {}).units || ''};
       members.forEach(function (id, memberIndex) {
         const values = {};
-        data.curves[id].points.forEach(function (p) {
+        sourcePoints[id].forEach(function (p) {
           values[p[0]] = +p[1] || 0;
         });
         const tops = [], own = [];
@@ -996,6 +1004,10 @@
     basisCorrection = data.end_ms - Date.parse(toNaive(data.end_ms));
     curveIds = Object.keys(data.curves).sort();
     fullRange = [Date.parse(data.start), Date.parse(data.end)];
+    // Event-flow display state follows the rendered view: the window
+    // rung on a full view, a finer rung over a padded extent when
+    // zoomed in (efMaybeRebuild re-enters here on rung crossings).
+    efSetState(viewTrue || null);
     curveColor = {};
     // Colors are dealt per family, so a family's members take the
     // most distinct colors available instead of sharing one global
@@ -1563,7 +1575,9 @@
             overlay_ids: g.overlay_ids || [],
             cumulative_stack: !!g.cumulative_stack,
             end_stamped: !!g.end_stamped,
+            event_flow: !!g.event_flow,
             default_off: !!g.default_off, units: g.units || '',
+            member_ticks: g.member_ticks !== false,
             default_off_ids: g.default_off_ids || [],
             order: g.order || [],
             window_relative: g.window_relative || false,
@@ -1595,6 +1609,96 @@
     const def = groupDef(curveId);
     return !!(def && def.stacked
               && (def.overlay_ids || []).indexOf(curveId) >= 0);
+  }
+
+  // Event-flow families arrive as SPARSE NATIVE bins — the 5-minute
+  // capture quantum, edges on the ET grid — and display binning is
+  // chosen here: the smallest ladder rung keeping the plotted extent
+  // at or under EF_MAX_COLUMNS columns. Every rung is an exact sum of
+  // native bins, so zooming re-bins in place from data already loaded
+  // and never refetches. The dense (zero-filled) grid spans the built
+  // extent: the whole window at the window's rung, or the zoomed view
+  // padded by half a span each side at a finer rung, rebuilt when the
+  // view leaves it.
+  const EF_MAX_COLUMNS = 720;
+  const EF_RUNGS_MIN = [5, 10, 15, 20, 30, 60];
+  let efRungMs = 0;
+  let efExtent = [0, 0];
+  let efSettleTimer = null;
+  function efHasFamilies() {
+    return GROUPS.some(function (g) { return g.event_flow; });
+  }
+  function efRungForSpan(spanMs) {
+    for (const rung of EF_RUNGS_MIN) {
+      if (spanMs / (rung * 60000) <= EF_MAX_COLUMNS) return rung * 60000;
+    }
+    return EF_RUNGS_MIN[EF_RUNGS_MIN.length - 1] * 60000;
+  }
+  function efSetState(viewTrue) {
+    const windowRange = [Date.parse(data.start), Date.parse(data.end)];
+    const windowRung = efRungForSpan(windowRange[1] - windowRange[0]);
+    const view = viewTrue || windowRange;
+    const rung = efRungForSpan(view[1] - view[0]);
+    if (rung >= windowRung) {
+      efRungMs = windowRung;
+      efExtent = windowRange;
+      return;
+    }
+    const pad = Math.round((view[1] - view[0]) / 2);
+    efRungMs = rung;
+    efExtent = [Math.max(windowRange[0], view[0] - pad),
+                Math.min(windowRange[1], view[1] + pad)];
+  }
+  function efDisplayPoints(id) {
+    // Dense rung bins over the built extent from the curve's sparse
+    // native bins. Interval-true: a bin covers (edge - rung, edge],
+    // and a native bin ending exactly on a rung edge belongs to it.
+    // Grid edges align to the ET wall clock at the extent start.
+    const rungMin = efRungMs / 60000;
+    const startWall = toNaive(efExtent[0]);
+    const wallMin = Number(startWall.slice(11, 13)) * 60
+        + Number(startWall.slice(14, 16));
+    const firstEdge = efExtent[0]
+        + ((((rungMin - (wallMin % rungMin)) % rungMin) || rungMin)
+           * 60000);
+    const bins = Math.max(
+        1, Math.ceil((efExtent[1] - firstEdge) / efRungMs) + 1);
+    const counts = new Array(bins).fill(0);
+    (data.curves[id].points || []).forEach(function (p) {
+      const ms = Date.parse(p[0]);
+      if (ms <= efExtent[0] || ms > efExtent[1]) return;
+      let index = Math.ceil((ms - firstEdge) / efRungMs);
+      if (index < 0) index = 0;
+      if (index >= bins) return;
+      counts[index] += (+p[1] || 0);
+    });
+    const points = [];
+    for (let i = 0; i < bins; i++) {
+      points.push([new Date(firstEdge + i * efRungMs).toISOString(),
+                   counts[i]]);
+    }
+    return points;
+  }
+  function efMaybeRebuild() {
+    if (!efHasFamilies() || !plotDiv._fullLayout
+        || !plotDiv._fullLayout.xaxis) {
+      return;
+    }
+    const zoomed = viewIsZoomed();
+    const view = zoomed ? currentRange()
+        : [Date.parse(data.start), Date.parse(data.end)];
+    const rung = efRungForSpan(view[1] - view[0]);
+    if (rung === efRungMs
+        && view[0] >= efExtent[0] && view[1] <= efExtent[1]) {
+      return;
+    }
+    efSetState(zoomed ? view : null);
+    suppressPush = true;
+    render(zoomed ? view : null);
+    setTimeout(function () {
+      lastRange = currentRange();
+      suppressPush = false;
+    }, 100);
   }
   function isDefaultOffCurve(curveId, def) {
     return !!(def && def.default_off_ids.indexOf(curveId) >= 0);
@@ -1843,12 +1947,16 @@
           : '';
       // A docked row is its panel's header: display title (never the
       // qualifier-carrying registry name) plus the unit.
+      // member_ticks:false families carry no member boxes and no
+      // all/none — identification lives in hover and the cut detail.
+      const noTicks = def.member_ticks === false;
       const title = (def.title || name)
           + (DOCK_CONTROLS && def.units ? ' — ' + def.units : '');
       head.innerHTML = arrow + '<strong>' + escapeHtml(title)
-          + (closed ? '</strong>'
-                    : ':</strong> <a href="#" data-group-on>all</a>/'
-                      + '<a href="#" data-group-off>none</a>');
+          + (closed || noTicks
+             ? '</strong>'
+             : ':</strong> <a href="#" data-group-on>all</a>/'
+               + '<a href="#" data-group-off>none</a>');
       if (closable) {
         head.querySelector('[data-fam-arrow]').addEventListener(
             'click', function (e) {
@@ -1863,7 +1971,7 @@
               }, 100);
             });
       }
-      if (closed) {
+      if (closed || noTicks) {
         row.appendChild(head);
         attachRow(name, row);
         return;
@@ -3215,6 +3323,11 @@
       rangeView.style.width = (width * 100).toFixed(2) + '%';
     }
     updateClearAll();
+    // Event-flow granularity follows the settled view: crossing a
+    // ladder rung (or panning off the built extent) rebuilds the
+    // plot from the already-loaded native bins — no refetch.
+    clearTimeout(efSettleTimer);
+    efSettleTimer = setTimeout(efMaybeRebuild, 350);
   }
   function setRange(range) {
     // Clamp to the window: shifting or dragging never scrolls into
