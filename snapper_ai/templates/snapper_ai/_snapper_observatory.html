@@ -862,6 +862,13 @@
         data.curves[id].points.forEach(function (p) { xSeen[p[0]] = 1; });
       });
       const unionX = Object.keys(xSeen).sort();
+      // Every member can be empty — a counter family whose window
+      // holds a single snap projects to no flow points at all — and
+      // the lead-edge arithmetic below on an empty axis is NaN, which
+      // throws in date formatting. No points, no panel content.
+      if (!unionX.length) {
+        return;
+      }
       const endStamped = !!stackedDefs[familyName].end_stamped;
       const stampsMs = unionX.map(function (x) { return Date.parse(x); });
       const intervals = stampsMs.slice(1).map(function (stamp, i) {
