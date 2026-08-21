@@ -352,7 +352,13 @@ def register_component(
         return _result(component)
     if component_schema_version < component.component_schema_version:
         raise InvalidRegistration("component_schema_version cannot decrease")
-    if component.data is not None:
+    if component.data is not None and (
+            component_schema_version == component.component_schema_version):
+        # A same-version registration change must keep the stored data
+        # valid. A schema-version increase declares a breaking shape
+        # change: the stored old-shape data remains a valid historical
+        # fact, and the publication that follows validates the new
+        # shape against this registration.
         _validate_data(component.data, normalized)
 
     component.registration = normalized
