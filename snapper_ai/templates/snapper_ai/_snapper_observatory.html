@@ -1686,6 +1686,18 @@
     }
     return points;
   }
+  function efBinEnd(ms) {
+    // The display-grid bin end owning an instant: bins are
+    // interval-true (edge - rung, edge], edges on the ET wall-clock
+    // grid, so an instant exactly on an edge belongs to that edge.
+    const rungMin = efRungMs / 60000;
+    const wall = toNaive(ms);
+    const wallSec = (Number(wall.slice(11, 13)) * 60
+                     + Number(wall.slice(14, 16))) * 60
+                    + Number(wall.slice(17, 19));
+    const up = rungMin * 60 - (wallSec % (rungMin * 60));
+    return up === rungMin * 60 ? ms : ms + up * 1000;
+  }
   function efMaybeRebuild() {
     if (!efHasFamilies() || !plotDiv._fullLayout
         || !plotDiv._fullLayout.xaxis) {
@@ -2824,6 +2836,29 @@
         ? currentRange() : null;
     const sinceIso = new Date(
         axisRange ? axisRange[0] : Date.parse(data.start)).toISOString();
+    // Event-flow cuts carry the detail window: the clicked display
+    // bin when it is an hour or wider, else the hour centered on the
+    // cut — the one-hour floor, clamped inside the loaded window.
+    let efWindowQuery = '';
+    if (efHasFamilies() && efRungMs) {
+      const HOUR_MS = 3600000;
+      let detailFrom, detailTo;
+      if (efRungMs >= HOUR_MS) {
+        detailTo = efBinEnd(confirmedCutTrueMs);
+        detailFrom = detailTo - efRungMs;
+      } else {
+        detailFrom = confirmedCutTrueMs - HOUR_MS / 2;
+        detailTo = confirmedCutTrueMs + HOUR_MS / 2;
+      }
+      const endMs = Date.parse(data.end);
+      if (detailTo > endMs) {
+        detailFrom -= (detailTo - endMs);
+        detailTo = endMs;
+      }
+      efWindowQuery =
+          '&from=' + encodeURIComponent(new Date(detailFrom).toISOString())
+          + '&to=' + encodeURIComponent(new Date(detailTo).toISOString());
+    }
     // Average-time queries make a card fetch materially slower than a
     // range gesture. Cancel the previous request so an older interval
     // cannot arrive late and overwrite the current one.
@@ -2841,7 +2876,8 @@
           + (data.queue_members && data.queue_members.length
              ? '&queues=' + encodeURIComponent(data.queue_members.join(','))
              : '')
-          + '&since=' + encodeURIComponent(sinceIso),
+          + '&since=' + encodeURIComponent(sinceIso)
+          + efWindowQuery,
           {signal: controller.signal})
       .then(function (r) {
         if (!r.ok) {
