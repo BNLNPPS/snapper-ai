@@ -915,6 +915,7 @@
       const running = unionX.map(function () { return 0; });
       const geom = {axisKey: null, edgesMs: edgesMs, members: [],
                     endStamped: endStamped,
+                    eventFlow: !!stackedDefs[familyName].event_flow,
                     daily: endStamped && cadenceMs >= 43200000,
                     units: (stackedDefs[familyName] || {}).units || ''};
       members.forEach(function (id, memberIndex) {
@@ -1014,7 +1015,9 @@
     // Event-flow display state follows the rendered view: the window
     // rung on a full view, a finer rung over a padded extent when
     // zoomed in (efMaybeRebuild re-enters here on rung crossings).
+    // The y fits reapply after every rebuild.
     efSetState(viewTrue || null);
+    efFitApplied = {};
     curveColor = {};
     // Colors are dealt per family, so a family's members take the
     // most distinct colors available instead of sharing one global
@@ -1685,6 +1688,44 @@
                    counts[i]]);
     }
     return points;
+  }
+  let efFitApplied = {};
+  function efFitY() {
+    // Fit each event-flow panel's y scale to the data visible in the
+    // current view: the y axes are fixedrange (x-only zoom), so an
+    // x-zoom away from a storm would otherwise stay squashed under
+    // the storm's out-of-view peak.
+    if (!efHasFamilies() || !plotDiv._fullLayout
+        || !plotDiv._fullLayout.xaxis) {
+      return;
+    }
+    const view = viewIsZoomed() ? currentRange()
+        : [Date.parse(data.start), Date.parse(data.end)];
+    const update = {};
+    quiltGeom.forEach(function (geom) {
+      if (!geom.eventFlow || !geom.members.length) return;
+      const tops = geom.members[geom.members.length - 1].tops;
+      let max = 0;
+      for (let i = 0; i < tops.length; i++) {
+        const lead = geom.edgesMs[i];
+        const trail = geom.edgesMs[i + 1];
+        if (trail === undefined) break;
+        if (trail > view[0] && lead < view[1] && tops[i] > max) {
+          max = tops[i];
+        }
+      }
+      const key = (geom.axisKey || 'yaxis') + '.range';
+      const target = [0, (max || 1) * 1.06];
+      const applied = efFitApplied[key];
+      if (!applied
+          || Math.abs(applied[1] - target[1]) > target[1] * 0.001) {
+        update[key] = target;
+        efFitApplied[key] = target;
+      }
+    });
+    if (Object.keys(update).length) {
+      Plotly.relayout(plotDiv, update);
+    }
   }
   function efBinEnd(ms) {
     // The display-grid bin end owning an instant: bins are
@@ -3373,9 +3414,13 @@
     updateClearAll();
     // Event-flow granularity follows the settled view: crossing a
     // ladder rung (or panning off the built extent) rebuilds the
-    // plot from the already-loaded native bins — no refetch.
+    // plot from the already-loaded native bins — no refetch — and
+    // the y scale refits to the visible data either way.
     clearTimeout(efSettleTimer);
-    efSettleTimer = setTimeout(efMaybeRebuild, 350);
+    efSettleTimer = setTimeout(function () {
+      efMaybeRebuild();
+      efFitY();
+    }, 350);
   }
   function setRange(range) {
     // Clamp to the window: shifting or dragging never scrolls into
