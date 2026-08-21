@@ -791,6 +791,14 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                  'active': o.get('value') in focus_selected,
                  'url': _toggle_url(o.get('value'))}
                 for o in (focus_def.get('options') or ())],
+            # A selection served by the open_option hook is not among
+            # the listed options; the template shows it as a plain
+            # label instead of a tick row.
+            'open_label': ', '.join(
+                str((by_value.get(v) or {}).get('label') or v)
+                for v in focus_selected
+                if not any(o.get('value') == v
+                           for o in (focus_def.get('options') or ()))),
             'selectors': selectors_context,
             # The cut narrows by the EFFECTIVE selector values — the
             # clean page carries none in its URL, yet its cut must

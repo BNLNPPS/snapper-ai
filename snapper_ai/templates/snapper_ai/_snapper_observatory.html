@@ -112,6 +112,12 @@
     {# Focus selection as tick boxes above the family rows: one or    #}
     {# several options at once; info and filters follow the ticks.    #}
     <div class="mb-2 d-flex flex-wrap align-items-center column-gap-3">
+      {# An open (unlisted) selection shows as a plain label; a single #}
+      {# listed option is the view itself and needs no tick row.      #}
+      {% if observatory_focus.open_label %}
+      <span><strong>{{ observatory_focus.selector_label }}:</strong>
+        {{ observatory_focus.open_label }}</span>
+      {% elif observatory_focus.options|length > 1 %}
       <span><strong>{{ observatory_focus.selector_label }}:</strong>
         <a href="{{ observatory_focus.all_on_url }}">all</a>/<a href="{{ observatory_focus.all_off_url }}">none</a>
       </span>
@@ -122,8 +128,9 @@
                onchange="window.location='{{ option.url }}'"> {{ option.label }}
       </label>
       {% endfor %}
+      {% endif %}
       {% for sel in observatory_focus.selectors %}
-      <span class="text-muted">·</span>
+      {% if not forloop.first or observatory_focus.open_label or observatory_focus.options|length > 1 %}<span class="text-muted">·</span>{% endif %}
       <strong>{{ sel.label }}:</strong>
       {% for choice in sel.choices %}
       <label class="form-check form-check-inline mb-0">
@@ -2924,7 +2931,10 @@
         });
       }
       // SVG shapes (pie slices) take fill; HTML swatches take
-      // background — one data-curve contract for both.
+      // background — one data-curve contract for both. An unknown
+      // curve hides a bare swatch, but an element carrying its own
+      // server-declared color (a semantically colored pie slice)
+      // keeps it: the plot may not serve that curve's family at all.
       if (color) {
         if (el.namespaceURI === 'http://www.w3.org/2000/svg') {
           el.style.fill = color;
@@ -2932,7 +2942,9 @@
           el.style.background = color;
         }
       }
-      else el.style.visibility = 'hidden';
+      else if (!(el.getAttribute('fill') || el.style.background)) {
+        el.style.visibility = 'hidden';
+      }
     });
     });
   }
