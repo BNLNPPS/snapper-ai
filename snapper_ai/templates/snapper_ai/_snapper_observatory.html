@@ -140,6 +140,10 @@
       </label>
       {% endfor %}
       {% endfor %}
+      {# Event-qualifier filter (e.g. terminal state): chips are      #}
+      {# client-rendered — self-discovered from the loaded event      #}
+      {# bins, counts tracking the visible range.                     #}
+      <span id="snapper-ef-quals" class="d-flex flex-wrap align-items-center column-gap-2 row-gap-1"></span>
     </div>
     {% if observatory_focus.note %}
     <div class="mb-2 text-muted">{{ observatory_focus.note }}</div>
@@ -1587,6 +1591,9 @@
             end_stamped: !!g.end_stamped,
             event_flow: !!g.event_flow,
             default_off: !!g.default_off, units: g.units || '',
+            qualifier_label: g.qualifier_label || '',
+            qualifier_param: g.qualifier_param || 'quals',
+            qualifiers_off: g.qualifiers_off || [],
             member_ticks: g.member_ticks !== false,
             default_off_ids: g.default_off_ids || [],
             order: g.order || [],
@@ -1680,7 +1687,7 @@
       let index = Math.ceil((ms - firstEdge) / efRungMs);
       if (index < 0) index = 0;
       if (index >= bins) return;
-      counts[index] += (+p[1] || 0);
+      counts[index] += efPointValue(p);
     });
     const points = [];
     for (let i = 0; i < bins; i++) {
@@ -1688,6 +1695,165 @@
                    counts[i]]);
     }
     return points;
+  }
+  // Event-qualifier filter (chips). A native bin may carry a
+  // per-qualifier breakdown as its third element — [iso, total,
+  // {qualifier: count}]; for the errors record the qualifier is the
+  // job's terminal state. The chips are self-discovered from the
+  // loaded bins: an option appears exactly when the record holds
+  // that qualifier, labeled with its count over the visible range —
+  // a filtered-out flood still announces itself in its chip count.
+  // Selection filters client-side (the same in-place rebin as
+  // zooming; no refetch) and lives in the URL; the family's
+  // qualifiers_off declaration names the default-off set.
+  let efQualSelected = null;   // Set once breakdowns exist, else null
+  function efQualFamily() {
+    // The first event-flow family declaring a qualifier label and
+    // holding served curves carries the chip row and the counts;
+    // sibling groupings of the same events would double-count.
+    for (const g of GROUPS) {
+      if (!g.event_flow || !g.qualifier_label) continue;
+      if (Object.keys(data.curves).some(function (id) {
+        return g.match(id); })) return g;
+    }
+    return null;
+  }
+  function efQualScan(fam, rangeMs) {
+    // Per-qualifier totals over the family's native bins, within
+    // rangeMs when given. A bin's count beyond its breakdown sum is
+    // unqualified and reads as 'unrecorded'; 'any' reports whether a
+    // real breakdown exists at all — without one there is nothing to
+    // filter and no chips render.
+    const counts = {};
+    let any = false;
+    Object.keys(data.curves).forEach(function (id) {
+      if (!fam.match(id)) return;
+      (data.curves[id].points || []).forEach(function (p) {
+        const ms = Date.parse(p[0]);
+        if (rangeMs && (ms <= rangeMs[0] || ms > rangeMs[1])) return;
+        let sum = 0;
+        if (p[2]) {
+          any = true;
+          for (const q in p[2]) {
+            sum += (+p[2][q] || 0);
+            counts[q] = (counts[q] || 0) + (+p[2][q] || 0);
+          }
+        }
+        const rem = (+p[1] || 0) - sum;
+        if (rem > 0) {
+          counts.unrecorded = (counts.unrecorded || 0) + rem;
+        }
+      });
+    });
+    return {counts: counts, any: any};
+  }
+  function efQualDefault(fam, discovered) {
+    return discovered.filter(function (q) {
+      return (fam.qualifiers_off || []).indexOf(q) < 0;
+    });
+  }
+  function efQualInit() {
+    // Resolve the selection: the URL's explicit list when present,
+    // else every discovered qualifier minus the declared default-off
+    // set. Re-run on data refresh — in default mode a newly appearing
+    // qualifier joins the selection by the same rule; an explicit URL
+    // selection is simply re-read.
+    const fam = efQualFamily();
+    if (!fam) { efQualSelected = null; return; }
+    const scan = efQualScan(fam, null);
+    if (!scan.any) { efQualSelected = null; return; }
+    const raw = new URLSearchParams(window.location.search)
+        .get(fam.qualifier_param);
+    if (raw !== null) {
+      efQualSelected = new Set(raw.split(',').filter(Boolean));
+    } else {
+      efQualSelected = new Set(
+          efQualDefault(fam, Object.keys(scan.counts)));
+    }
+  }
+  function efQualStampUrl(fam) {
+    const url = new URL(window.location);
+    const discovered = Object.keys(efQualScan(fam, null).counts);
+    const dflt = efQualDefault(fam, discovered);
+    const same = dflt.length === efQualSelected.size
+        && dflt.every(function (q) { return efQualSelected.has(q); });
+    if (same) {
+      url.searchParams.delete(fam.qualifier_param);
+    } else {
+      url.searchParams.set(fam.qualifier_param,
+                           Array.from(efQualSelected).sort().join(','));
+    }
+    history.replaceState(null, '', url);
+  }
+  function efRenderQualChips() {
+    const box = document.getElementById('snapper-ef-quals');
+    if (!box) return;
+    const fam = efQualFamily();
+    if (!fam || efQualSelected === null) {
+      box.innerHTML = '';
+      return;
+    }
+    const windowScan = efQualScan(fam, null);
+    const view = (plotDiv._fullLayout && plotDiv._fullLayout.xaxis
+                  && viewIsZoomed())
+        ? currentRange()
+        : [Date.parse(data.start), Date.parse(data.end)];
+    const viewCounts = efQualScan(fam, view).counts;
+    // Stable order: window totals descending, 'unrecorded' last.
+    const names = Object.keys(windowScan.counts).sort(function (a, b) {
+      if (a === 'unrecorded') return 1;
+      if (b === 'unrecorded') return -1;
+      return (windowScan.counts[b] || 0) - (windowScan.counts[a] || 0)
+          || a.localeCompare(b);
+    });
+    box.innerHTML = '';
+    const title = document.createElement('span');
+    title.innerHTML = '<span class="text-muted">·</span> <strong>'
+        + escapeHtml(fam.qualifier_label) + ':</strong>';
+    box.appendChild(title);
+    names.forEach(function (q) {
+      const label = document.createElement('label');
+      label.className = 'form-check form-check-inline mb-0 me-0';
+      label.innerHTML = '<input type="checkbox" class="form-check-input">'
+          + ' <span class="form-check-label">' + escapeHtml(q)
+          + ' <span class="text-muted">('
+          + (viewCounts[q] || 0).toLocaleString() + ')</span></span>';
+      const input = label.querySelector('input');
+      input.checked = efQualSelected.has(q);
+      input.addEventListener('change', function (e) {
+        if (e.target.checked) efQualSelected.add(q);
+        else efQualSelected.delete(q);
+        efQualStampUrl(fam);
+        rerenderView();
+        efFitY();
+        efRenderQualChips();
+        if (confirmedCutTrueMs !== null && !isActivityScope()) {
+          fetchCutDetail();
+        }
+      });
+      box.appendChild(label);
+    });
+  }
+  function efQualQuery(fam) {
+    // The cut fetch carries the active selection so the breakdown,
+    // donut, and reading follow the chips.
+    if (!fam || efQualSelected === null) return '';
+    return '&' + fam.qualifier_param + '='
+        + encodeURIComponent(Array.from(efQualSelected).sort().join(','));
+  }
+  function efPointValue(p) {
+    // A native bin's value under the active qualifier selection.
+    if (efQualSelected === null) return (+p[1] || 0);
+    let v = 0, sum = 0;
+    if (p[2]) {
+      for (const q in p[2]) {
+        sum += (+p[2][q] || 0);
+        if (efQualSelected.has(q)) v += (+p[2][q] || 0);
+      }
+    }
+    const rem = (+p[1] || 0) - sum;
+    if (rem > 0 && efQualSelected.has('unrecorded')) v += rem;
+    return v;
   }
   let efFitApplied = {};
   function efFitY() {
@@ -2918,7 +3084,8 @@
              ? '&queues=' + encodeURIComponent(data.queue_members.join(','))
              : '')
           + '&since=' + encodeURIComponent(sinceIso)
-          + efWindowQuery,
+          + efWindowQuery
+          + efQualQuery(efQualFamily()),
           {signal: controller.signal})
       .then(function (r) {
         if (!r.ok) {
@@ -3420,6 +3587,7 @@
     efSettleTimer = setTimeout(function () {
       efMaybeRebuild();
       efFitY();
+      efRenderQualChips();
     }, 350);
   }
   function setRange(range) {
@@ -3608,7 +3776,9 @@
       else goNow();
     });
   }
+  efQualInit();
   render(null);
+  efRenderQualChips();
   plotDiv.on('plotly_relayout', updateZoomBar);
   // Zoom-aware run bars: when the view span changes materially, rebuild
   // so the minimum visual width tracks the new scale — short runs stay
@@ -3730,6 +3900,7 @@
         const countEl = document.getElementById('snapper-snap-count');
         if (countEl) countEl.textContent = data.snap_count;
         updateRangeText(data);
+        efRenderQualChips();
         if (!viewIsZoomed()) {
           suppressPush = true;
           Plotly.relayout(plotDiv, {
@@ -3745,9 +3916,11 @@
       data = incoming;
       applyMemberDefaults(Object.keys(data.curves));
       buildLaneRow();
+      efQualInit();
       const viewTrue = viewIsZoomed() ? currentRange() : null;
       suppressPush = true;
       render(viewTrue);
+      efRenderQualChips();
       setTimeout(function () {
         lastRange = currentRange();
         suppressPush = false;

@@ -38,7 +38,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
     token = sha256(identity.encode()).hexdigest()[:16]
-    return (f'snapper_series:v12:{scope}:focus:'
+    return (f'snapper_series:v13:{scope}:focus:'
             f'{focus_param}:{token}:{cache_span}')
 
 
@@ -580,7 +580,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v12:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v13:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,
