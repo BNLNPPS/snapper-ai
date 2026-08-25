@@ -314,10 +314,15 @@ def _present_snap_component(name, payload, scope=None,
     builder = (provider.component_cards.get(name)
                if provider and provider.component_cards else None)
     if builder is not None:
-        card = builder(data, {}, {'scope': scope,
-                                  'requested_at': reference_time})
-        if provider.card_template:
-            card.setdefault('template', provider.card_template)
+        # A builder may decline this presentation (the cut convention:
+        # None omits the card); here the component still renders, as
+        # the generic quantity table.
+        built = builder(data, {}, {'scope': scope,
+                                   'requested_at': reference_time})
+        if built is not None:
+            card = built
+            if provider.card_template:
+                card.setdefault('template', provider.card_template)
     return {
         'name': name,
         'title': registration.get('title') or name,
