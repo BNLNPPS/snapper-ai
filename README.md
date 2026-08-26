@@ -68,7 +68,10 @@ with ePIC/SWF and PanDA as its first integration.
 The system as deployed, from the subsystems that own state to the views
 and AIs that read the history:
 
-[![snapper-ai schematic](docs/snapper_schematic.svg)](https://raw.githubusercontent.com/BNLNPPS/snapper-ai/main/docs/snapper_schematic.svg)
+[![snapper-ai schematic](docs/snapper_schematic.png)](https://raw.githubusercontent.com/BNLNPPS/snapper-ai/main/docs/snapper_schematic.png)
+
+The SVG source is `docs/snapper_schematic.svg`; GitHub's raw view strips
+its embedded screenshots, so the rendered PNG is the viewing copy.
 
 ```text
 subsystem owns and maintains its now
