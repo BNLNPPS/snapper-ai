@@ -65,6 +65,11 @@ with ePIC/SWF and PanDA as its first integration.
 
 ## How it works
 
+The system as deployed, from the subsystems that own state to the views
+and AIs that read the history:
+
+[![snapper-ai schematic](docs/snapper_schematic.svg)](https://raw.githubusercontent.com/BNLNPPS/snapper-ai/main/docs/snapper_schematic.svg)
+
 ```text
 subsystem owns and maintains its now
                  |
