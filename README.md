@@ -122,7 +122,7 @@ assessment time and, when applicable, source time.
 
 ## The narrow design
 
-snapper-ai provides authoritative system state across time, giving people and
+snapper-ai provides curated system state snapshots across time, giving people and
 AIs direct knowledge of how complex systems evolve.
 
 Five properties define the product:

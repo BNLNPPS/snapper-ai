@@ -302,6 +302,40 @@ Drag remains zoom; no separate selection gesture is needed.
   five-minute observation resolution; zoom rebase, cut basis, and
   embed behavior verified on the deployed pages.
 
+### 9. Series and cut-summary products for AI clients
+
+Views are for eyes; AI clients read the data. Today the two diverge one
+step above the record: the page computes series products (curve
+extraction, event binning, whole-series transforms such as rolling
+ratios, window-relative re-basing) and the summary at a cut (each
+plotted metric's value at the instant, its delta, and its minimum,
+mean, and maximum over the window), while the five queries return the
+component states beneath them. An AI asking how two metrics moved
+together over a window has to walk component history and recompute
+what the page already holds. This tranche exposes the page's products
+as queries, in the same evidence envelope.
+
+- [x] Generic `series_product(scope, focus, window, selection,
+  selectors)` (`snapper_ai/products.py`, 2026-08-25): the focus view's
+  series product as data — curves with their points and labels, the
+  family declarations, coverage gaps, the window basis — resolved and
+  built exactly as the page does, through the same cache, so the two
+  never disagree.
+- [x] Generic `cut_summary(scope, focus, time, since)`: the summary at
+  a cut as data — one row per plotted metric in panel order with raw
+  and formatted value, delta against the previous snap, window
+  statistics, threshold marks — from a provider-registered builder
+  (`ScopeProvider.cut_summaries`; the platform card's summary is the
+  first), with the cut's actual snap time, coverage, and the
+  component's provenance.
+- [x] Transports in the swf host: REST `/api/snapper/<scope>/series/`
+  and `/cut-summary/`, MCP `snapper_series` and `snapper_cut_summary`,
+  with docstrings stating the window basis and the cache state.
+- [ ] Correlation as a query, once the series product is a query:
+  pairwise coefficients with lag over a window, declared per focus
+  view (SNAPPER_PLATFORM.md, the summary at the cut), served to the
+  page and to AI clients alike.
+
 ## Progress log
 
 - **2026-07-29:** The provider surface grew in place (61ba2ad,

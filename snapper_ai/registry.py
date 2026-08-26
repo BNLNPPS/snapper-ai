@@ -82,6 +82,12 @@ class ScopeProvider:
                      'scope' and 'requested_at' (None outside a cut).
     card_template    Host template rendering this scope's provider
                      cards; the core stamps it on each built card.
+    cut_summaries    {component_name: builder(scope, requested_at,
+                     since, data, previous_data)} -> the summary at a
+                     cut as data (products.cut_summary): rows in panel
+                     order with value, delta, window statistics, and
+                     threshold marks, plus any basis text. The page's
+                     card and the query share the builder.
     annotate_references  (references) -> annotated references with
                      host page links.
     """
@@ -101,6 +107,7 @@ class ScopeProvider:
     activity_card: object = None
     component_cards: dict = field(default_factory=dict)
     card_template: str = ''
+    cut_summaries: dict = field(default_factory=dict)
     annotate_references: object = None
     # Preset tabs rendered after this scope in the scope switcher:
     # {'label', 'query'} dicts linking to the scope's report page with

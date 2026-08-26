@@ -114,6 +114,7 @@ authority):
 | `activity_card` | keyed episodic activity → detail card |
 | `component_cards` | component name → card builder (data, previous, ctx; ctx carries the page params and, when the cut names a basis, `since`/`since_data` for window-difference reporting) |
 | `card_template` | host template rendering this scope's cards |
+| `cut_summaries` | component name → summary builder (scope, requested_at, since, data, previous_data) returning the summary at a cut as data: rows in panel order with value, delta, window statistics, threshold marks. The page's card and the `products.cut_summary` query share it |
 | `annotate_references` | event references → references with host links |
 | `preset_links` | report-page tabs with fixed query strings |
 | `focus_view` | one declaration or a tuple: scope-switcher tabs, each with its own clean page, options, selector axes, and an optional one-line `note` explaining the display. `label` names the page; optional `selector_label` names the selectable entities when those concepts differ. The focus parameter accepts `all` as a durable selection of every currently registered option. |
@@ -175,7 +176,13 @@ design: the generic queries return typed evidence envelopes
 (`snapper_ai.queries`), and the host wraps them under its own
 authentication and URL conventions. The swf host serves them read-open
 at `/api/snapper/<scope>/...` and as five MCP tools, preserving the
-envelopes unchanged.
+envelopes unchanged. The view products are queries too
+(`snapper_ai.products`): `series_product(scope, focus, window,
+selection, selectors)` returns a focus view's series exactly as the
+page builds and caches it, and `cut_summary(scope, focus, time,
+since)` returns the summary at a cut from the provider's registered
+builder; the swf host serves them as `/series/` and `/cut-summary/`
+and as two more MCP tools.
 
 ## Checklist
 

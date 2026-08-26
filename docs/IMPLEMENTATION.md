@@ -31,6 +31,9 @@ commits that implement or specify it.
 - `snapper_ai/registry.py` owns the host seam: ScopeProvider registration
   and host service hooks. `snapper_ai/presentation.py` is the public
   vocabulary host providers build on.
+- `snapper_ai/products.py` serves the view products as queries: a focus
+  view's series product and the summary at a cut, as data, for the
+  host's REST and MCP transports (PLAN.md section 9).
 - `snapper_ai/migrations/0002_systemsnap_recovery_gap.py` makes recovered gap
   boundaries immutable and marks pre-existing recovery starts unknown.
 - `DESIGN.md` is the generic semantic contract.
