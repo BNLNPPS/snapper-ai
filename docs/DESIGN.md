@@ -52,6 +52,11 @@ aligned scheduler  -------------------+-->  system snap history
                                   APIs, pages, MCP, AIs, analysis
 ```
 
+The same flow as deployed in the SWF platform — the sources, the
+owner-published components, the record, and the views:
+
+[![snapper-ai schematic](snapper_schematic.png)](https://raw.githubusercontent.com/BNLNPPS/snapper-ai/main/docs/snapper_schematic.png)
+
 ## Registration
 
 A subsystem registers a component using an ordinary serializable declaration.
