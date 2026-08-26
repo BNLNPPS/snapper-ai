@@ -38,7 +38,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
     token = sha256(identity.encode()).hexdigest()[:16]
-    return (f'snapper_series:v17:{scope}:focus:'
+    return (f'snapper_series:v18:{scope}:focus:'
             f'{focus_param}:{token}:{cache_span}')
 
 
@@ -201,6 +201,23 @@ def _scope_options(scope, active_query='', active_focus_label=None):
             if focus_active:
                 options[plain_index]['active'] = False
     return options
+
+
+def _covered_midpoint(scope, component, window_start, window_end):
+    """The load-time default cut of a focus view: the midpoint of the
+    span the focus component actually covers inside the window. A
+    record younger than the window would otherwise land the default
+    cut before its first publication, on an instant with nothing to
+    show."""
+    if component:
+        first = (SystemSnap.objects
+                 .filter(scope=scope, snap_time__gte=window_start,
+                         snap_time__lte=window_end,
+                         state__components__has_key=component)
+                 .order_by('snap_time').values('snap_time').first())
+        if first and first['snap_time'] > window_start:
+            return first['snap_time'] + (window_end - first['snap_time']) / 2
+    return window_start + (window_end - window_start) / 2
 
 
 def _curve_colors(provider, curve_ids):
@@ -585,7 +602,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v17:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v18:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,
@@ -900,8 +917,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             window_end.isoformat()
             if (request.GET.get('cut') or '').strip() == 'now'
             else (request.GET.get('cut') or '').strip()
-            or ((window_start
-                 + (window_end - window_start) / 2).isoformat()
+            or (_covered_midpoint(
+                    scope, focus_option.get('component') or '',
+                    window_start, window_end).isoformat()
                 if focus_option is not None else '')),
         'observatory_prefs': user_prefs,
         'observatory_prev_url': observatory_prev_url,
@@ -1428,12 +1446,31 @@ def snapper_cut(request, scope):
     # not merely the latest snap; the previous snap for deltas is the
     # previous one carrying it.
     component_filter = (request.GET.get('component') or '').strip()
+    record_notice = None
     if component_filter and snap is not None and component_filter not in (
             (snap.state or {}).get('components') or {}):
-        snap = (SystemSnap.objects
-                .filter(scope=scope, snap_time__lte=result.requested_at,
-                        state__components__has_key=component_filter)
-                .order_by('-snap_time').first()) or snap
+        carrying = (SystemSnap.objects
+                    .filter(scope=scope, snap_time__lte=result.requested_at,
+                            state__components__has_key=component_filter)
+                    .order_by('-snap_time').first())
+        if carrying is not None:
+            snap = carrying
+        else:
+            # No record of the component at or before this instant: the
+            # cut says so and names where the record begins, instead of
+            # an empty card slot that reads as "no detail exists".
+            first = (SystemSnap.objects
+                     .filter(scope=scope,
+                             state__components__has_key=component_filter)
+                     .order_by('snap_time').values('snap_time').first())
+            record_notice = {
+                'chip': cut_chip('unknown'),
+                'component': component_filter,
+                'first': first['snap_time'] if first else None,
+                'first_iso': (first['snap_time'].isoformat()
+                              if first else ''),
+            }
+            snap = None
     if component_filter and snap is not None:
         previous_snap = (
             SystemSnap.objects
@@ -1508,6 +1545,7 @@ def snapper_cut(request, scope):
             (result.requested_at - actual_snap_time).total_seconds()),
         'coverage': coverage,
         'coverage_notice': coverage_notice,
+        'record_notice': record_notice,
         'previous_age_text': (
             _age_text((snap.snap_time
                        - previous_snap.snap_time).total_seconds())

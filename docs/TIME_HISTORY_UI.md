@@ -47,7 +47,12 @@ cards below the tracks, over a seven-day window.*
    cut, ?component=, that builds only that card), the empty-slice
    notice otherwise when the slice crosses nothing — never silent —
    and the classic state cards on scopes without activity lanes
-   (epicprod). Third the overview table, in its own scroll pane
+   (epicprod). A component-narrowed cut at an instant with no record
+   of that component at or before it renders a "no record" card
+   naming where the record begins, with a link that cuts there. A
+   focus view lands with its default cut at the midpoint of the span
+   its component covers inside the window, so a record younger than
+   the window does not open on an empty instant. Third the overview table, in its own scroll pane
    sized to the full table height: the at-a-glance inventory of the
    window, newest first, time leftmost with elapsed length, and the
    detail home. The whole table is visible on the page — page

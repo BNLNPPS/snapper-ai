@@ -2974,6 +2974,27 @@
     });
     dockedCutDetails = {};
     cutPanel.innerHTML = fragment;
+    // A "record begins at" link in the fragment cuts there: in place
+    // when the instant is inside the loaded window, else by a range
+    // reload that brings it into view.
+    cutPanel.querySelectorAll('a[data-snapper-cut]').forEach(function (a) {
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        const iso = a.dataset.snapperCut;
+        const ms = Date.parse(iso);
+        if (!isNaN(ms) && ms >= fullRange[0] && ms <= fullRange[1]) {
+          showCut(iso, true);
+          return;
+        }
+        const target = new URL(window.location.href);
+        target.searchParams.delete('window');
+        target.searchParams.set(
+            'start', new Date(ms - 3600 * 1000).toISOString());
+        target.searchParams.set('end', data.end);
+        target.searchParams.set('cut', iso);
+        window.location = target.pathname + target.search;
+      });
+    });
     const siteDetails = Array.from(
         cutPanel.querySelectorAll('[data-snapper-detail-key]'));
     const dockable = siteDetails.filter(function (detail) {

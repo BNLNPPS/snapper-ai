@@ -19,6 +19,13 @@
 </p>
 {% endif %}
 <div class="d-flex flex-column gap-3 align-items-stretch">
+  {% if record_notice %}
+  <div class="snapper-cut-card">
+    <span class="snapper-chip" style="background:{{ record_notice.chip.color }}">no record</span>
+    No {{ record_notice.component }} record at this instant.
+    {% if record_notice.first %}The record begins at <strong>{{ record_notice.first|fmt_dt }}</strong> — <a href="?cut={{ record_notice.first_iso|urlencode }}" data-snapper-cut="{{ record_notice.first_iso }}">cut there</a>.{% else %}The component has never been recorded in this scope.{% endif %}
+  </div>
+  {% endif %}
   {% for card in cards %}
   {% if card.split_panels %}
     {% include 'snapper_ai/_snapper_component_body.html' %}
