@@ -959,6 +959,15 @@
       });
       quiltGeom.push(geom);
     });
+    // A family may declare fills: per-member hatched areas from zero
+    // to the curve, marking a member that is a subset of a sibling
+    // (not a stacked band — the hatch is the distinction from the
+    // solid stacks). Filled curves draw first so sibling lines stay
+    // on top.
+    function curveFill(id) {
+      const def = groupDef(id);
+      return (def && def.fills && def.fills[id]) || null;
+    }
     // Family totals draw beneath their siblings: where a total and a
     // subcategory coincide (early days, one dominant group), the
     // subcategory owns the pixel and the hover floater — the total
@@ -967,13 +976,16 @@
       const def = groupDef(id);
       return !(def && def.stacked) || isOverlayCurve(id);
     }).sort(function (a, b) {
+      const aFill = curveFill(a) ? 0 : 1;
+      const bFill = curveFill(b) ? 0 : 1;
       const aTotal = a.indexOf('__total') >= 0 ? 0 : 1;
       const bTotal = b.indexOf('__total') >= 0 ? 0 : 1;
-      return (aTotal - bTotal)
+      return (aFill - bFill) || (aTotal - bTotal)
           || (a < b ? -1 : a > b ? 1 : 0);
     });
     flatIds.forEach(function (curveId) {
       const curve = data.curves[curveId];
+      const fill = curveFill(curveId);
       curveTraceIndex[curveId] = traces.length;
       // A window-relative curve re-bases at the view's left edge when
       // zoomed: the visible range is the integration range, so the
@@ -989,7 +1001,7 @@
         if (base) ys = curve.points.map(
             p => Math.max(0, p[1] - base));
       }
-      traces.push({
+      const trace = {
         x: curve.points.map(p => toNaive(Date.parse(p[0]))),
         y: ys,
         mode: 'lines',
@@ -1002,7 +1014,19 @@
             ? 'legendonly' : true,
         showlegend: false,
         hoverinfo: 'skip',
-      });
+      };
+      if (fill) {
+        trace.fill = 'tozeroy';
+        trace.fillcolor = fill.bgcolor || 'rgba(0,0,0,0)';
+        trace.fillpattern = {
+          shape: fill.pattern || '/',
+          fgcolor: fill.fgcolor || curveColor[curveId],
+          bgcolor: fill.bgcolor || 'rgba(0,0,0,0)',
+          size: fill.size || 7,
+          solidity: fill.solidity || 0.15,
+        };
+      }
+      traces.push(trace);
     });
     failTriangleTraces().forEach(function (t) { traces.push(t); });
     return traces;
@@ -1598,6 +1622,7 @@
             default_off_ids: g.default_off_ids || [],
             order: g.order || [],
             window_relative: g.window_relative || false,
+            fills: g.fills || null,
             start_closed: !!g.start_closed,
             detail_key: g.detail_key || '',
             panel_px: g.panel_px || 0,
