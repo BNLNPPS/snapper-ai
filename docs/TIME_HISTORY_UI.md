@@ -50,9 +50,12 @@ cards below the tracks, over a seven-day window.*
    (epicprod). A component-narrowed cut at an instant with no record
    of that component at or before it renders a "no record" card
    naming where the record begins, with a link that cuts there. A
-   focus view lands with its default cut at the midpoint of the span
-   its component covers inside the window, so a record younger than
-   the window does not open on an empty instant. Third the overview table, in its own scroll pane
+   focus view lands with its default cut half a recording interval
+   back from the window's end — the component's change cadence, read
+   from its recent change-bearing snaps — so the page opens on the
+   latest recorded state; the cut never lands before the component's
+   first recorded snap, so a record younger than the window does not
+   open on an empty instant. Third the overview table, in its own scroll pane
    sized to the full table height: the at-a-glance inventory of the
    window, newest first, time leftmost with elapsed length, and the
    detail home. The whole table is visible on the page — page
