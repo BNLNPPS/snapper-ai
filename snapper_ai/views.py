@@ -203,21 +203,36 @@ def _scope_options(scope, active_query='', active_focus_label=None):
     return options
 
 
-def _covered_midpoint(scope, component, window_start, window_end):
-    """The load-time default cut of a focus view: the midpoint of the
-    span the focus component actually covers inside the window. A
-    record younger than the window would otherwise land the default
-    cut before its first publication, on an instant with nothing to
-    show."""
+def _landing_cut(scope, component, window_start, window_end):
+    """The load-time default cut of a focus view: half a recording
+    interval back from the window's end, so the page opens on the
+    latest recorded state rather than a mid-window instant. The
+    interval is the focus component's own change cadence, read from
+    the spacing of its most recent change-bearing snaps (full snaps
+    carry every component, so presence alone says nothing about
+    cadence). The cut never lands before the component's first
+    change-bearing snap in the window — a record younger than the
+    window would otherwise open on an instant with nothing to show."""
+    spacing = None
+    first = None
     if component:
-        first = (SystemSnap.objects
-                 .filter(scope=scope, snap_time__gte=window_start,
-                         snap_time__lte=window_end,
-                         state__components__has_key=component)
-                 .order_by('snap_time').values('snap_time').first())
-        if first and first['snap_time'] > window_start:
-            return first['snap_time'] + (window_end - first['snap_time']) / 2
-    return window_start + (window_end - window_start) / 2
+        changed = (SystemSnap.objects
+                   .filter(scope=scope, snap_time__gte=window_start,
+                           snap_time__lte=window_end,
+                           changed_components__contains=[component]))
+        stamps = list(changed.order_by('-snap_time')
+                      .values_list('snap_time', flat=True)[:4])
+        diffs = sorted(a - b for a, b in zip(stamps, stamps[1:]) if a > b)
+        if diffs:
+            spacing = diffs[len(diffs) // 2]
+        first = (changed.order_by('snap_time')
+                 .values_list('snap_time', flat=True).first())
+    if spacing is None:
+        spacing = (window_end - window_start) / 48
+    cut = window_end - spacing / 2
+    if first and cut < first:
+        cut = first
+    return cut
 
 
 def _curve_colors(provider, curve_ids):
@@ -909,15 +924,16 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_window': window_key,
         'observatory_windows': list(WINDOW_HOURS),
         'observatory_default_window': DEFAULT_WINDOW,
-        # A focus page lands with the slice already taken — at the
-        # window midpoint — so the click-for-details gesture is shown,
+        # A focus page lands with the slice already taken — half a
+        # recording interval back from the window's end, on the latest
+        # recorded state — so the click-for-details gesture is shown,
         # not discovered. An explicit ?cut= wins as ever; the literal
         # value 'now' means the live edge (the client enters track-now).
         'observatory_cut': (
             window_end.isoformat()
             if (request.GET.get('cut') or '').strip() == 'now'
             else (request.GET.get('cut') or '').strip()
-            or (_covered_midpoint(
+            or (_landing_cut(
                     scope, focus_option.get('component') or '',
                     window_start, window_end).isoformat()
                 if focus_option is not None else '')),

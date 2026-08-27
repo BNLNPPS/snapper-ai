@@ -542,8 +542,14 @@
         localStorage.getItem(famClosedKey) || '{}');
   } catch (e) { famClosedStore = {}; }
   function familyClosed(name, def) {
-    if (name in famClosedStore) return !!famClosedStore[name];
-    return !!(def && (def.default_off || def.start_closed));
+    // Only a secondary family (declared closed) takes a remembered
+    // collapse: a primary family always lands open on a fresh load —
+    // the rotator still folds it within the visit.
+    const secondary = !!(def && (def.default_off || def.start_closed));
+    if (secondary && name in famClosedStore) {
+      return !!famClosedStore[name];
+    }
+    return secondary;
   }
   function setFamilyClosed(name, closed) {
     famClosedStore[name] = closed ? 1 : 0;
