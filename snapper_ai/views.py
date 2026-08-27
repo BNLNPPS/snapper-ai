@@ -235,6 +235,69 @@ def _landing_cut(scope, component, window_start, window_end):
     return cut
 
 
+def _focus_landing_cut(scope, focus_option, groups, observatory,
+                       window_start, window_end):
+    """The landing cut lands inside the latest display bin that has
+    data, so the page opens on detail with something to show — a grid
+    that materializes behind the clock (the campaign day bins build
+    overnight, so today is empty) must not take the cut. Families whose
+    columns stamp an interval's END (end-stamped quilts, event flows,
+    cumulative day grids) take the cut half a grid step back from
+    their last data stamp; instantaneous curves take their last stamp
+    exactly, and the newer of the two readings wins. With nothing
+    plotted at all, fall back to the component's change cadence."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    et = _ZoneInfo('America/New_York')
+
+    def _parse(stamp):
+        try:
+            when = datetime.fromisoformat(str(stamp).replace('Z', '+00:00'))
+        except ValueError:
+            return None
+        if when.tzinfo is None:
+            # Event-flow bins stamp naive Eastern grid edges.
+            when = when.replace(tzinfo=et)
+        return when
+
+    primary = ([g for g in groups
+                if g.get('stacked') or g.get('event_flow')] or groups)
+    interval_groups = [g for g in primary
+                       if g.get('end_stamped') or g.get('event_flow')
+                       or g.get('cumulative_stack')]
+    instant_groups = [g for g in primary if g not in interval_groups]
+
+    def _stamps(for_groups):
+        found = set()
+        for curve_id, curve in (observatory.get('curves') or {}).items():
+            if not any(registry.group_matches(g, curve_id)
+                       for g in for_groups):
+                continue
+            for point in (curve.get('points') or ()):
+                if point and len(point) > 1 and point[1] is not None:
+                    when = _parse(point[0])
+                    if when is not None:
+                        found.add(when)
+        return sorted(found)
+
+    cut = None
+    if interval_groups:
+        stamps = _stamps(interval_groups)
+        if stamps:
+            diffs = (b - a for a, b in zip(stamps, stamps[1:]))
+            step = min((d for d in diffs if d.total_seconds() > 0),
+                       default=None)
+            cut = stamps[-1] - step / 2 if step else stamps[-1]
+    if instant_groups:
+        stamps = _stamps(instant_groups)
+        if stamps and (cut is None or stamps[-1] >= cut):
+            cut = stamps[-1]
+    if cut is None:
+        return _landing_cut(scope, focus_option.get('component') or '',
+                            window_start, window_end)
+    return min(max(cut, window_start), window_end)
+
+
 def _curve_colors(provider, curve_ids):
     """Provider-declared colors for the curves that have one (the
     host's semantic vocabulary, e.g. state colors); everything else
@@ -933,9 +996,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             window_end.isoformat()
             if (request.GET.get('cut') or '').strip() == 'now'
             else (request.GET.get('cut') or '').strip()
-            or (_landing_cut(
-                    scope, focus_option.get('component') or '',
-                    window_start, window_end).isoformat()
+            or (_focus_landing_cut(
+                    scope, focus_option, focus_context['groups'],
+                    observatory, window_start, window_end).isoformat()
                 if focus_option is not None else '')),
         'observatory_prefs': user_prefs,
         'observatory_prev_url': observatory_prev_url,
