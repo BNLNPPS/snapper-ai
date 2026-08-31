@@ -1529,6 +1529,27 @@
         fixedrange: true,
         anchor: 'x',
       };
+      // A panel whose members hold points but no nonzero value in the
+      // window states its emptiness plainly, never a bare grid.
+      const panelMembers = groupMembers[panel.name] || [];
+      const panelHasSignal = panelMembers.some(function (id) {
+        return ((data.curves[id] || {}).points || []).some(function (p) {
+          return p[1] > 0;
+        });
+      });
+      if (!panelHasSignal) {
+        const panelDef = GROUPS.find(function (g) {
+          return g.name === panel.name;
+        }) || {};
+        layout.annotations.push({
+          xref: 'paper', x: 0.5, xanchor: 'center',
+          yref: panel.traceAxis + ' domain', y: 0.5, yanchor: 'middle',
+          text: escapeHtml(panelDef.empty_note
+                           || 'No recorded values in this window'),
+          showarrow: false,
+          font: {size: 17, color: '#37474f'},
+        });
+      }
       if (DOCK_CONTROLS) return;
       layout.annotations.push({
         xref: 'paper', x: 0, xanchor: 'left',

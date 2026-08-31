@@ -748,6 +748,43 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         groups = [dict(g)
                   for g in all_groups
                   if g.get('name') in wanted]
+        # A focus view may declare a member_restrict hook: called with
+        # the request query, it returns None or {'note', 'keep',
+        # 'params', 'group_ids', 'group_titles'} — a request-scoped
+        # narrowing of the plotted members (the cached series stays
+        # whole), the visible statement of the restriction, the query
+        # parameters that reproduce it (carried into the cut fetch and
+        # window stepping), and optional per-family remaps of exact-id
+        # membership and title (an aggregate-based family substituting
+        # per-member curves under restriction). Applied before the
+        # family narrowing so the remapped ids match. A hook failure
+        # surfaces in the log and the page renders unrestricted.
+        member_note = ''
+        member_params = []
+        member_keep = None
+        restrict = focus_def.get('member_restrict')
+        if restrict is not None:
+            try:
+                restriction = restrict(request.GET)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    'snapper member_restrict hook failed for %s', scope)
+                restriction = None
+            if restriction:
+                member_keep = restriction.get('keep')
+                member_note = restriction.get('note') or ''
+                member_params = sorted(
+                    (restriction.get('params') or {}).items())
+                id_overrides = restriction.get('group_ids') or {}
+                title_overrides = restriction.get('group_titles') or {}
+                for group in groups:
+                    name = group.get('name')
+                    if name in id_overrides:
+                        group['ids'] = list(id_overrides[name])
+                        group['order'] = list(id_overrides[name])
+                        group['prefixes'] = []
+                    if name in title_overrides:
+                        group['title'] = title_overrides[name]
         # A chosen stacked family is the focus view's primary display:
         # a scope-view default_off marking does not apply to it. A
         # focus whose families include no stacked group has no other
@@ -769,7 +806,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         observatory['curves'] = {
             curve_id: curve
             for curve_id, curve in observatory['curves'].items()
-            if _in_focus(curve_id)}
+            if _in_focus(curve_id)
+            and (member_keep is None or member_keep(curve_id))}
         # The focused record carries its own provenance; the scope's
         # capture-coverage shading belongs to the scope view.
         observatory['gaps'] = []
@@ -779,35 +817,6 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             lane_id: lane
             for lane_id, lane in (observatory.get('lanes') or {}).items()
             if lane_id != 'health' and lane.get('parent') != 'health'}
-        # A focus view may declare a member_restrict hook: called with
-        # the request query, it returns None or {'note', 'keep',
-        # 'params'} — a request-scoped narrowing of the plotted members
-        # (the cached series stays whole; the pruning is per request),
-        # the visible statement of the restriction, and the query
-        # parameters that reproduce it (carried into the cut fetch and
-        # window stepping). A hook failure surfaces in the log and the
-        # page renders unrestricted.
-        member_note = ''
-        member_params = []
-        restrict = focus_def.get('member_restrict')
-        if restrict is not None:
-            try:
-                restriction = restrict(request.GET)
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    'snapper member_restrict hook failed for %s', scope)
-                restriction = None
-            if restriction:
-                keep = restriction.get('keep')
-                if keep is not None:
-                    observatory['curves'] = {
-                        curve_id: curve
-                        for curve_id, curve
-                        in observatory['curves'].items()
-                        if keep(curve_id)}
-                member_note = restriction.get('note') or ''
-                member_params = sorted(
-                    (restriction.get('params') or {}).items())
         # Fold the long tail of a stacked family: members that never
         # reach the collapse fraction of ANY single interval's family
         # total merge into one 'other' band (id suffix zz_other, drawn
