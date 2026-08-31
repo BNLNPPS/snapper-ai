@@ -149,6 +149,9 @@ def embed_context(scope, start, end, families=(), lanes=False,
             ids.sort(key=lambda cid: (rank.get(cid, len(order)), cid))
         assigned.update(ids)
         panels.append({'name': group.get('title') or name, 'ids': ids,
+                       # Rendered centered in the panel when its curves
+                       # carry points but no nonzero value in the window.
+                       'empty_note': group.get('empty_note') or '',
                        'stacked': bool(group.get('stacked')),
                        # Overlay members ride the stacked panel as plain
                        # foreground lines, exempt from the running sum: a
