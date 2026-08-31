@@ -117,7 +117,7 @@ authority):
 | `cut_summaries` | component name → summary builder (scope, requested_at, since, data, previous_data) returning the summary at a cut as data: rows in panel order with value, delta, window statistics, threshold marks. The page's card and the `products.cut_summary` query share it |
 | `annotate_references` | event references → references with host links |
 | `preset_links` | report-page tabs with fixed query strings |
-| `focus_view` | one declaration or a tuple: scope-switcher tabs, each with its own clean page, options, selector axes, and an optional one-line `note` explaining the display. `label` names the page; optional `selector_label` names the selectable entities when those concepts differ. The focus parameter accepts `all` as a durable selection of every currently registered option. |
+| `focus_view` | one declaration or a tuple: scope-switcher tabs, each with its own clean page, options, selector axes, and an optional one-line `note` explaining the display. `label` names the page; optional `selector_label` names the selectable entities when those concepts differ. The focus parameter accepts `all` as a durable selection of every currently registered option. An optional `member_restrict` hook — called with the request query, returning `None` or `{'note', 'keep', 'params'}` — narrows the plotted members per request (the cached series stays whole): curves failing the `keep` predicate drop, the `note` renders as the page's visible statement of the restriction, and the `params` ride the cut fetch and window stepping so the restriction survives navigation. |
 
 Card builders return pure data with a `kind`; the host card template
 renders the kinds it knows and carries whatever host page links belong
@@ -144,7 +144,10 @@ context['snapper_embed'] = embed_context(
 ```
 
 `families` names entries of the provider's `curve_groups`, one panel
-each in the order given; `lanes=True` additionally renders the scope's
+each in the order given. An entry may instead be an inline panel spec
+— a dict carrying `title`, `prefixes` and/or `ids`, and optionally
+`stacked` and `units` — a host-defined panel over the scope's curves
+that adds nothing to the scope's declared family list; `lanes=True` additionally renders the scope's
 episodic activity lanes (namespace bands with the report page's
 hue-per-namespace, lightness-per-phase vocabulary) above any panels. The window is clamped to the most recent 30
 days (`embed.MAX_EMBED_DAYS`) with a visible note, and each curve is

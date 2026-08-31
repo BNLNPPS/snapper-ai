@@ -779,6 +779,35 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             lane_id: lane
             for lane_id, lane in (observatory.get('lanes') or {}).items()
             if lane_id != 'health' and lane.get('parent') != 'health'}
+        # A focus view may declare a member_restrict hook: called with
+        # the request query, it returns None or {'note', 'keep',
+        # 'params'} — a request-scoped narrowing of the plotted members
+        # (the cached series stays whole; the pruning is per request),
+        # the visible statement of the restriction, and the query
+        # parameters that reproduce it (carried into the cut fetch and
+        # window stepping). A hook failure surfaces in the log and the
+        # page renders unrestricted.
+        member_note = ''
+        member_params = []
+        restrict = focus_def.get('member_restrict')
+        if restrict is not None:
+            try:
+                restriction = restrict(request.GET)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    'snapper member_restrict hook failed for %s', scope)
+                restriction = None
+            if restriction:
+                keep = restriction.get('keep')
+                if keep is not None:
+                    observatory['curves'] = {
+                        curve_id: curve
+                        for curve_id, curve
+                        in observatory['curves'].items()
+                        if keep(curve_id)}
+                member_note = restriction.get('note') or ''
+                member_params = sorted(
+                    (restriction.get('params') or {}).items())
         # Fold the long tail of a stacked family: members that never
         # reach the collapse fraction of ANY single interval's family
         # total merge into one 'other' band (id suffix zz_other, drawn
@@ -900,18 +929,21 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 if not any(o.get('value') == v
                            for o in (focus_def.get('options') or ()))),
             'selectors': selectors_context,
+            # The visible statement of a member_restrict narrowing.
+            'member_note': member_note,
             # The cut narrows by the EFFECTIVE selector values — the
             # clean page carries none in its URL, yet its cut must
-            # know them all.
+            # know them all — and by any member_restrict parameters.
             'cut_query': _enc(
                 [(sel.get('param') or 'quantity', selected_values[i])
                  for i, sel in enumerate(selector_defs)
-                 if selected_values[i]]),
+                 if selected_values[i]] + member_params),
             # Parameter names the window strip carries through when
             # present in the page URL.
             'carry_params': ','.join(
-                sel.get('param') or 'quantity'
-                for sel in selector_defs),
+                [sel.get('param') or 'quantity'
+                 for sel in selector_defs]
+                + [key for key, _ in member_params]),
         }
 
     # Window stepping: the arrows shift the whole window through the

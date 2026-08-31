@@ -148,6 +148,9 @@
     {% if observatory_focus.note %}
     <div class="mb-2 text-muted">{{ observatory_focus.note }}</div>
     {% endif %}
+    {% if observatory_focus.member_note %}
+    <div class="mb-2"><strong>{{ observatory_focus.member_note }}</strong></div>
+    {% endif %}
     {% endif %}
     <div id="snapper-observatory-controls" class="mb-2"></div>
     {# style-based visibility: Bootstrap's d-flex !important would override the hidden attribute #}

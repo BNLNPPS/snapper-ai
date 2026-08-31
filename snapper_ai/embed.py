@@ -124,7 +124,14 @@ def embed_context(scope, start, end, families=(), lanes=False,
     panels = []
     assigned = set()
     for name in families:
-        group = groups.get(name)
+        if isinstance(name, dict):
+            # An inline panel spec — a host-defined panel over the
+            # scope's curves (title, prefixes/ids, stacked, units)
+            # without adding a family to the scope's declared list.
+            group = dict(name)
+            name = group.get('name') or group.get('title') or 'panel'
+        else:
+            group = groups.get(name)
         if group is None:
             return {'scope': scope,
                     'error': (f'scope {scope!r} has no curve family '
