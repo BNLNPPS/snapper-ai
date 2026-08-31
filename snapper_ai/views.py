@@ -23,13 +23,20 @@ RECENT_SNAP_LIMIT = 100
 
 def _focus_curve_filter(all_groups, wanted):
     """The curve predicate for a focus-sized product: curves of the
-    wanted families only."""
+    wanted families, plus any curves under a family's declared
+    ``extra_cache_prefixes`` — captured in the product without joining
+    the family's display, so a member_restrict remap (group_ids) finds
+    them in the cached series."""
     cache_groups = [group for group in all_groups
                     if group.get('name') in wanted]
 
     def _filter(curve_id):
-        return any(registry.group_matches(group, curve_id)
-                   for group in cache_groups)
+        cid = str(curve_id)
+        return any(
+            registry.group_matches(group, curve_id)
+            or cid.startswith(tuple(group.get('extra_cache_prefixes')
+                                    or ()))
+            for group in cache_groups)
 
     return _filter
 
@@ -38,7 +45,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
     token = sha256(identity.encode()).hexdigest()[:16]
-    return (f'snapper_series:v18:{scope}:focus:'
+    return (f'snapper_series:v19:{scope}:focus:'
             f'{focus_param}:{token}:{cache_span}')
 
 
@@ -680,7 +687,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v18:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v19:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,
