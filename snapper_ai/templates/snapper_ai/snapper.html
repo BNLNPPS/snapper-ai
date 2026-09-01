@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load snapper_fmt %}
 
-{% block title %}Snapper {{ scope_label }} {{ active_tab|title }} - SWF Monitor{% endblock %}
+{% block title %}Snapper {{ view_label|default:active_tab }} - {{ scope_label }} - SWF Monitor{% endblock %}
 
 {% block content %}
 <style>

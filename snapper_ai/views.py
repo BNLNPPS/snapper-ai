@@ -1024,6 +1024,10 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         f" – {window_end.astimezone(_et).strftime('%m-%d %H:%M')} ET")
     return render(request, 'snapper_ai/snapper.html', {
         'active_tab': 'report',
+        # The browser-tab identity: the engaged focus view's name, else
+        # the Time history itself.
+        'view_label': ((focus_def.get('label') or 'Focus') + ' view'
+                       if focus_def else 'Time history'),
         'scope': scope,
         'scope_label': _scope_label(scope),
         'scope_options': _scope_options(
@@ -1174,6 +1178,7 @@ def snapper_episode(request, scope, episode_id):
     midpoint = started + (axis_end - started) / 2
     return render(request, 'snapper_ai/snapper.html', {
         'active_tab': 'report',
+        'view_label': 'episode',
         'scope': scope,
         'scope_label': _scope_label(scope),
         'scope_options': _scope_options(
@@ -1250,6 +1255,7 @@ def snapper_snaps(request, scope, snap_id=None):
         'snap_page': snap_page,
         'snap_pager_query': f'{pager_query}&' if pager_query else '',
         'active_tab': 'snaps',
+        'view_label': 'snaps',
         'scope': scope,
         'scope_label': _scope_label(scope),
         'scope_options': _scope_options(scope),
