@@ -1024,10 +1024,13 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         f" – {window_end.astimezone(_et).strftime('%m-%d %H:%M')} ET")
     return render(request, 'snapper_ai/snapper.html', {
         'active_tab': 'report',
-        # The browser-tab identity: the engaged focus view's name, else
-        # the Time history itself.
+        # The page identity: the engaged focus view's name; the Time
+        # history when the scope offers focus views; for a scope with
+        # none, the report is the scope's own view.
         'view_label': ((focus_def.get('label') or 'Focus') + ' view'
-                       if focus_def else 'Time history'),
+                       if focus_def
+                       else ('Time history' if focus_defs
+                             else _scope_label(scope) + ' view')),
         'scope': scope,
         'scope_label': _scope_label(scope),
         'scope_options': _scope_options(
