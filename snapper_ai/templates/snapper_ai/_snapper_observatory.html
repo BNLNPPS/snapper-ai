@@ -2327,8 +2327,24 @@
     Object.keys(groupMembers).forEach(function (name) {
       if (orderedNames.indexOf(name) < 0) orderedNames.push(name);
     });
+    // A section band belongs to the option's first RENDERED family: a
+    // declared first family with no curves in the window has no row,
+    // so its band moves to the next family of the run that has one.
+    const sectionOf = {};
+    GROUPS.forEach(function (g, i) {
+      if (!g.section) return;
+      for (let j = i; j < GROUPS.length; j++) {
+        if (j > i && GROUPS[j].section) break;
+        if (groupMembers[GROUPS[j].name]) {
+          sectionOf[GROUPS[j].name] = g.section;
+          break;
+        }
+      }
+    });
     orderedNames.forEach(function (name) {
-      const def = groupDef(name && groupMembers[name][0]) || {};
+      const def = Object.assign(
+          {}, groupDef(name && groupMembers[name][0]) || {},
+          {section: sectionOf[name] || null});
       // Every family carries the rotator; default_off/start_closed
       // only set the default state.
       const closable = true;
