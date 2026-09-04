@@ -459,9 +459,12 @@
     if (!authenticated) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
-      // The token comes from the server, never from a cookie name: a
-      // proxy face may rename the CSRF cookie.
-      const csrf = '{{ csrf_token }}';
+      // The token is the CSRF cookie the browser holds for this face,
+      // whatever it is named: a proxy face renames it (csrftoken_prod)
+      // and validates against its own cookie, so a server-rendered
+      // token cannot serve.
+      const csrf = (document.cookie.match(
+          /(?:^|;\s*)csrftoken[^=;]*=([^;]+)/) || [])[1];
       fetch('{% url "snapper_ai:snapper_prefs" scope=scope %}', {
         method: 'POST',
         headers: {'Content-Type': 'application/json',
