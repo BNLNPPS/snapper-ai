@@ -68,6 +68,12 @@ class ScopeProvider:
                      unfocused scope report. When supplied, curves
                      outside these families stay on their dedicated
                      focus views instead of overloading the front door.
+    scope_components Optional tuple of component names whose cards the
+                     unfocused scope report's cut renders — the card
+                     counterpart of scope_curve_groups. A component
+                     with a dedicated focus view keeps its card there,
+                     still reachable through a ?component= cut. Absent,
+                     the cut renders every component in the snap.
     episodic_lanes   (start, end, dangle_seconds) -> {lane_name:
                      [segment, ...]} discrete activity lanes.
     activity_at      (instant) -> per-lane activity truth at an
@@ -102,6 +108,7 @@ class ScopeProvider:
     curve_color: object = None
     curve_groups: tuple = ()
     scope_curve_groups: object = None
+    scope_components: object = None
     episodic_lanes: object = None
     activity_at: object = None
     activity_card: object = None

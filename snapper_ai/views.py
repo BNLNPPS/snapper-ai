@@ -1436,7 +1436,7 @@ def _cut_components(snap, previous_snap, scope, requested_at=None,
     provider = registry.get(scope)
     cards = []
     for name, payload in sorted(_dict(state.get('components')).items()):
-        if only and name != only:
+        if only and name not in only:
             continue
         payload = _dict(payload)
         data = _dict(payload.get('data'))
@@ -1660,9 +1660,19 @@ def snapper_cut(request, scope):
             basis_query = basis_query.filter(
                 state__components__has_key=component_filter)
         since_snap = basis_query.order_by('-snap_time').first()
+    # Which cards: the named component, else the scope's declared
+    # front-door components (scope_components) — a component with a
+    # dedicated focus view keeps its card, and its build cost, there —
+    # else every component in the snap. The narrowing gates the WORK.
+    if component_filter:
+        wanted = {component_filter}
+    elif provider is not None and provider.scope_components:
+        wanted = set(provider.scope_components)
+    else:
+        wanted = None
     cards = (_cut_components(snap, previous_snap, scope,
                              requested_at=result.requested_at,
-                             only=component_filter or None,
+                             only=wanted,
                              params=request.GET,
                              since_snap=since_snap, since=since)
              if snap else [])

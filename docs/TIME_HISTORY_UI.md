@@ -47,7 +47,10 @@ cards below the tracks, over a seven-day window.*
    cut, ?component=, that builds only that card), the empty-slice
    notice otherwise when the slice crosses nothing — never silent —
    and the classic state cards on scopes without activity lanes
-   (epicprod). A component-narrowed cut at an instant with no record
+   (epicprod) — the scope's own components when the provider declares
+   them (`scope_components`), so a component with a dedicated focus
+   view keeps its card, and its build cost, on that view. A
+   component-narrowed cut at an instant with no record
    of that component at or before it renders a "no record" card
    naming where the record begins, with a link that cuts there. A
    focus view lands with its default cut half a recording interval
