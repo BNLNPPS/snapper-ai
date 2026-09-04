@@ -542,12 +542,23 @@
   // Jump list: scroll to the named family's row, clear of the pinned
   // Time history strip, and hold it there while the page's height is
   // still settling — a cut detail docking above the target moves it.
-  function jumpToFamily(target) {
+  // The row is resolved by name on every scroll: a re-render rebuilds
+  // the row elements, so a held element would be detached.
+  function familyRow(name) {
+    let found = null;
+    document.querySelectorAll('[data-family]').forEach(function (r) {
+      if (!found && r.dataset.family === name) found = r;
+    });
+    return found;
+  }
+  function jumpToFamily(name) {
     const strip = document.getElementById('snapper-th-bar');
     const clear = strip ? strip.getBoundingClientRect().height + 8 : 0;
     const go = function (smooth) {
+      const row = familyRow(name);
+      if (!row) return;
       window.scrollTo({
-        top: target.getBoundingClientRect().top + window.scrollY - clear,
+        top: row.getBoundingClientRect().top + window.scrollY - clear,
         behavior: smooth ? 'smooth' : 'auto',
       });
     };
@@ -560,12 +571,7 @@
   document.querySelectorAll('[data-jump-family]').forEach(function (a) {
     a.addEventListener('click', function (ev) {
       ev.preventDefault();
-      const rows = document.querySelectorAll('[data-family]');
-      let target = null;
-      rows.forEach(function (r) {
-        if (!target && r.dataset.family === a.dataset.jumpFamily) target = r;
-      });
-      if (target) jumpToFamily(target);
+      jumpToFamily(a.dataset.jumpFamily);
     });
   });
 
