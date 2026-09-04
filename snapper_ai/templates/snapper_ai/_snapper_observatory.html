@@ -540,7 +540,23 @@
   })();
 
   // Jump list: scroll to the named family's row, clear of the pinned
-  // Time history strip.
+  // Time history strip, and hold it there while the page's height is
+  // still settling — a cut detail docking above the target moves it.
+  function jumpToFamily(target) {
+    const strip = document.getElementById('snapper-th-bar');
+    const clear = strip ? strip.getBoundingClientRect().height + 8 : 0;
+    const go = function (smooth) {
+      window.scrollTo({
+        top: target.getBoundingClientRect().top + window.scrollY - clear,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    };
+    go(true);
+    if (!window.ResizeObserver) return;
+    const hold = new ResizeObserver(function () { go(false); });
+    hold.observe(document.body);
+    setTimeout(function () { hold.disconnect(); }, 4000);
+  }
   document.querySelectorAll('[data-jump-family]').forEach(function (a) {
     a.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -549,13 +565,7 @@
       rows.forEach(function (r) {
         if (!target && r.dataset.family === a.dataset.jumpFamily) target = r;
       });
-      if (!target) return;
-      const strip = document.getElementById('snapper-th-bar');
-      const clear = strip ? strip.getBoundingClientRect().height + 8 : 0;
-      window.scrollTo({
-        top: target.getBoundingClientRect().top + window.scrollY - clear,
-        behavior: 'smooth',
-      });
+      if (target) jumpToFamily(target);
     });
   });
 
