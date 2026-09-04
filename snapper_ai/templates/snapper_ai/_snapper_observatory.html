@@ -61,6 +61,30 @@
 .snapper-curve-row-docked .snapper-curve-row-label {
   flex: 0 0 auto;
 }
+/* Section band: the first row of an option's family run carries the
+   option's name across the full width, so the page reads as sections
+   (one per queue, campaign, ...) rather than one run of family rows.
+   Very light blue; an idle section is grey. */
+.snapper-section-band {
+  flex: 1 0 100%;
+  background: #e3f2fd;
+  border-radius: .35rem .35rem 0 0;
+  padding: .3rem .6rem;
+  margin: -1px -1px .35rem -1px;
+  font-size: 1.35em;
+  font-weight: 700;
+  color: #0d3c61;
+}
+.snapper-section-band .snapper-section-peak {
+  font-size: .7em;
+  font-weight: 400;
+  color: #455a64;
+  margin-left: .8em;
+}
+.snapper-section-band.snapper-section-idle {
+  background: #eceff1;
+  color: #546e7a;
+}
 </style>
 {# Only this slim strip pins: the window controls and Now stay in    #}
 {# reach anywhere down the table, and a click positions the sliced   #}
@@ -150,7 +174,7 @@
     {# follow, muted. A name scrolls to that option's first section.  #}
     {% if observatory_focus.jump_active or observatory_focus.jump_idle %}
     <div class="mb-2">
-      <strong>{{ observatory_focus.selector_label }}s by peak {{ observatory_focus.activity_label }}:</strong>
+      <strong>{{ observatory_focus.jump_label }}:</strong>
       {% for j in observatory_focus.jump_active %}<a href="#" data-jump-family="{{ j.family }}">{{ j.label }}</a> [{{ j.peak }}]{% if not forloop.last %} <span class="text-muted">·</span> {% endif %}{% endfor %}
       {% if observatory_focus.jump_idle %}
       <span class="text-muted">{% if observatory_focus.jump_active %}&nbsp;&nbsp;·&nbsp;&nbsp;{% endif %}idle:
@@ -568,11 +592,21 @@
     hold.observe(document.body);
     setTimeout(function () { hold.disconnect(); }, 4000);
   }
+  // A jump is a history entry, so the browser's back button returns
+  // to the top of the page instead of leaving it.
+  let jumpDepth = 0;
   document.querySelectorAll('[data-jump-family]').forEach(function (a) {
     a.addEventListener('click', function (ev) {
       ev.preventDefault();
+      jumpDepth += 1;
+      history.pushState({snapperJump: jumpDepth}, '');
       jumpToFamily(a.dataset.jumpFamily);
     });
+  });
+  window.addEventListener('popstate', function (ev) {
+    if (jumpDepth <= 0) return;
+    jumpDepth = (ev.state && ev.state.snapperJump) || 0;
+    window.scrollTo({top: 0, behavior: 'smooth'});
   });
 
   // State colors: house status colors for status-like values, a
@@ -1735,6 +1769,7 @@
             window_relative: g.window_relative || false,
             fills: g.fills || null,
             start_closed: !!g.start_closed,
+            section: g.section || null,
             detail_key: g.detail_key || '',
             panel_px: g.panel_px || 0,
             empty_note: g.empty_note || '',
@@ -2302,6 +2337,20 @@
       row.className = 'snapper-curve-row';
       // The jump list scrolls to a family's row by this name.
       row.dataset.family = name;
+      // An option's first family opens its section with a band.
+      if (def.section) {
+        const band = document.createElement('div');
+        band.className = 'snapper-section-band'
+            + (def.section.idle ? ' snapper-section-idle' : '');
+        band.innerHTML = escapeHtml(def.section.label)
+            + '<span class="snapper-section-peak">'
+            + (def.section.idle
+               ? 'idle in this window'
+               : 'peak ' + escapeHtml(String(def.section.peak)) + ' '
+                 + escapeHtml(def.section.activity_label || ''))
+            + '</span>';
+        row.appendChild(band);
+      }
       const head = document.createElement('div');
       head.className = 'snapper-curve-row-label';
       // The rotator hides a secondary family altogether — controls

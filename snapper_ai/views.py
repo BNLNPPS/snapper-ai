@@ -855,6 +855,17 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                         continue
                     if idle:
                         group['start_closed'] = True
+                    if not first:
+                        # The option's first family carries its section
+                        # header band: the page reads as sections, one
+                        # per option, not as one run of family rows.
+                        group['section'] = {
+                            'label': option.get('label') or option.get('value'),
+                            'peak': int(peaks[option.get('value')]),
+                            'idle': idle,
+                            'activity_label': (focus_def.get('activity_label')
+                                               or 'activity'),
+                        }
                     first = first or family
                     ordered.append(group)
                 entry = {'label': option.get('label') or option.get('value'),
@@ -994,7 +1005,10 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             'groups': groups,
             'jump_active': jump_active,
             'jump_idle': jump_idle,
-            'activity_label': focus_def.get('activity_label') or 'activity',
+            'jump_label': (
+                focus_def.get('jump_label')
+                or (f"{focus_def.get('selector_label') or focus_def.get('label') or 'Focus'}s"
+                    f" by peak {focus_def.get('activity_label') or 'activity'}")),
             'all_on_url': _focus_url('all'),
             'all_off_url': _focus_url([]),
             'options': [
