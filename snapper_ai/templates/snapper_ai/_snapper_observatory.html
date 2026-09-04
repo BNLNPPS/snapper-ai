@@ -659,10 +659,39 @@
     famClosedStore = JSON.parse(
         localStorage.getItem(famClosedKey) || '{}');
   } catch (e) { famClosedStore = {}; }
+  // The rotator's choices within this visit, for every family: the
+  // arrow folds and unfolds any section, and the choice holds across
+  // re-renders and the soft refresh. It is separate from the
+  // remembered store, which only a secondary family reads on a fresh
+  // load — a primary family always lands open.
+  const famClosedVisit = {};
+  // Sections: an option's run of families, opened by its band. The
+  // band's arrow folds the whole run — every family and panel — to
+  // the band alone. An idle section starts folded. Section folds are
+  // keyed 'section:<label>' in the same visit map and store.
+  let familySectionCache = null;
+  function familySectionOf(name) {
+    if (!familySectionCache) {
+      familySectionCache = {};
+      let current = null;
+      GROUPS.forEach(function (g) {
+        if (g.section) current = g.section;
+        if (current) familySectionCache[g.name] = current;
+      });
+    }
+    return familySectionCache[name] || null;
+  }
+  function sectionKey(section) { return 'section:' + section.label; }
+  function sectionClosed(section) {
+    const key = sectionKey(section);
+    if (key in famClosedVisit) return !!famClosedVisit[key];
+    if (key in famClosedStore) return !!famClosedStore[key];
+    return !!section.idle;
+  }
   function familyClosed(name, def) {
-    // Only a secondary family (declared closed) takes a remembered
-    // collapse: a primary family always lands open on a fresh load —
-    // the rotator still folds it within the visit.
+    const section = familySectionOf(name);
+    if (section && sectionClosed(section)) return true;
+    if (name in famClosedVisit) return !!famClosedVisit[name];
     const secondary = !!(def && (def.default_off || def.start_closed));
     if (secondary && name in famClosedStore) {
       return !!famClosedStore[name];
@@ -670,6 +699,7 @@
     return secondary;
   }
   function setFamilyClosed(name, closed) {
+    famClosedVisit[name] = closed ? 1 : 0;
     famClosedStore[name] = closed ? 1 : 0;
     try {
       localStorage.setItem(famClosedKey,
@@ -2341,10 +2371,24 @@
         }
       }
     });
+    function rerenderAfterFold() {
+      const viewTrue = viewIsZoomed() ? currentRange() : null;
+      suppressPush = true;
+      render(viewTrue);
+      setTimeout(function () {
+        lastRange = currentRange();
+        suppressPush = false;
+      }, 100);
+    }
     orderedNames.forEach(function (name) {
       const def = Object.assign(
           {}, groupDef(name && groupMembers[name][0]) || {},
           {section: sectionOf[name] || null});
+      // A folded section renders its band alone, on its first
+      // rendered family; its other families render nothing.
+      const section = familySectionOf(name);
+      const folded = !!(section && sectionClosed(section));
+      if (folded && !def.section) return;
       // Every family carries the rotator; default_off/start_closed
       // only set the default state.
       const closable = true;
@@ -2353,19 +2397,33 @@
       row.className = 'snapper-curve-row';
       // The jump list scrolls to a family's row by this name.
       row.dataset.family = name;
-      // An option's first family opens its section with a band.
+      // An option's first family opens its section with a band; the
+      // band's arrow folds the whole section.
       if (def.section) {
         const band = document.createElement('div');
         band.className = 'snapper-section-band'
             + (def.section.idle ? ' snapper-section-idle' : '');
-        band.innerHTML = escapeHtml(def.section.label)
+        band.innerHTML = '<a href="#" data-section-arrow '
+            + 'style="text-decoration:none">'
+            + (folded ? '&#9656;' : '&#9662;') + '</a> '
+            + escapeHtml(def.section.label)
             + '<span class="snapper-section-peak">'
             + (def.section.idle
                ? 'idle in this window'
                : 'peak ' + escapeHtml(String(def.section.peak)) + ' '
                  + escapeHtml(def.section.activity_label || ''))
             + '</span>';
+        band.querySelector('[data-section-arrow]').addEventListener(
+            'click', function (e) {
+              e.preventDefault();
+              setFamilyClosed(sectionKey(def.section), !folded);
+              rerenderAfterFold();
+            });
         row.appendChild(band);
+        if (folded) {
+          attachRow(name, row);
+          return;
+        }
       }
       const head = document.createElement('div');
       head.className = 'snapper-curve-row-label';
@@ -2392,13 +2450,7 @@
             'click', function (e) {
               e.preventDefault();
               setFamilyClosed(name, !closed);
-              const viewTrue = viewIsZoomed() ? currentRange() : null;
-              suppressPush = true;
-              render(viewTrue);
-              setTimeout(function () {
-                lastRange = currentRange();
-                suppressPush = false;
-              }, 100);
+              rerenderAfterFold();
             });
       }
       if (closed || noTicks) {
