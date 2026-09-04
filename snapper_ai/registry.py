@@ -128,7 +128,11 @@ class ScopeProvider:
     # [{'value', 'label', 'families': [...], 'component': name,
     # 'start': datetime|None}]}. 'default' names an option value or
     # 'all' (every option); the clean page restores the signed-in
-    # user's last selection ahead of it. This field accepts one declaration or
+    # user's last selection ahead of it. An option may declare an
+    # 'activity' curve id (and the declaration an 'activity_label'):
+    # with several options selected, presentation follows the peak of
+    # that curve over the window, idle options last and closed, with a
+    # jump list in the same order. This field accepts one declaration or
     # a tuple/list of them — each gets its own tab and its own clean
     # page at /<scope>/<label-lowercased>/. When the report request
     # carries ?<param>=<value>: only the option's families' curves and

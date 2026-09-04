@@ -824,6 +824,48 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 if group.get('focus_closed'):
                     group['start_closed'] = True
 
+        # With several options selected, presentation follows activity.
+        # An option may declare an 'activity' curve; its peak over the
+        # shown window ranks the option, the idle ones (no activity
+        # recorded) go last in alphabetical order with their sections
+        # closed, and each option's families stay together in that
+        # order. The jump list under the selector is the same order:
+        # one derivation for both.
+        jump_active, jump_idle = [], []
+        if len(chosen) > 1 and any(o.get('activity') for o in chosen):
+            def _peak(option):
+                curve = (observatory.get('curves') or {}).get(
+                    option.get('activity') or '') or {}
+                values = [p[1] for p in (curve.get('points') or ())
+                          if p and len(p) > 1 and p[1] is not None]
+                return max(values) if values else 0
+            peaks = {o.get('value'): _peak(o) for o in chosen}
+            ranked = sorted(
+                chosen,
+                key=lambda o: (-peaks[o.get('value')],
+                               str(o.get('label') or o.get('value') or '')))
+            by_name = {g.get('name'): g for g in groups}
+            ordered = []
+            for option in ranked:
+                idle = peaks[option.get('value')] <= 0
+                first = ''
+                for family in _families(option):
+                    group = by_name.pop(family, None)
+                    if group is None:
+                        continue
+                    if idle:
+                        group['start_closed'] = True
+                    first = first or family
+                    ordered.append(group)
+                entry = {'label': option.get('label') or option.get('value'),
+                         'peak': int(peaks[option.get('value')]),
+                         'family': first}
+                (jump_idle if idle else jump_active).append(entry)
+            # Families belonging to no chosen option (open groups) keep
+            # their place after the ranked ones.
+            ordered.extend(by_name.values())
+            groups = ordered
+
         def _in_focus(curve_id):
             return any(registry.group_matches(g, curve_id)
                        for g in groups)
@@ -950,6 +992,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             'landed': remembered,
             'component': focus_option.get('component') or '',
             'groups': groups,
+            'jump_active': jump_active,
+            'jump_idle': jump_idle,
+            'activity_label': focus_def.get('activity_label') or 'activity',
             'all_on_url': _focus_url('all'),
             'all_off_url': _focus_url([]),
             'options': [

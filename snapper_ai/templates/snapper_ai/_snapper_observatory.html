@@ -145,6 +145,19 @@
       {# bins, counts tracking the visible range.                     #}
       <span id="snapper-ef-quals" class="d-flex flex-wrap align-items-center column-gap-2 row-gap-1"></span>
     </div>
+    {# Jump list: the selected options in presentation order, by peak #}
+    {# activity over the window, each peak in brackets; idle options  #}
+    {# follow, muted. A name scrolls to that option's first section.  #}
+    {% if observatory_focus.jump_active or observatory_focus.jump_idle %}
+    <div class="mb-2">
+      <strong>{{ observatory_focus.selector_label }}s by peak {{ observatory_focus.activity_label }}:</strong>
+      {% for j in observatory_focus.jump_active %}<a href="#" data-jump-family="{{ j.family }}">{{ j.label }}</a> [{{ j.peak }}]{% if not forloop.last %} <span class="text-muted">·</span> {% endif %}{% endfor %}
+      {% if observatory_focus.jump_idle %}
+      <span class="text-muted">{% if observatory_focus.jump_active %}&nbsp;&nbsp;·&nbsp;&nbsp;{% endif %}idle:
+      {% for j in observatory_focus.jump_idle %}<a href="#" class="text-muted" data-jump-family="{{ j.family }}">{{ j.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</span>
+      {% endif %}
+    </div>
+    {% endif %}
     {% if observatory_focus.note %}
     <div class="mb-2 text-muted">{{ observatory_focus.note }}</div>
     {% endif %}
@@ -525,6 +538,26 @@
       window.location.replace(urlNow.toString());
     }
   })();
+
+  // Jump list: scroll to the named family's row, clear of the pinned
+  // Time history strip.
+  document.querySelectorAll('[data-jump-family]').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      const rows = document.querySelectorAll('[data-family]');
+      let target = null;
+      rows.forEach(function (r) {
+        if (!target && r.dataset.family === a.dataset.jumpFamily) target = r;
+      });
+      if (!target) return;
+      const strip = document.getElementById('snapper-th-bar');
+      const clear = strip ? strip.getBoundingClientRect().height + 8 : 0;
+      window.scrollTo({
+        top: target.getBoundingClientRect().top + window.scrollY - clear,
+        behavior: 'smooth',
+      });
+    });
+  });
 
   // State colors: house status colors for status-like values, a
   // high-contrast categorical palette for the rest. Inactive lane
@@ -2251,6 +2284,8 @@
       const closed = familyClosed(name, def);
       const row = document.createElement('div');
       row.className = 'snapper-curve-row';
+      // The jump list scrolls to a family's row by this name.
+      row.dataset.family = name;
       const head = document.createElement('div');
       head.className = 'snapper-curve-row-label';
       // The rotator hides a secondary family altogether — controls
