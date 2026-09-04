@@ -244,8 +244,9 @@ def _landing_cut(scope, component, window_start, window_end):
 
 def _focus_landing_cut(scope, focus_option, groups, observatory,
                        window_start, window_end):
-    """The landing cut lands inside the latest display bin that has
-    data, so the page opens on detail with something to show — a grid
+    """Every report page's load-time default cut, the scope report and
+    the focus views alike: it lands inside the latest display bin that
+    has data, so the page opens on detail with something to show — a grid
     that materializes behind the clock (the campaign day bins build
     overnight, so today is empty) must not take the cut. Families whose
     columns stamp an interval's END (end-stamped quilts, event flows,
@@ -300,7 +301,8 @@ def _focus_landing_cut(scope, focus_option, groups, observatory,
         if stamps and (cut is None or stamps[-1] >= cut):
             cut = stamps[-1]
     if cut is None:
-        return _landing_cut(scope, focus_option.get('component') or '',
+        return _landing_cut(scope,
+                            (focus_option or {}).get('component') or '',
                             window_start, window_end)
     return min(max(cut, window_start), window_end)
 
@@ -1042,19 +1044,20 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
         'observatory_window': window_key,
         'observatory_windows': list(WINDOW_HOURS),
         'observatory_default_window': DEFAULT_WINDOW,
-        # A focus page lands with the slice already taken — half a
-        # recording interval back from the window's end, on the latest
-        # recorded state — so the click-for-details gesture is shown,
-        # not discovered. An explicit ?cut= wins as ever; the literal
+        # Every report page lands with the slice already taken, inside
+        # the most recent populated bin, so it opens on detail with
+        # something to show and the click-for-details gesture is shown,
+        # not discovered; a page without a cut has no detail, never the
+        # intended state. An explicit ?cut= wins as ever; the literal
         # value 'now' means the live edge (the client enters track-now).
         'observatory_cut': (
             window_end.isoformat()
             if (request.GET.get('cut') or '').strip() == 'now'
             else (request.GET.get('cut') or '').strip()
-            or (_focus_landing_cut(
-                    scope, focus_option, focus_context['groups'],
-                    observatory, window_start, window_end).isoformat()
-                if focus_option is not None else '')),
+            or _focus_landing_cut(
+                scope, focus_option,
+                focus_context['groups'] if focus_context else scope_groups,
+                observatory, window_start, window_end).isoformat()),
         'observatory_prefs': user_prefs,
         'observatory_prev_url': observatory_prev_url,
         'observatory_next_url': observatory_next_url,

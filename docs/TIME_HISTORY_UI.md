@@ -53,12 +53,15 @@ cards below the tracks, over a seven-day window.*
    component-narrowed cut at an instant with no record
    of that component at or before it renders a "no record" card
    naming where the record begins, with a link that cuts there. A
-   focus view lands with its default cut half a recording interval
-   back from the window's end — the component's change cadence, read
-   from its recent change-bearing snaps — so the page opens on the
-   latest recorded state; the cut never lands before the component's
-   first recorded snap, so a record younger than the window does not
-   open on an empty instant. Third the overview table, in its own scroll pane
+   report page, the scope report and each focus view alike, lands with
+   its default cut inside the most recent populated bin of what it
+   plots, so the page opens on the latest recorded state with its
+   detail showing; a page without a cut has no detail, and that is
+   never the intended state. With nothing plotted the cut falls back
+   to half a recording interval before the window's end — the
+   component's change cadence, read from its recent change-bearing
+   snaps — and never before the component's first recorded snap, so a
+   record younger than the window does not open on an empty instant. Third the overview table, in its own scroll pane
    sized to the full table height: the at-a-glance inventory of the
    window, newest first, time leftmost with elapsed length, and the
    detail home. The whole table is visible on the page — page
