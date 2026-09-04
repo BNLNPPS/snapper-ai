@@ -542,11 +542,22 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     candidate.get('param') or 'focus') is not None:
                 focus_def = candidate
                 break
+    user_prefs = _snapper_prefs(request, scope)
     focus_selected = []
     open_groups = []
+    remembered = ''
     if focus_def:
         raw_value = request.GET.get(focus_def.get('param') or 'focus')
         raw = (raw_value or '').strip()
+        # The clean page (no parameter at all) restores the signed-in
+        # user's last selection for this focus ahead of the declared
+        # default; the client does the same from local storage for a
+        # visitor who is not signed in.
+        if raw_value is None:
+            remembered = str((user_prefs.get('focus_last') or {}).get(
+                focus_def.get('param') or 'focus') or '').strip()
+            if remembered:
+                raw = remembered
         if raw_value is not None or focus_slug is not None:
             options = focus_def.get('options') or []
             by_value = {o.get('value'): o for o in options}
@@ -578,8 +589,14 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             # off until the user ticks again.
             if (not focus_selected and options
                     and (raw_value is None or raw)):
-                default = by_value.get(focus_def.get('default'))
-                focus_selected = [(default or options[0]).get('value')]
+                declared = focus_def.get('default')
+                if str(declared or '').lower() == 'all':
+                    focus_selected = [o.get('value') for o in options
+                                      if o.get('value')]
+                else:
+                    default = by_value.get(declared)
+                    focus_selected = [
+                        (default or options[0]).get('value')]
             chosen = [by_value[v] for v in focus_selected]
             # A focus view may offer selector axes (e.g. a plotted
             # quantity, a grouping lens): each option carries families
@@ -621,7 +638,6 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 'start': min(starts) if starts else None,
             }
 
-    user_prefs = _snapper_prefs(request, scope)
     now = timezone.now()
     window_start, window_end, window_key = parse_window(
         request, now,
@@ -929,6 +945,9 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             'note': focus_def.get('note') or '',
             'param': param,
             'value': focus_option.get('value') or '',
+            # The remembered selection this clean page landed on, so
+            # the client's focus memory need not re-apply it.
+            'landed': remembered,
             'component': focus_option.get('component') or '',
             'groups': groups,
             'all_on_url': _focus_url('all'),

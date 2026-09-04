@@ -459,14 +459,38 @@
     if (!authenticated) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
-      const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1];
+      // The token comes from the server, never from a cookie name: a
+      // proxy face may rename the CSRF cookie.
+      const csrf = '{{ csrf_token }}';
       fetch('{% url "snapper_ai:snapper_prefs" scope=scope %}', {
         method: 'POST',
         headers: {'Content-Type': 'application/json',
                   'X-CSRFToken': csrf || ''},
         body: JSON.stringify(payload),
+      }).then(function (r) {
+        prefsSaveFailed(r.ok ? '' : 'HTTP ' + r.status);
+      }).catch(function (err) {
+        prefsSaveFailed(String(err));
       });
     }, 600);
+  }
+  // A failed preference save is said on the page, never swallowed:
+  // the visitor would otherwise learn of it only when a setting fails
+  // to come back in the next session.
+  function prefsSaveFailed(reason) {
+    let el = document.getElementById('snapper-prefs-notice');
+    if (!reason) {
+      if (el) el.remove();
+      return;
+    }
+    if (!el) {
+      el = document.createElement('span');
+      el.id = 'snapper-prefs-notice';
+      el.className = 'text-danger ms-2';
+      (document.getElementById('snapper-th-bar') || controls)
+          .appendChild(el);
+    }
+    el.textContent = 'Preferences not saved (' + reason + ')';
   }
   // Focus memory: an explicit ?<param>= selection is recorded; a bare
   // entry (no param in the URL) restores the remembered selection by
@@ -488,7 +512,12 @@
     const wanted = focusLast[focusParam0];
     const effective =
         '{{ observatory_focus.value|default:""|escapejs }}';
-    if (wanted && wanted !== effective) {
+    // The server already applied the signed-in user's remembered
+    // selection to this clean page; only a different memory (local
+    // storage, signed out) needs the URL replaced.
+    const landed =
+        '{{ observatory_focus.landed|default:""|escapejs }}';
+    if (wanted && wanted !== effective && wanted !== landed) {
       urlNow.searchParams.set(focusParam0, wanted);
       window.location.replace(urlNow.toString());
     }
