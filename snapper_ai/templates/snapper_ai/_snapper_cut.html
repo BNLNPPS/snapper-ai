@@ -3,11 +3,13 @@
 <div class="text-danger">{{ error }}</div>
 {% else %}
 <style>
+/* No overflow on the card: an overflow wrapper would make the host's
+   pinned table headers stick to the card instead of the page, and the
+   host's table helper owns any wide-table scrolling itself. */
 .snapper-cut-card { border:1px solid var(--bs-border-color,#ccc);
-                    border-radius:.4em; padding:.6em .8em; overflow-x:auto; }
+                    border-radius:.4em; padding:.6em .8em; }
 /* Detail tables size to their content, never to the window: columns
-   stay beside each other where the eye is. A table wider than the card
-   scrolls inside it. */
+   stay beside each other where the eye is. */
 .snapper-cut-card table.table { width:auto; max-width:100%; }
 </style>
 {% if not compact %}
