@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 _FAMILY_KEYS = ('name', 'title', 'prefixes', 'ids', 'order', 'stacked',
                 'window_relative', 'cumulative_stack', 'end_stamped',
-                'event_flow', 'default_off', 'default_off_ids', 'units',
-                'fills')
+                'event_flow', 'event_flow_bin_scale', 'default_off',
+                'default_off_ids', 'units', 'fills')
 
 
 def _iso(value):

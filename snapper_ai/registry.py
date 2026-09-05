@@ -61,7 +61,11 @@ class ScopeProvider:
                      until the visitor explicitly enables them),
                      'tall' (double panel height), 'panel_px' (explicit
                      panel height), 'end_stamped' (stack values describe
-                     the interval ending at their stamp), and
+                     the interval ending at their stamp),
+                     'event_flow_bin_scale' (an event-flow family's
+                     display bins are this many times the page's ladder
+                     rung, so a sparse family draws as bars rather than
+                     hairlines; the page takes the largest declared), and
                      'focus_closed' (section closed by default inside a
                      focus view).
     scope_curve_groups  Optional compact subset of curve_groups for the

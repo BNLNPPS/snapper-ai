@@ -1863,6 +1863,8 @@
             cumulative_stack: !!g.cumulative_stack,
             end_stamped: !!g.end_stamped,
             event_flow: !!g.event_flow,
+            event_flow_bin_scale: Math.max(
+                1, Math.round(+g.event_flow_bin_scale) || 1),
             default_off: !!g.default_off, units: g.units || '',
             qualifier_label: g.qualifier_label || '',
             qualifier_param: g.qualifier_param || 'quals',
@@ -1907,14 +1909,20 @@
   // Event-flow families arrive as SPARSE NATIVE bins — the 5-minute
   // capture quantum, edges on the ET grid — and display binning is
   // chosen here: the smallest ladder rung keeping the plotted extent
-  // at or under EF_MAX_COLUMNS columns. Every rung is an exact sum of
-  // native bins, so zooming re-bins in place from data already loaded
-  // and never refetches. The dense (zero-filled) grid spans the built
-  // extent: the whole window at the window's rung, or the zoomed view
-  // padded by half a span each side at a finer rung, rebuilt when the
-  // view leaves it.
+  // at or under EF_MAX_COLUMNS columns, times the page's bin scale —
+  // the largest event_flow_bin_scale an event-flow family on the page
+  // declares, for a family whose few events would draw as hairlines
+  // at the ladder rung. Every rung is an exact sum of native bins, so
+  // zooming re-bins in place from data already loaded and never
+  // refetches. The dense (zero-filled) grid spans the built extent:
+  // the whole window at the window's rung, or the zoomed view padded
+  // by half a span each side at a finer rung, rebuilt when the view
+  // leaves it.
   const EF_MAX_COLUMNS = 720;
   const EF_RUNGS_MIN = [5, 10, 15, 20, 30, 60];
+  const EF_BIN_SCALE = GROUPS.reduce(function (scale, g) {
+    return g.event_flow ? Math.max(scale, g.event_flow_bin_scale) : scale;
+  }, 1);
   let efRungMs = 0;
   let efExtent = [0, 0];
   let efSettleTimer = null;
@@ -1923,9 +1931,11 @@
   }
   function efRungForSpan(spanMs) {
     for (const rung of EF_RUNGS_MIN) {
-      if (spanMs / (rung * 60000) <= EF_MAX_COLUMNS) return rung * 60000;
+      if (spanMs / (rung * 60000) <= EF_MAX_COLUMNS) {
+        return rung * 60000 * EF_BIN_SCALE;
+      }
     }
-    return EF_RUNGS_MIN[EF_RUNGS_MIN.length - 1] * 60000;
+    return EF_RUNGS_MIN[EF_RUNGS_MIN.length - 1] * 60000 * EF_BIN_SCALE;
   }
   function efSetState(viewTrue) {
     const windowRange = [Date.parse(data.start), Date.parse(data.end)];
