@@ -175,7 +175,7 @@
     {% if observatory_focus.jump_active or observatory_focus.jump_idle %}
     <div class="mb-2">
       <strong>{{ observatory_focus.jump_label }}:</strong>
-      {% for j in observatory_focus.jump_active %}<a href="#" data-jump-family="{{ j.family }}">{{ j.label }}</a> [{{ j.peak }}]{% if not forloop.last %} <span class="text-muted">·</span> {% endif %}{% endfor %}
+      {% for j in observatory_focus.jump_active %}<a href="#" data-jump-family="{{ j.family }}">{{ j.label }}</a>{% if j.peak is not None %} [{{ j.peak }}]{% endif %}{% if not forloop.last %} <span class="text-muted">·</span> {% endif %}{% endfor %}
       {% if observatory_focus.jump_idle %}
       <span class="text-muted">{% if observatory_focus.jump_active %}&nbsp;&nbsp;·&nbsp;&nbsp;{% endif %}idle:
       {% for j in observatory_focus.jump_idle %}<a href="#" class="text-muted" data-jump-family="{{ j.family }}">{{ j.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</span>
@@ -2408,10 +2408,12 @@
             + (folded ? '&#9656;' : '&#9662;') + '</a> '
             + escapeHtml(def.section.label)
             + '<span class="snapper-section-peak">'
-            + (def.section.idle
-               ? 'idle in this window'
-               : 'peak ' + escapeHtml(String(def.section.peak)) + ' '
-                 + escapeHtml(def.section.activity_label || ''))
+            + (def.section.pinned
+               ? ''
+               : def.section.idle
+                 ? 'idle in this window'
+                 : 'peak ' + escapeHtml(String(def.section.peak)) + ' '
+                   + escapeHtml(def.section.activity_label || ''))
             + '</span>';
         band.querySelector('[data-section-arrow]').addEventListener(
             'click', function (e) {

@@ -45,7 +45,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
     token = sha256(identity.encode()).hexdigest()[:16]
-    return (f'snapper_series:v19:{scope}:focus:'
+    return (f'snapper_series:v20:{scope}:focus:'
             f'{focus_param}:{token}:{cache_span}')
 
 
@@ -705,7 +705,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v19:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v20:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,
@@ -840,14 +840,20 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                           if p and len(p) > 1 and p[1] is not None]
                 return max(values) if values else 0
             peaks = {o.get('value'): _peak(o) for o in chosen}
+            # An option declaring pin 'last' stays out of the ranking:
+            # its section renders after the ranked ones and is never
+            # idle — scope-level families riding a per-entity view.
+            pinned = [o for o in chosen if o.get('pin') == 'last']
             ranked = sorted(
-                chosen,
+                [o for o in chosen if o not in pinned],
                 key=lambda o: (-peaks[o.get('value')],
                                str(o.get('label') or o.get('value') or '')))
+            ranked.extend(pinned)
             by_name = {g.get('name'): g for g in groups}
             ordered = []
             for option in ranked:
-                idle = peaks[option.get('value')] <= 0
+                is_pinned = option.get('pin') == 'last'
+                idle = not is_pinned and peaks[option.get('value')] <= 0
                 first = ''
                 for family in _families(option):
                     group = by_name.pop(family, None)
@@ -863,13 +869,15 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                             'label': option.get('label') or option.get('value'),
                             'peak': int(peaks[option.get('value')]),
                             'idle': idle,
+                            'pinned': is_pinned,
                             'activity_label': (focus_def.get('activity_label')
                                                or 'activity'),
                         }
                     first = first or family
                     ordered.append(group)
                 entry = {'label': option.get('label') or option.get('value'),
-                         'peak': int(peaks[option.get('value')]),
+                         'peak': (None if is_pinned
+                                  else int(peaks[option.get('value')])),
                          'family': first}
                 (jump_idle if idle else jump_active).append(entry)
             # Families belonging to no chosen option (open groups) keep
