@@ -572,6 +572,10 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             if raw.lower() == 'all':
                 focus_selected = [o.get('value') for o in options
                                   if o.get('value')]
+            elif raw.lower() == 'none':
+                # Every option off, by name rather than by an empty
+                # parameter, so the URL reads as what it is.
+                focus_selected = []
             else:
                 # An off-list value may be served by the view's
                 # open_option hook: (value) -> {'option': {...},
@@ -596,7 +600,8 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             # valid state, as in every Snapper tick row — and stays
             # off until the user ticks again.
             if (not focus_selected and options
-                    and (raw_value is None or raw)):
+                    and (raw_value is None or raw)
+                    and raw.lower() != 'none'):
                 declared = focus_def.get('default')
                 if str(declared or '').lower() == 'all':
                     focus_selected = [o.get('value') for o in options
@@ -636,8 +641,21 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             # families, the cut still narrowed to the view's component.
             starts = [o.get('start') for o in chosen if o.get('start')]
             lead = chosen[0] if chosen else (options[0] if options else {})
+            all_values = [o.get('value') for o in options if o.get('value')]
+
+            def _selection_text(values):
+                """The selection as the URL carries it: 'all' when every
+                listed option is in, 'none' when none is, else the
+                list."""
+                values = list(values)
+                if not values:
+                    return 'none'
+                if all_values and set(values) == set(all_values):
+                    return 'all'
+                return ','.join(values)
+
             focus_option = {
-                'value': ','.join(focus_selected),
+                'value': _selection_text(focus_selected),
                 'selector_values': selected_values,
                 'families': [f for o in chosen for f in _families(o)],
                 'component': lead.get('component') or '',
@@ -976,7 +994,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             # selector); keep the live window, cut, and zoom query.
             query = request.GET.copy()
             query[param] = (values if isinstance(values, str)
-                            else ','.join(values))
+                            else _selection_text(values))
             for i, sel in enumerate(selector_defs):
                 value = selected_values[i]
                 sel_param = sel.get('param') or 'quantity'
@@ -1772,10 +1790,22 @@ def snapper_cut(request, scope):
         wanted = set(provider.scope_components)
     else:
         wanted = None
+    # A focus selection named 'all' or 'none' in the query reaches the
+    # card builders as the option list it stands for.
+    params = request.GET.copy()
+    for focus_def in registry.resolve_focus_views(provider):
+        focus_param = focus_def.get('param') or 'focus'
+        selection = (params.get(focus_param) or '').strip().lower()
+        if selection == 'all':
+            params[focus_param] = ','.join(
+                o.get('value') for o in (focus_def.get('options') or ())
+                if o.get('value'))
+        elif selection == 'none':
+            params[focus_param] = ''
     cards = (_cut_components(snap, previous_snap, scope,
                              requested_at=result.requested_at,
                              only=wanted,
-                             params=request.GET,
+                             params=params,
                              since_snap=since_snap, since=since)
              if snap else [])
     for card in cards:

@@ -283,7 +283,11 @@ def observatory_series(scope, start, end, curve_filter=None,
                     current = samples[index][1]
                     index += 1
                 if baseline is not None and current is not None:
+                    # Float counters (bytes in TB) difference with
+                    # binary noise; six decimals is beyond any display.
                     delta = current - baseline
+                    if isinstance(delta, float):
+                        delta = round(delta, 6)
                     if delta >= 0:
                         flows.append([edge.isoformat(), delta])
                 baseline = current
@@ -293,7 +297,11 @@ def observatory_series(scope, start, end, curve_filter=None,
                     current = samples[index][1]
                     index += 1
                 if baseline is not None and current is not None:
+                    # Float counters (bytes in TB) difference with
+                    # binary noise; six decimals is beyond any display.
                     delta = current - baseline
+                    if isinstance(delta, float):
+                        delta = round(delta, 6)
                     if delta >= 0:
                         flows.append([window_end.isoformat(), delta])
             curve['points'] = flows

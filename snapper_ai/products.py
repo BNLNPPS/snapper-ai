@@ -65,6 +65,8 @@ def resolve_focus(scope, focus, selection=None, selectors=None):
     raw = (selection or '').strip()
     if raw.lower() == 'all':
         chosen_values = [o.get('value') for o in options if o.get('value')]
+    elif raw.lower() == 'none':
+        chosen_values = []
     elif raw:
         open_option = focus_def.get('open_option')
         for value in (s.strip() for s in raw.split(',')):
@@ -80,7 +82,7 @@ def resolve_focus(scope, focus, selection=None, selectors=None):
                 raise InvalidQuery(
                     f'unknown selection {value!r} for focus {focus!r}; '
                     f"known: {', '.join(sorted(k for k in by_value if k))}")
-    if not chosen_values and options:
+    if not chosen_values and options and raw.lower() != 'none':
         default = by_value.get(focus_def.get('default'))
         chosen_values = [(default or options[0]).get('value')]
     chosen = [by_value[v] for v in chosen_values]
