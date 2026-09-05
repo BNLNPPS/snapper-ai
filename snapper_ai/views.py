@@ -41,6 +41,14 @@ def _focus_curve_filter(all_groups, wanted):
     return _filter
 
 
+def _compact_count(value):
+    """A count for a label: millions as 1.3M, else with separators."""
+    value = int(value or 0)
+    if value >= 1_000_000:
+        return f'{value / 1e6:.1f}M'
+    return f'{value:,}'
+
+
 def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
@@ -641,10 +649,11 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     now = timezone.now()
     window_start, window_end, window_key = parse_window(
         request, now,
-        # A focus view may name the window its clean page lands on; the
-        # signed-in user's remembered window takes precedence.
-        default_window=str(user_prefs.get('window')
-                           or (focus_def or {}).get('default_window')
+        # A focus view may name the window its clean page lands on; it
+        # is the view's natural span and outranks the remembered scope
+        # window, which the other pages keep.
+        default_window=str((focus_def or {}).get('default_window')
+                           or user_prefs.get('window')
                            or DEFAULT_WINDOW))
     if focus_option is not None and focus_option.get('start'):
         explicit = any(request.GET.get(key)
@@ -871,7 +880,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                         # per option, not as one run of family rows.
                         group['section'] = {
                             'label': option.get('label') or option.get('value'),
-                            'peak': int(peaks[option.get('value')]),
+                            'peak': _compact_count(peaks[option.get('value')]),
                             'idle': idle,
                             'pinned': is_pinned,
                             'activity_label': (focus_def.get('activity_label')
@@ -881,7 +890,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     ordered.append(group)
                 entry = {'label': option.get('label') or option.get('value'),
                          'peak': (None if is_pinned
-                                  else int(peaks[option.get('value')])),
+                                  else _compact_count(peaks[option.get('value')])),
                          'family': first}
                 (jump_idle if idle else jump_active).append(entry)
             # Families belonging to no chosen option (open groups) keep
