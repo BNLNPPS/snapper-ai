@@ -74,6 +74,9 @@
   font-size: 1.35em;
   font-weight: 700;
   color: #0d3c61;
+  /* The whole band folds its section, not only the arrow. */
+  cursor: pointer;
+  user-select: none;
 }
 .snapper-section-band .snapper-section-peak {
   font-size: .7em;
@@ -2433,8 +2436,8 @@
       row.className = 'snapper-curve-row';
       // The jump list scrolls to a family's row by this name.
       row.dataset.family = name;
-      // An option's first family opens its section with a band; the
-      // band's arrow folds the whole section.
+      // An option's first family opens its section with a band; a
+      // click anywhere on the band folds the whole section.
       if (def.section) {
         const band = document.createElement('div');
         band.className = 'snapper-section-band'
@@ -2451,12 +2454,11 @@
                  : 'peak ' + escapeHtml(String(def.section.peak)) + ' '
                    + escapeHtml(def.section.activity_label || ''))
             + '</span>';
-        band.querySelector('[data-section-arrow]').addEventListener(
-            'click', function (e) {
-              e.preventDefault();
-              setFamilyClosed(sectionKey(def.section), !folded);
-              rerenderAfterFold();
-            });
+        band.addEventListener('click', function (e) {
+          e.preventDefault();
+          setFamilyClosed(sectionKey(def.section), !folded);
+          rerenderAfterFold();
+        });
         row.appendChild(band);
         if (folded) {
           attachRow(name, row);
