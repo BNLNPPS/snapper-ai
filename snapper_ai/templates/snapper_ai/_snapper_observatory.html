@@ -171,6 +171,11 @@
       {% endfor %}
     </div>
     {% endfor %}
+    {# Summaries, directly under the selector rows: quick trips to the #}
+    {# cut's summary material below — every card element declaring    #}
+    {# data-snapper-summary, in page order; the back button returns   #}
+    {# to the top, as a jump does.                                    #}
+    <div id="snapper-summaries" class="mb-1" hidden><strong>Summaries:</strong> <span id="snapper-summaries-list"></span></div>
     {# Event-qualifier filter (e.g. terminal state): chips are        #}
     {# client-rendered — self-discovered from the loaded event bins,  #}
     {# counts tracking the visible range.                             #}
@@ -201,10 +206,6 @@
     <div class="mb-1"><strong>Sections:</strong> <a href="#" data-sections-fold="open">open all</a> <span class="text-muted">/</span> <a href="#" data-sections-fold="close">close all</a></div>
     {% endif %}
     {% endif %}
-    {# Summaries: quick trips to the cut's summary material below —  #}
-    {# every card element declaring data-snapper-summary, in page    #}
-    {# order; the back button returns to the top, as a jump does.    #}
-    <div id="snapper-summaries" class="mb-1" hidden><strong>Summaries:</strong> <span id="snapper-summaries-list"></span></div>
     <div id="snapper-observatory-controls" class="mb-2"></div>
     {# style-based visibility: Bootstrap's d-flex !important would override the hidden attribute #}
     <div id="snapper-zoom-bar" class="mb-1 align-items-center gap-2" style="display:none">
