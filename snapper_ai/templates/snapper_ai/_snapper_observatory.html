@@ -201,6 +201,10 @@
     <div class="mb-1"><strong>Sections:</strong> <a href="#" data-sections-fold="open">open all</a> <span class="text-muted">/</span> <a href="#" data-sections-fold="close">close all</a></div>
     {% endif %}
     {% endif %}
+    {# Summaries: quick trips to the cut's summary material below —  #}
+    {# every card element declaring data-snapper-summary, in page    #}
+    {# order; the back button returns to the top, as a jump does.    #}
+    <div id="snapper-summaries" class="mb-1" hidden><strong>Summaries:</strong> <span id="snapper-summaries-list"></span></div>
     <div id="snapper-observatory-controls" class="mb-2"></div>
     {# style-based visibility: Bootstrap's d-flex !important would override the hidden attribute #}
     <div id="snapper-zoom-bar" class="mb-1 align-items-center gap-2" style="display:none">
@@ -620,6 +624,36 @@
     jumpDepth = (ev.state && ev.state.snapperJump) || 0;
     window.scrollTo({top: 0, behavior: 'smooth'});
   });
+  // Summaries: the cut's card elements declaring data-snapper-summary,
+  // listed in page order as quick trips, each a history entry so the
+  // back button returns to the top. Rebuilt with every cut.
+  function renderSummaries() {
+    const box = document.getElementById('snapper-summaries');
+    const list = document.getElementById('snapper-summaries-list');
+    if (!box || !list) return;
+    const targets = Array.from(
+        document.querySelectorAll('[data-snapper-summary]'));
+    list.innerHTML = '';
+    targets.forEach(function (el, i) {
+      if (i) list.appendChild(document.createTextNode(' · '));
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = el.dataset.snapperSummary;
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        jumpDepth += 1;
+        history.pushState({snapperJump: jumpDepth}, '');
+        const strip = document.getElementById('snapper-th-bar');
+        const clear = strip ? strip.getBoundingClientRect().height + 8 : 0;
+        window.scrollTo({
+          top: el.getBoundingClientRect().top + window.scrollY - clear,
+          behavior: 'smooth',
+        });
+      });
+      list.appendChild(a);
+    });
+    box.hidden = targets.length === 0;
+  }
   // Open all / close all folds every option section at once, the
   // remembered per-section state included, and rerenders in place.
   document.querySelectorAll('[data-sections-fold]').forEach(function (a) {
@@ -3298,6 +3332,7 @@
         });
     rerenderView();
     paintCutSwatches();
+    renderSummaries();
   }
   function showCut(timeIso, stampUrl) {
     // timeIso is the true instant the user clicked (UTC ISO): the red

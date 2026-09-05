@@ -123,7 +123,9 @@ authority):
 
 Card builders return pure data with a `kind`; the host card template
 renders the kinds it knows and carries whatever host page links belong
-there. The shared chip, delta, and time vocabulary comes from
+there. A card element carrying `data-snapper-summary="<title>"` joins
+the report page's Summaries line, a quick trip to that element below
+the plot, in page order; the back button returns to the top. The shared chip, delta, and time vocabulary comes from
 `snapper_ai.presentation` — host modules import only public names from
 `presentation` and `registry`.
 
