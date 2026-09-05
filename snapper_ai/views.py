@@ -641,7 +641,11 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
     now = timezone.now()
     window_start, window_end, window_key = parse_window(
         request, now,
-        default_window=str(user_prefs.get('window') or DEFAULT_WINDOW))
+        # A focus view may name the window its clean page lands on; the
+        # signed-in user's remembered window takes precedence.
+        default_window=str(user_prefs.get('window')
+                           or (focus_def or {}).get('default_window')
+                           or DEFAULT_WINDOW))
     if focus_option is not None and focus_option.get('start'):
         explicit = any(request.GET.get(key)
                        for key in ('window', 'start', 'end', 'view'))
