@@ -178,7 +178,6 @@
     {# activity over the window, each peak in brackets; idle options  #}
     {# follow, muted. A name scrolls to that option's first section.  #}
     {% if observatory_focus.jump_active or observatory_focus.jump_idle %}
-    <div class="mb-1"><strong>Sections:</strong> <a href="#" data-sections-fold="open">open all</a> <span class="text-muted">/</span> <a href="#" data-sections-fold="close">close all</a></div>
     <div class="mb-2">
       <strong>{{ observatory_focus.jump_label }}:</strong>
       {% for j in observatory_focus.jump_active %}<a href="#" data-jump-family="{{ j.family }}">{{ j.label }}</a>{% if j.peak is not None %} [{{ j.peak }}]{% endif %}{% if not forloop.last %} <span class="text-muted">·</span> {% endif %}{% endfor %}
@@ -193,6 +192,10 @@
     {% endif %}
     {% if observatory_focus.member_note %}
     <div class="mb-2"><strong>{{ observatory_focus.member_note }}</strong></div>
+    {% endif %}
+    {# The section folds sit directly above the sections they fold. #}
+    {% if observatory_focus.jump_active or observatory_focus.jump_idle %}
+    <div class="mb-1"><strong>Sections:</strong> <a href="#" data-sections-fold="open">open all</a> <span class="text-muted">/</span> <a href="#" data-sections-fold="close">close all</a></div>
     {% endif %}
     {% endif %}
     <div id="snapper-observatory-controls" class="mb-2"></div>
@@ -1457,7 +1460,9 @@
       if (firstPanelIdx < 0) firstPanelIdx = i;
       lastPanelIdx = i;
     });
-    const labelBandPx = 26;
+    // Room for one row of date labels at the plot font (15 px) with
+    // the tick marks above it and clearance to the docked row below.
+    const labelBandPx = 32;
     const topLabelsPx = (firstPanelIdx >= 0
                          && firstPanelIdx !== lastPanelIdx)
         ? labelBandPx : 0;
@@ -1602,7 +1607,7 @@
     // label room only when the stack ends at the last panel with
     // nothing after it.
     const bottomPx = !DOCK_CONTROLS ? 45
-        : (lastPanelIdx >= 0 && !bandAfterLast ? 38 : 8);
+        : (lastPanelIdx >= 0 && !bandAfterLast ? 44 : 8);
     const laneDomain = laneIds.length
         ? domainOf(0, lanePx) : [0.999, 1];
     if (laneIds.length) cutDomains.push(laneDomain);
@@ -1620,6 +1625,9 @@
               tickmode: 'array',
               tickvals: dateTickSpec.vals,
               ticktext: dateTickSpec.text,
+              // With every section folded there is no panel to label:
+              // labels drawn there would sit under the docked rows.
+              showticklabels: panels.length > 0 || laneIds.length > 0,
               // Time labels belong at the bottom of the whole stack:
               // anchor to the lowest panel (the lanes when no panel).
               anchor: panels.length
@@ -1697,6 +1705,10 @@
         // rectangle zoom must never bend the y scale.
         fixedrange: true,
         anchor: 'x',
+        // The family's unit on the axis itself, beside the ticks.
+        title: panel.units
+            ? {text: panel.units, font: {size: 13}, standoff: 6}
+            : undefined,
       };
       // A panel whose members hold points but no nonzero value in the
       // window states its emptiness plainly, never a bare grid.
