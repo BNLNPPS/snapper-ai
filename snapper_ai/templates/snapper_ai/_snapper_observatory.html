@@ -3900,8 +3900,12 @@
     const n = Number(value);
     if (!isFinite(n)) return String(value);
     if (Number.isInteger(n)) return n.toLocaleString();
-    return Number(n.toFixed(3)).toLocaleString(
-        undefined, {maximumFractionDigits: 3});
+    // Places by magnitude: thousands of core-hours read whole, a
+    // few TB read to the hundredth, a fraction to the thousandth.
+    const places = Math.abs(n) >= 100 ? 0 : Math.abs(n) >= 10 ? 1
+        : Math.abs(n) >= 1 ? 2 : 3;
+    return Number(n.toFixed(places)).toLocaleString(
+        undefined, {maximumFractionDigits: places});
   }
 
   // End-stamped daily bins resolve to their closing snap. Current-state
