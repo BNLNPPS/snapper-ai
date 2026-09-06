@@ -884,14 +884,14 @@
   function derivedTitle(def, measure, cumulative) {
     const units = measureUnits(def, measure);
     return measureTitle(def, measure)
-        + (cumulative ? ' · integrated over the window' : '')
+        + (cumulative ? ' · aggregate' : '')
         + (DOCK_CONTROLS && units ? ' — ' + units : '');
   }
-  // A family's integrated panels form a section of their own, banded
+  // A family's aggregate panels form a section of their own, banded
   // and foldable like an option's section, keyed by the family.
   function integratedSection(def) {
     return {label: def.name + CUMULATIVE_SUFFIX,
-            display: 'Integrated over the window',
+            display: 'Aggregate',
             idle: false, pinned: true};
   }
   // Minimum on-screen bar length for episodic run periods, in ms of the
