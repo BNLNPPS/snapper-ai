@@ -3865,7 +3865,7 @@
     if (overlayHit) {
       placeFloater(event, overlayHit.color,
           '<b>' + escapeHtml(overlayHit.label) + '</b>: '
-          + escapeHtml(String(overlayHit.value))
+          + escapeHtml(fmtHoverValue(overlayHit.value))
           + (overlayHit.units ? ' ' + escapeHtml(overlayHit.units) : '')
           + ' · ' + toNaive(time).replace('T', ' '));
       return;
@@ -3878,7 +3878,7 @@
       const color = curveColor[quilt.member.id] || '#37474f';
       placeFloater(event, color,
           '<b>' + escapeHtml(quilt.member.label) + '</b>: '
-          + quilt.member.own[quilt.column]
+          + escapeHtml(fmtHoverValue(quilt.member.own[quilt.column]))
           + (quilt.geom.units
              ? ' ' + escapeHtml(quilt.geom.units) : '')
           + ' · ' + stamp);
@@ -3888,11 +3888,21 @@
     if (!hit) { hideQuiltFloater(); return; }
     placeFloater(event, hit.color,
         '<b>' + escapeHtml(hit.label) + '</b>: '
-        + escapeHtml(String(hit.value))
+        + escapeHtml(fmtHoverValue(hit.value))
         + (hit.units ? ' ' + escapeHtml(hit.units) : '')
         + ' · ' + toNaive(time).replace('T', ' '));
   });
   plotDiv.addEventListener('mouseleave', hideQuiltFloater);
+  function fmtHoverValue(value) {
+    // A hover value reads as a number a person would write: integers
+    // with separators, fractions to at most three places, and never
+    // the binary noise of a summed float.
+    const n = Number(value);
+    if (!isFinite(n)) return String(value);
+    if (Number.isInteger(n)) return n.toLocaleString();
+    return Number(n.toFixed(3)).toLocaleString(
+        undefined, {maximumFractionDigits: 3});
+  }
 
   // End-stamped daily bins resolve to their closing snap. Current-state
   // stacks retain the ordinary exact-time cut behavior.
