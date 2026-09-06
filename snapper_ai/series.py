@@ -314,11 +314,16 @@ def observatory_series(scope, start, end, curve_filter=None,
     # ending at its ET-midnight-grid-aligned stamp; zero bins are
     # omitted). Display binning belongs to the client: every coarser
     # rung tiles exactly from these, so the plot re-sums as the view
-    # zooms with no further server work. An event may be a bare stamp
-    # or a [stamp, qualifier] pair; qualified events add a
-    # per-qualifier breakdown as the bin's third element,
-    # [iso, total, {qualifier: count}], feeding the client's
-    # qualifier filter (chips) with no change to curve identity.
+    # zooms with no further server work. An event may be a bare stamp,
+    # a [stamp, qualifier] pair, or a [stamp, qualifier, weight]
+    # triple. Qualified events add a per-qualifier breakdown as the
+    # bin's third element, [iso, count, {qualifier: count}], feeding
+    # the client's qualifier filter (chips) with no change to curve
+    # identity. Weighted events add the bin's second measure as the
+    # fourth and fifth elements, [iso, count, {qualifier: count},
+    # weight, {qualifier: weight}]: the summed weight and its
+    # breakdown, so a family plots either measure of the same events
+    # (measure_param, INTEGRATION.md) and no curve is duplicated.
     event_groups = [group
                     for group in registry.resolve_curve_groups(provider)
                     if group.get('event_flow')]
@@ -334,10 +339,17 @@ def observatory_series(scope, start, end, curve_filter=None,
                 continue
             counts = {}
             quals = {}
+            weights = {}
+            weight_quals = {}
+            weighted = False
             for stamp in stamps:
                 qualifier = None
+                weight = None
                 if isinstance(stamp, (list, tuple)):
-                    qualifier = str(stamp[1]) if len(stamp) > 1 else None
+                    qualifier = (str(stamp[1])
+                                 if len(stamp) > 1 and stamp[1] is not None
+                                 else None)
+                    weight = stamp[2] if len(stamp) > 2 else None
                     stamp = stamp[0]
                 when = datetime.fromisoformat(
                     str(stamp).replace('Z', '+00:00')).astimezone(ET_ZONE)
@@ -350,14 +362,28 @@ def observatory_series(scope, start, end, curve_filter=None,
                 if qualifier:
                     per = quals.setdefault(edge, {})
                     per[qualifier] = (per.get(qualifier) or 0) + 1
+                if weight is not None:
+                    weighted = True
+                    weight = float(weight or 0)
+                    weights[edge] = (weights.get(edge) or 0.0) + weight
+                    if qualifier:
+                        per = weight_quals.setdefault(edge, {})
+                        per[qualifier] = (per.get(qualifier) or 0.0) + weight
             curve = curves.setdefault(
                 curve_id, {'label': _curve_label(provider, curve_id),
                            'points': []})
-            curve['points'] = [
-                ([edge.isoformat(timespec='seconds'), counts[edge],
-                  quals[edge]] if edge in quals
-                 else [edge.isoformat(timespec='seconds'), counts[edge]])
-                for edge in sorted(counts)]
+            points = []
+            for edge in sorted(counts):
+                point = [edge.isoformat(timespec='seconds'), counts[edge]]
+                if weighted:
+                    point.append(quals.get(edge) or {})
+                    point.append(round(weights.get(edge) or 0.0, 3))
+                    point.append({q: round(v, 3) for q, v in
+                                  (weight_quals.get(edge) or {}).items()})
+                elif edge in quals:
+                    point.append(quals[edge])
+                points.append(point)
+            curve['points'] = points
 
     # Episodic activity lanes from the host's canonical activity
     # record: discrete activity with identity, over a grey idle track.

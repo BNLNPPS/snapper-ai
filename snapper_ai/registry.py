@@ -31,11 +31,17 @@ class ScopeProvider:
     scope            URL identity of the scope (e.g. 'epicprod').
     label            Human label shown in the scope switcher.
     curve_values     (state_dict) -> {curve_id: number} for one snap.
-    event_values     (state_dict) -> {curve_id: [ISO stamps]} discrete
+    event_values     (state_dict) -> {curve_id: [events]} discrete
                      events recorded in one snap, each at its own event
-                     time. Families declaring 'event_flow' bin these at
-                     render (series.py); boundary snaps contribute no
-                     events (their events precede the window).
+                     time: an ISO stamp, a [stamp, qualifier] pair, or
+                     a [stamp, qualifier, weight] triple. Families
+                     declaring 'event_flow' bin these at render
+                     (series.py): each bin carries the count with its
+                     per-qualifier breakdown and, for weighted events,
+                     the summed weight with its breakdown, so a family
+                     plots either measure of the same events. Boundary
+                     snaps contribute no events (their events precede
+                     the window).
     series_transform (series_dict) -> series_dict after the one series
                      walk, for host-side folding derived from those curves.
     lane_entries     (state_dict) -> {lane_id: entry} extra continuous
