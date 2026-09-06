@@ -887,6 +887,13 @@
         + (cumulative ? ' · integrated over the window' : '')
         + (DOCK_CONTROLS && units ? ' — ' + units : '');
   }
+  // A family's integrated panels form a section of their own, banded
+  // and foldable like an option's section, keyed by the family.
+  function integratedSection(def) {
+    return {label: def.name + CUMULATIVE_SUFFIX,
+            display: 'Integrated over the window',
+            idle: false, pinned: true};
+  }
   // Minimum on-screen bar length for episodic run periods, in ms of the
   // rendered view span — a minutes-long run stays visible at a 7-day
   // zoom. Recomputed (with a re-render) when the view span changes.
@@ -1476,7 +1483,8 @@
           axes.bins[measure] = pushDerived(measure, false);
           lastBin = derivedName(group.name, measure, false);
         });
-        if (group.cumulative_panel) {
+        if (group.cumulative_panel
+            && !sectionClosed(integratedSection(group))) {
           measures.forEach(function (measure) {
             axes.cum[measure] = pushDerived(measure, true);
             lastCum = derivedName(group.name, measure, true);
@@ -2602,9 +2610,42 @@
       // A derived panel's docked row: a title beneath its family's
       // row, in panel order, so the section layout allots each panel
       // its space like any other. Derived panels exist only while the
-      // family and its section are open, so their rows do too.
+      // family and its section are open, so their rows do too. The
+      // integrated panels open under a section band of their own,
+      // foldable like an option's section; folded, the band alone
+      // stands.
+      const def = GROUPS.find(function (g) { return g.name === name; });
+      if (!def) return;
+      let bandDone = false;
+      const emitBand = function () {
+        const sec = integratedSection(def);
+        const folded = sectionClosed(sec);
+        const row = document.createElement('div');
+        row.className = 'snapper-curve-row snapper-curve-row-docked';
+        row.dataset.family = sec.label + ' · section';
+        const band = document.createElement('div');
+        band.className = 'snapper-section-band';
+        band.innerHTML = '<a href="#" data-section-arrow '
+            + 'style="text-decoration:none">'
+            + (folded ? '&#9656;' : '&#9662;') + '</a> '
+            + escapeHtml(sec.display);
+        band.addEventListener('click', function (e) {
+          e.preventDefault();
+          setFamilyClosed(sectionKey(sec), !folded);
+          rerenderAfterFold();
+        });
+        row.appendChild(band);
+        row.style.visibility = 'hidden';
+        row.style.top = '0px';
+        plotWrap.appendChild(row);
+        dockedRows.push({name: sec.label + ' · section', el: row});
+        bandDone = true;
+      };
       panels.forEach(function (panel) {
         if (!panel.derived || panel.memberGroup !== name) return;
+        if ((derivedPanels[panel.name] || {}).cumulative && !bandDone) {
+          emitBand();
+        }
         const row = document.createElement('div');
         row.className = 'snapper-curve-row snapper-curve-row-docked';
         row.dataset.family = panel.name;
@@ -2617,6 +2658,9 @@
         plotWrap.appendChild(row);
         dockedRows.push({name: panel.name, el: row});
       });
+      if (!bandDone && def.cumulative_panel && !familyClosed(name, def)) {
+        emitBand();
+      }
     }
     groupMembers = {};
     curveIds.forEach(function (curveId) {
