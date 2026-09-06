@@ -856,17 +856,36 @@
   let gapShapes = [], fullRange = [0, 0], groupMembers = {};
   let laneLabelById = {}, parentKids = {}, curveAxis = {}, panels = [];
   let cutDomains = [];
-  // The integrated panel of an event-flow family declaring
-  // cumulative_panel: its bins summed from the left edge of the view,
-  // stacked by the same members on an axis of its own beneath the
-  // family's panel — the running total of what the panel above shows,
-  // in the same measure and under the same chips, re-based when the
-  // view moves. Keyed by family name while a render builds.
-  let cumulativeAxis = {};
+  // Derived panels of an event-flow family: one per further measure
+  // (measures beyond the first, the count and the summed weight of the
+  // same events, down the page) and, for a family declaring
+  // cumulative_panel, one integrated panel per measure — its bins
+  // summed from the left edge of the view, stacked by the same
+  // members, the running total of the panel above, re-based when the
+  // view moves. Each rides an axis of its own and a docked title row.
+  // derivedAxes: family -> {bins: {measure: axis}, cum: {measure:
+  // axis}}; derivedPanels: row name -> {family, measure, cumulative};
+  // detailRows: family -> {cut, aggregate}, the rows that dock the
+  // cut detail and the aggregate detail. All keyed while a render
+  // builds.
+  let derivedAxes = {}, derivedPanels = {}, detailRows = {};
   const CUMULATIVE_SUFFIX = ' · integrated';
-  function cumulativeTitle(def) {
-    return (def.title || def.name) + ' · integrated over the window'
-        + (DOCK_CONTROLS && def.units ? ' — ' + def.units : '');
+  function measureUnits(def, measure) {
+    return (def.units_by_measure && def.units_by_measure[measure])
+        || def.units || '';
+  }
+  function measureTitle(def, measure) {
+    return (def.title_by_measure && def.title_by_measure[measure])
+        || def.title || def.name;
+  }
+  function derivedName(name, measure, cumulative) {
+    return name + ' · ' + measure + (cumulative ? CUMULATIVE_SUFFIX : '');
+  }
+  function derivedTitle(def, measure, cumulative) {
+    const units = measureUnits(def, measure);
+    return measureTitle(def, measure)
+        + (cumulative ? ' · integrated over the window' : '')
+        + (DOCK_CONTROLS && units ? ' — ' + units : '');
   }
   // Minimum on-screen bar length for episodic run periods, in ms of the
   // rendered view span — a minutes-long run stays visible at a 7-day
@@ -1101,96 +1120,100 @@
       }
       // Event-flow families draw the display-rung rebin of their
       // sparse native bins; everything else draws its points as
-      // served.
-      const sourcePoints = {};
-      members.forEach(function (id) {
-        sourcePoints[id] = stackedDefs[familyName].event_flow
-            ? efDisplayPoints(id) : data.curves[id].points;
-      });
-      const xSeen = {};
-      members.forEach(function (id) {
-        sourcePoints[id].forEach(function (p) { xSeen[p[0]] = 1; });
-      });
-      const unionX = Object.keys(xSeen).sort();
-      // Every member can be empty — a counter family whose window
-      // holds a single snap projects to no flow points at all — and
-      // the lead-edge arithmetic below on an empty axis is NaN, which
-      // throws in date formatting. No points, no panel content.
-      if (!unionX.length) {
-        return;
-      }
-      const endStamped = !!stackedDefs[familyName].end_stamped;
-      const stampsMs = unionX.map(function (x) { return Date.parse(x); });
-      const intervals = stampsMs.slice(1).map(function (stamp, i) {
-        return stamp - stampsMs[i];
-      }).filter(function (span) { return span > 0; }).sort(function (a, b) {
-        return a - b;
-      });
-      const cadenceMs = intervals.length
-          ? intervals[Math.floor(intervals.length / 2)] : 0;
-      let edgesMs, traceX;
-      if (endStamped) {
-        // A daily arrival value belongs to the interval ending at its
-        // stamp.
-        const lead = stampsMs[0] - (cadenceMs || 86400000);
-        edgesMs = [lead].concat(stampsMs);
-        traceX = edgesMs.map(function (stamp) { return toNaive(stamp); });
-      } else {
-        // Current-state values begin at their stamp, exactly like the
-        // ordinary step curves. The final hover interval reaches the
-        // displayed window end without adding a plotted sample.
-        const last = stampsMs[stampsMs.length - 1];
-        edgesMs = stampsMs.concat([
-          Math.max(Date.parse(data.end), last + 1)
-        ]);
-        traceX = unionX.map(function (x) {
-          return toNaive(Date.parse(x));
+      // served. An event-flow family plots each of its measures
+      // (measures) as a stack of its own on its own axis, down the
+      // page, and beneath each measure's stack its integrated stack
+      // (cumulative_panel); the first measure rides the family's own
+      // axis, the rest the derived panels' axes.
+      const def = stackedDefs[familyName];
+      const drawStack = function (measure, axis, cumAxis, primary) {
+        const sourcePoints = {};
+        members.forEach(function (id) {
+          sourcePoints[id] = def.event_flow
+              ? efDisplayPoints(id, measure) : data.curves[id].points;
         });
-      }
-      const running = unionX.map(function () { return 0; });
-      const geom = {axisKey: null, edgesMs: edgesMs, members: [],
-                    endStamped: endStamped,
-                    eventFlow: !!stackedDefs[familyName].event_flow,
-                    daily: endStamped && cadenceMs >= 43200000,
-                    units: (stackedDefs[familyName] || {}).units || ''};
-      members.forEach(function (id, memberIndex) {
-        const values = {};
-        sourcePoints[id].forEach(function (p) {
-          values[p[0]] = +p[1] || 0;
+        const xSeen = {};
+        members.forEach(function (id) {
+          sourcePoints[id].forEach(function (p) { xSeen[p[0]] = 1; });
         });
-        const tops = [], own = [];
-        unionX.forEach(function (x, xi) {
-          running[xi] += (values[x] || 0);
-          tops.push(running[xi]);
-          own.push(values[x] || 0);
+        const unionX = Object.keys(xSeen).sort();
+        // Every member can be empty — a counter family whose window
+        // holds a single snap projects to no flow points at all — and
+        // the lead-edge arithmetic below on an empty axis is NaN,
+        // which throws in date formatting. No points, no panel content.
+        if (!unionX.length) {
+          return;
+        }
+        const endStamped = !!def.end_stamped;
+        const stampsMs = unionX.map(function (x) { return Date.parse(x); });
+        const intervals = stampsMs.slice(1).map(function (stamp, i) {
+          return stamp - stampsMs[i];
+        }).filter(function (span) { return span > 0; }).sort(function (a, b) {
+          return a - b;
         });
-        const axis = (curveAxis[id] && curveAxis[id] !== 'hidden')
-            ? curveAxis[id] : 'y';
-        geom.axisKey = axis === 'y' ? 'yaxis' : 'yaxis' + axis.slice(1);
-        geom.members.push({id: id, label: data.curves[id].label,
-                           own: own, tops: tops});
-        curveTraceIndex[id] = traces.length;
-        traces.push({
-          x: traceX,
-          y: endStamped ? tops.concat(tops[tops.length - 1]) : tops,
-          mode: 'lines',
-          line: {shape: 'hv', width: 0.5, color: curveColor[id]},
-          fill: memberIndex === 0 ? 'tozeroy' : 'tonexty',
-          fillcolor: curveColor[id],
-          name: data.curves[id].label,
-          yaxis: axis,
-          visible: true,
-          showlegend: false,
-          // Native closest-point hover is wrong for band fills — it
-          // names the nearest band TOP, often the band below the
-          // cursor, and misses fills entirely. The in-house floater
-          // (quiltHit) owns stacked hover.
-          hoverinfo: 'skip',
+        const cadenceMs = intervals.length
+            ? intervals[Math.floor(intervals.length / 2)] : 0;
+        let edgesMs, traceX;
+        if (endStamped) {
+          // A daily arrival value belongs to the interval ending at
+          // its stamp.
+          const lead = stampsMs[0] - (cadenceMs || 86400000);
+          edgesMs = [lead].concat(stampsMs);
+          traceX = edgesMs.map(function (stamp) { return toNaive(stamp); });
+        } else {
+          // Current-state values begin at their stamp, exactly like
+          // the ordinary step curves. The final hover interval reaches
+          // the displayed window end without adding a plotted sample.
+          const last = stampsMs[stampsMs.length - 1];
+          edgesMs = stampsMs.concat([
+            Math.max(Date.parse(data.end), last + 1)
+          ]);
+          traceX = unionX.map(function (x) {
+            return toNaive(Date.parse(x));
+          });
+        }
+        const running = unionX.map(function () { return 0; });
+        const geom = {axisKey: axis === 'y' ? 'yaxis'
+                                            : 'yaxis' + axis.slice(1),
+                      edgesMs: edgesMs, members: [],
+                      endStamped: endStamped,
+                      eventFlow: !!def.event_flow,
+                      daily: endStamped && cadenceMs >= 43200000,
+                      units: measureUnits(def, measure), measure: measure};
+        members.forEach(function (id, memberIndex) {
+          const values = {};
+          sourcePoints[id].forEach(function (p) {
+            values[p[0]] = +p[1] || 0;
+          });
+          const tops = [], own = [];
+          unionX.forEach(function (x, xi) {
+            running[xi] += (values[x] || 0);
+            tops.push(running[xi]);
+            own.push(values[x] || 0);
+          });
+          geom.members.push({id: id, label: data.curves[id].label,
+                             own: own, tops: tops});
+          if (primary) curveTraceIndex[id] = traces.length;
+          traces.push({
+            x: traceX,
+            y: endStamped ? tops.concat(tops[tops.length - 1]) : tops,
+            mode: 'lines',
+            line: {shape: 'hv', width: 0.5, color: curveColor[id]},
+            fill: memberIndex === 0 ? 'tozeroy' : 'tonexty',
+            fillcolor: curveColor[id],
+            name: data.curves[id].label,
+            yaxis: axis,
+            visible: true,
+            showlegend: false,
+            // Native closest-point hover is wrong for band fills — it
+            // names the nearest band TOP, often the band below the
+            // cursor, and misses fills entirely. The in-house floater
+            // (quiltHit) owns stacked hover.
+            hoverinfo: 'skip',
+          });
         });
-      });
-      quiltGeom.push(geom);
-      const cumAxis = cumulativeAxis[familyName];
-      if (cumAxis) {
+        quiltGeom.push(geom);
+        if (!cumAxis) return;
         // The integrated panel: each member's bins summed from the
         // left edge of the view, stacked in the same order. A bin
         // joins the sum once its trailing edge lies inside the view.
@@ -1200,7 +1223,7 @@
                          edgesMs: edgesMs, members: [],
                          endStamped: endStamped, eventFlow: false,
                          fitView: true, daily: geom.daily,
-                         units: geom.units};
+                         units: geom.units, measure: measure};
         geom.members.forEach(function (member, memberIndex) {
           let acc = 0;
           const own = [], tops = [];
@@ -1229,7 +1252,16 @@
           });
         });
         quiltGeom.push(cumGeom);
-      }
+      };
+      const primaryAxis = (curveAxis[members[0]]
+                           && curveAxis[members[0]] !== 'hidden')
+          ? curveAxis[members[0]] : 'y';
+      const derived = derivedAxes[familyName] || {bins: {}, cum: {}};
+      (def.measures || ['count']).forEach(function (measure, mi) {
+        const axis = mi === 0 ? primaryAxis : derived.bins[measure];
+        if (!axis) return;
+        drawStack(measure, axis, derived.cum[measure] || null, mi === 0);
+      });
     });
     // A family may declare fills: per-member hatched areas from zero
     // to the curve, marking a member that is a subset of a sibling
@@ -1384,7 +1416,9 @@
     panels = [];
     cutDomains = [];
     curveAxis = {};
-    cumulativeAxis = {};
+    derivedAxes = {};
+    derivedPanels = {};
+    detailRows = {};
     GROUPS.concat([{name: 'Other', match: function () { return true; }}])
         .forEach(function (group) {
       const members = curveIds.filter(function (id) {
@@ -1405,22 +1439,50 @@
       // state its own panel_px when neither default suits it — a
       // stack read alongside ordinary panels wants their height.
       panels.push({name: group.name, title: group.title || group.name,
-                   traceAxis: traceAxis,
+                   traceAxis: traceAxis, measure: group.measure || '',
                    detailKey: group.detail_key || '',
                    px: group.panel_px
                        || (group.stacked ? 450 : (group.tall ? 300 : 150)),
                    units: group.units || '',
                    axisKey: traceAxis === 'y' ? 'yaxis'
                        : 'yaxis' + traceAxis.slice(1)});
-      if (group.cumulative_panel && group.stacked && group.event_flow) {
-        const cumAxis = 'y' + (panels.length + 2);
-        cumulativeAxis[group.name] = cumAxis;
-        panels.push({name: group.name + CUMULATIVE_SUFFIX,
-                     memberGroup: group.name, derived: true,
-                     title: cumulativeTitle(group),
-                     traceAxis: cumAxis, detailKey: '',
-                     px: 220, units: group.units || '',
-                     axisKey: 'yaxis' + cumAxis.slice(1)});
+      // An event-flow family's further measures, one panel each, then
+      // the integrated panel of every measure (cumulative_panel), all
+      // down the page. Each derived panel rides its own axis and its
+      // own docked title row; the cut detail docks beneath the last
+      // per-bin panel of the family and the aggregate detail beneath
+      // its last integrated panel.
+      if (group.stacked && group.event_flow) {
+        const measures = group.measures || ['count'];
+        const axes = {bins: {}, cum: {}};
+        derivedAxes[group.name] = axes;
+        let lastBin = group.name, lastCum = '';
+        const pushDerived = function (measure, cumulative) {
+          const axis = 'y' + (panels.length + 2);
+          const rowName = derivedName(group.name, measure, cumulative);
+          derivedPanels[rowName] = {family: group.name, measure: measure,
+                                    cumulative: cumulative};
+          panels.push({name: rowName, memberGroup: group.name,
+                       derived: true, measure: measure,
+                       title: derivedTitle(group, measure, cumulative),
+                       traceAxis: axis, detailKey: '',
+                       px: cumulative ? 220 : (group.panel_px || 450),
+                       units: measureUnits(group, measure),
+                       axisKey: 'yaxis' + axis.slice(1)});
+          return axis;
+        };
+        measures.forEach(function (measure, mi) {
+          if (mi === 0) return;
+          axes.bins[measure] = pushDerived(measure, false);
+          lastBin = derivedName(group.name, measure, false);
+        });
+        if (group.cumulative_panel) {
+          measures.forEach(function (measure) {
+            axes.cum[measure] = pushDerived(measure, true);
+            lastCum = derivedName(group.name, measure, true);
+          });
+        }
+        detailRows[group.name] = {cut: lastBin, aggregate: lastCum};
       }
     });
 
@@ -1533,18 +1595,22 @@
       const panelByName = {};
       panels.forEach(function (p) { panelByName[p.name] = p; });
       sections = dockedRows.map(function (r) {
-        // An integrated panel's row docks its family's aggregate
-        // detail; the family's own row docks the cut detail.
-        const derived = r.name.slice(-CUMULATIVE_SUFFIX.length)
-            === CUMULATIVE_SUFFIX;
-        const familyName = derived
-            ? r.name.slice(0, -CUMULATIVE_SUFFIX.length) : r.name;
+        // The cut detail docks beneath the family's last per-bin
+        // panel and the aggregate detail beneath its last integrated
+        // panel (detailRows); a family without derived panels docks
+        // the cut detail beneath its own panel.
+        const derivedOf = derivedPanels[r.name];
+        const familyName = derivedOf ? derivedOf.family : r.name;
         const def = GROUPS.find(function (g) {
           return g.name === familyName;
         }) || {};
         const panel = panelByName[r.name] || null;
-        const detailKey = (derived ? def.aggregate_detail_key
-                                   : def.detail_key) || '';
+        const rows = detailRows[familyName];
+        const detailKey = (rows
+            ? (r.name === rows.cut ? def.detail_key
+               : r.name === rows.aggregate ? def.aggregate_detail_key
+               : '')
+            : def.detail_key) || '';
         const detailEl = panel && detailKey
             ? dockedCutDetails[detailKey] : null;
         return {name: r.name, el: r.el, detailEl: detailEl,
@@ -1825,7 +1891,8 @@
       const panelFamily = panel.memberGroup || panel.name;
       const panelMembers = groupMembers[panelFamily] || [];
       const panelHasSignal = panelMembers.some(function (id) {
-        const measure = (groupDef(id) || {}).measure || 'count';
+        const measure = panel.measure
+            || (groupDef(id) || {}).measure || 'count';
         return ((data.curves[id] || {}).points || []).some(function (p) {
           return efBinMeasure(p, measure).total > 0;
         });
@@ -1928,12 +1995,21 @@
   // family by id prefix or exact id.
   const GROUPS = rawGroups
       .map(function (g) {
-    // An event-flow family may plot either bin measure of its events,
-    // the count or the summed weight, under a focus selector axis it
-    // names (measure_param); its unit and title follow the choice.
-    const measure = (g.measure_param
-                     && FOCUS_PARAMS.get(g.measure_param) === 'weight')
-        ? 'weight' : 'count';
+    // An event-flow family plots its events in one or more measures,
+    // the count and the summed weight: every measure it names in
+    // measures gets a panel down the page; absent that, one measure,
+    // the count or the one a focus selector axis it names
+    // (measure_param) chooses. Its unit and title follow each measure.
+    const named = Array.isArray(g.measures)
+        ? g.measures.filter(function (m) {
+            return m === 'count' || m === 'weight';
+          })
+        : [];
+    const measures = named.length ? named
+        : [(g.measure_param
+            && FOCUS_PARAMS.get(g.measure_param) === 'weight')
+           ? 'weight' : 'count'];
+    const measure = measures[0];
     const units = (g.units_by_measure && g.units_by_measure[measure])
         || g.units || '';
     const title = (g.title_by_measure && g.title_by_measure[measure])
@@ -1944,7 +2020,9 @@
     // family's tick boxes by the active lens: a box toggles its
     // member SET while every member keeps its own curve and color.
     return {name: g.name, title: title, measure: measure,
-            measure_param: g.measure_param || '',
+            measures: measures, measure_param: g.measure_param || '',
+            units_by_measure: g.units_by_measure || null,
+            title_by_measure: g.title_by_measure || null,
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             exclude_prefixes: g.exclude_prefixes || [],
             stacked: !!g.stacked, compact: !!g.compact,
@@ -2039,12 +2117,13 @@
     efExtent = [Math.max(windowRange[0], view[0] - pad),
                 Math.min(windowRange[1], view[1] + pad)];
   }
-  function efDisplayPoints(id) {
+  function efDisplayPoints(id, measure) {
     // Dense rung bins over the built extent from the curve's sparse
-    // native bins. Interval-true: a bin covers (edge - rung, edge],
-    // and a native bin ending exactly on a rung edge belongs to it.
-    // Grid edges align to the ET wall clock at the extent start.
-    const measure = (groupDef(id) || {}).measure || 'count';
+    // native bins, in the given measure (else the family's first).
+    // Interval-true: a bin covers (edge - rung, edge], and a native
+    // bin ending exactly on a rung edge belongs to it. Grid edges
+    // align to the ET wall clock at the extent start.
+    measure = measure || (groupDef(id) || {}).measure || 'count';
     const rungMin = efRungMs / 60000;
     const startWall = toNaive(efExtent[0]);
     const wallMin = Number(startWall.slice(11, 13)) * 60
@@ -2514,34 +2593,30 @@
         row.style.top = '0px';
         plotWrap.appendChild(row);
         dockedRows.push({name: name, el: row});
-        attachIntegratedRow(name);
+        attachDerivedRows(name);
       } else {
         controls.appendChild(row);
       }
     }
-    function attachIntegratedRow(name) {
-      // The integrated panel's docked row: a title beneath its
-      // family's row, so the section layout allots the panel its
-      // space like any other. Absent while the family or its section
-      // is closed, when the panel is absent too.
-      const def = GROUPS.find(function (g) { return g.name === name; });
-      if (!def || !def.cumulative_panel || familyClosed(name, def)) {
-        return;
-      }
-      const section = familySectionOf(name);
-      if (section && sectionClosed(section)) return;
-      const row = document.createElement('div');
-      row.className = 'snapper-curve-row snapper-curve-row-docked';
-      row.dataset.family = name + CUMULATIVE_SUFFIX;
-      const head = document.createElement('div');
-      head.className = 'snapper-curve-row-label';
-      head.innerHTML = '<strong>' + escapeHtml(cumulativeTitle(def))
-          + '</strong>';
-      row.appendChild(head);
-      row.style.visibility = 'hidden';
-      row.style.top = '0px';
-      plotWrap.appendChild(row);
-      dockedRows.push({name: name + CUMULATIVE_SUFFIX, el: row});
+    function attachDerivedRows(name) {
+      // A derived panel's docked row: a title beneath its family's
+      // row, in panel order, so the section layout allots each panel
+      // its space like any other. Derived panels exist only while the
+      // family and its section are open, so their rows do too.
+      panels.forEach(function (panel) {
+        if (!panel.derived || panel.memberGroup !== name) return;
+        const row = document.createElement('div');
+        row.className = 'snapper-curve-row snapper-curve-row-docked';
+        row.dataset.family = panel.name;
+        const head = document.createElement('div');
+        head.className = 'snapper-curve-row-label';
+        head.innerHTML = '<strong>' + escapeHtml(panel.title) + '</strong>';
+        row.appendChild(head);
+        row.style.visibility = 'hidden';
+        row.style.top = '0px';
+        plotWrap.appendChild(row);
+        dockedRows.push({name: panel.name, el: row});
+      });
     }
     groupMembers = {};
     curveIds.forEach(function (curveId) {
