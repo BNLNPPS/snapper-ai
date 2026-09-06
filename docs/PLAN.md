@@ -338,6 +338,16 @@ as queries, in the same evidence envelope.
 
 ## Progress log
 
+- **2026-09-06:** An event-flow family may declare
+  `event_flow_bin_scale`, widening its display bins by that factor
+  (5b21002); the epicprod host's Storage view strip uses it. Planned
+  the weighted event form and the per-family bin measure selection
+  (INTEGRATION.md: an event as [stamp, qualifier, weight], bins
+  carrying count and weight, `measure_param` with `units_by_measure`
+  and `title_by_measure`), the package side of the swf host's
+  wasted-resources reading (swf-monitor SNAPPER_ERRORS.md, Wasted
+  resources). No new curve ids: the count and weight of the same
+  events ride one curve.
 - **2026-07-29:** The provider surface grew in place (61ba2ad,
   60b74f3): `curve_groups` accepts a callable resolved per render, so
   families track live host state without an application restart;
