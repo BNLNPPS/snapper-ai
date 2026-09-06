@@ -3391,16 +3391,23 @@
   }
 
   function integratedPanelAtY(event) {
-    // Whether a plot click falls in an integrated panel.
-    const fl = plotDiv._fullLayout;
-    if (!fl) return false;
-    const bb = plotDiv.getBoundingClientRect();
-    const y = event.clientY - bb.top;
-    return panels.some(function (panel) {
-      if (!panel.derived) return false;
-      const ya = fl[panel.axisKey];
-      return !!ya && y >= ya._offset && y <= ya._offset + ya._length;
-    });
+    // Whether a plot click falls in an integrated panel. Never blocks
+    // a cut: a failure here reads as a click in an ordinary panel and
+    // is logged.
+    try {
+      const fl = plotDiv._fullLayout;
+      if (!fl) return false;
+      const bb = plotDiv.getBoundingClientRect();
+      const y = event.clientY - bb.top;
+      return panels.some(function (panel) {
+        if (!panel.derived) return false;
+        const ya = fl[panel.axisKey];
+        return !!ya && y >= ya._offset && y <= ya._offset + ya._length;
+      });
+    } catch (err) {
+      console.error('integrated panel lookup failed', err);
+      return false;
+    }
   }
 
   function laneAtY(event) {
