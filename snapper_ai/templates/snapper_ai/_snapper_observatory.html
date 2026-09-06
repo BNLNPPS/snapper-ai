@@ -3548,6 +3548,7 @@
     // bin when it is an hour or wider, else the hour centered on the
     // cut — the one-hour floor, clamped inside the loaded window.
     let efWindowQuery = '';
+    let loadingRange = '';
     if (efHasFamilies() && efRungMs) {
       const HOUR_MS = 3600000;
       let detailFrom, detailTo;
@@ -3571,8 +3572,28 @@
       efWindowQuery =
           '&from=' + encodeURIComponent(new Date(detailFrom).toISOString())
           + '&to=' + encodeURIComponent(new Date(detailTo).toISOString())
-          + (cutIntegrated ? '&integrated=1' : '');
+          + (cutIntegrated ? '&integrated=1' : '')
+          + '&window=' + encodeURIComponent(pageWindow);
+      loadingRange = toNaive(detailFrom).slice(0, 16).replace('T', ' ')
+          + ' – ' + toNaive(detailTo).slice(0, 16).replace('T', ' ') + ' ET';
     }
+    // The old card must not pass for the new one while the fetch
+    // runs: say what is loading, over which range, and dim the rest.
+    cutPanel.querySelectorAll('.snapper-cut-loading').forEach(function (el) {
+      el.remove();
+    });
+    const loading = document.createElement('div');
+    loading.className = 'snapper-cut-loading';
+    loading.style.cssText = 'padding:.35em .8em; font-size:1.05em; '
+        + 'color:#37474f; background:#fff8e1; border:1px solid #f9a825; '
+        + 'border-radius:.4em; margin-bottom:.4em;';
+    loading.textContent = (cutIntegrated
+        ? 'Loading the breakdown over the integration range'
+        : 'Loading the detail')
+        + (loadingRange ? ' ' + loadingRange : '') + ' …';
+    cutPanel.hidden = false;
+    cutPanel.prepend(loading);
+    cutPanel.style.opacity = '0.55';
     // Average-time queries make a card fetch materially slower than a
     // range gesture. Cancel the previous request so an older interval
     // cannot arrive late and overwrite the current one.
@@ -3602,12 +3623,14 @@
       })
       .then(function (fragment) {
         if (controller !== cutFetchController) return;
+        cutPanel.style.opacity = '';
         placeCutDetail(fragment);
       })
       .catch(function (err) {
         if (err && err.name === 'AbortError') return;
         // The failure must be visible where the card belongs — an
         // empty slot reads as "no detail exists".
+        cutPanel.style.opacity = '';
         cutPanel.hidden = false;
         cutPanel.innerHTML = '<div class="text-danger">Cut detail '
             + 'failed to load (' + escapeHtml(String(err))
