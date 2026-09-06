@@ -296,6 +296,8 @@
   const FOCUS_ENGAGED = DOCK_CONTROLS;
   const plotWrap = document.getElementById('snapper-plot-wrap');
   let dockedRows = [];
+  // Section keys whose band this render has already drawn.
+  let emittedSections = new Set();
   let dockedSections = [];
   let dockedCutDetails = {};
   function updatePlotScrollOffset() {
@@ -947,12 +949,15 @@
         + (cumulative ? ' · aggregate' : '')
         + (DOCK_CONTROLS && units ? ' — ' + units : '');
   }
-  // A family's aggregate panels form a section of their own, banded
-  // and foldable like an option's section, keyed by the family.
-  function integratedSection(def) {
-    return {label: def.name + CUMULATIVE_SUFFIX,
-            display: 'Aggregate',
-            idle: false, pinned: true};
+  // The aggregate panels form one section of the page, banded and
+  // foldable like an option's section: there are two kinds of reading
+  // here, the cut time and the aggregate, and each is one section
+  // whatever number of families contributes panels to it. A family
+  // declaring this section by label joins the same band.
+  const AGGREGATE_SECTION = {label: 'Aggregate', display: 'Aggregate',
+                             idle: false, pinned: true};
+  function integratedSection() {
+    return AGGREGATE_SECTION;
   }
   // Minimum on-screen bar length for episodic run periods, in ms of the
   // rendered view span — a minutes-long run stays visible at a 7-day
@@ -2655,6 +2660,9 @@
     controls.innerHTML = '';
     dockedRows.forEach(function (r) { r.el.remove(); });
     dockedRows = [];
+    // One band per section per render: a section is one band by
+    // definition, however many families put panels under it.
+    emittedSections = new Set();
     // Docked rows live in the plot wrapper, hidden until the geometry
     // that reserved their slots has rendered and they can land in
     // place; block rows land in the controls strip as always.
@@ -2684,6 +2692,11 @@
       const emitBand = function () {
         const sec = integratedSection(def);
         const folded = sectionClosed(sec);
+        if (emittedSections.has(sectionKey(sec))) {
+          bandDone = true;
+          return;
+        }
+        emittedSections.add(sectionKey(sec));
         const row = document.createElement('div');
         row.className = 'snapper-curve-row snapper-curve-row-docked';
         row.dataset.family = sec.label + ' · section';
@@ -2784,7 +2797,12 @@
       // rendered family; its other families render nothing.
       const section = familySectionOf(name);
       const folded = !!(section && sectionClosed(section));
-      if (folded && !def.section) return;
+      // A family whose section band another family already drew adds
+      // its panel to that section and draws no band of its own; when
+      // the section is folded it renders nothing at all.
+      const bandDrawn = !!(def.section
+                           && emittedSections.has(sectionKey(def.section)));
+      if (folded && (!def.section || bandDrawn)) return;
       // Every family carries the rotator; default_off/start_closed
       // only set the default state.
       const closable = true;
@@ -2795,7 +2813,8 @@
       row.dataset.family = name;
       // An option's first family opens its section with a band; a
       // click anywhere on the band folds the whole section.
-      if (def.section) {
+      if (def.section && !bandDrawn) {
+        emittedSections.add(sectionKey(def.section));
         const band = document.createElement('div');
         band.className = 'snapper-section-band'
             + (def.section.idle ? ' snapper-section-idle' : '');
