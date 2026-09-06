@@ -1752,8 +1752,9 @@
       // window states its emptiness plainly, never a bare grid.
       const panelMembers = groupMembers[panel.name] || [];
       const panelHasSignal = panelMembers.some(function (id) {
+        const measure = (groupDef(id) || {}).measure || 'count';
         return ((data.curves[id] || {}).points || []).some(function (p) {
-          return p[1] > 0;
+          return efBinMeasure(p, measure).total > 0;
         });
       });
       if (!panelHasSignal) {
@@ -1845,17 +1846,32 @@
   // Curve tick boxes with matching color swatches, one full-width
   // bordered row per curve family so the growing families read as a
   // table. Each row gets its own all/none.
+  // The effective focus selector values (grouping lens, counting,
+  // measure): present even on the clean URL.
+  const FOCUS_PARAMS = new URLSearchParams(
+      '{{ observatory_focus.cut_query|default:""|escapejs }}');
   // Curve families come from the host-registered scope provider
   // (observatory_groups: [{name, prefixes, ids}]); a curve joins a
   // family by id prefix or exact id.
   const GROUPS = rawGroups
       .map(function (g) {
+    // An event-flow family may plot either bin measure of its events,
+    // the count or the summed weight, under a focus selector axis it
+    // names (measure_param); its unit and title follow the choice.
+    const measure = (g.measure_param
+                     && FOCUS_PARAMS.get(g.measure_param) === 'weight')
+        ? 'weight' : 'count';
+    const units = (g.units_by_measure && g.units_by_measure[measure])
+        || g.units || '';
+    const title = (g.title_by_measure && g.title_by_measure[measure])
+        || g.title || g.name;
     // name is the unique registry identity; title, when given, is the
     // display form (a name can carry selector qualifiers the display
     // should not). pc_groups, when given, clusters a per-member
     // family's tick boxes by the active lens: a box toggles its
     // member SET while every member keeps its own curve and color.
-    return {name: g.name, title: g.title || g.name,
+    return {name: g.name, title: title, measure: measure,
+            measure_param: g.measure_param || '',
             prefixes: g.prefixes || [], pc_groups: g.pc_groups || null,
             exclude_prefixes: g.exclude_prefixes || [],
             stacked: !!g.stacked, compact: !!g.compact,
@@ -1865,7 +1881,7 @@
             event_flow: !!g.event_flow,
             event_flow_bin_scale: Math.max(
                 1, Math.round(+g.event_flow_bin_scale) || 1),
-            default_off: !!g.default_off, units: g.units || '',
+            default_off: !!g.default_off, units: units,
             qualifier_label: g.qualifier_label || '',
             qualifier_param: g.qualifier_param || 'quals',
             qualifiers_off: g.qualifiers_off || [],
@@ -1887,10 +1903,6 @@
       return !(g.exclude_prefixes || []).some(function (p) {
         return id.indexOf(p) === 0; }); }};
   });
-  // The effective focus selector values (grouping lens, counting):
-  // present even on the clean URL.
-  const FOCUS_PARAMS = new URLSearchParams(
-      '{{ observatory_focus.cut_query|default:""|escapejs }}');
   function groupDef(curveId) {
     for (const group of GROUPS) {
       if (group.match(curveId)) return group;
@@ -1957,6 +1969,7 @@
     // native bins. Interval-true: a bin covers (edge - rung, edge],
     // and a native bin ending exactly on a rung edge belongs to it.
     // Grid edges align to the ET wall clock at the extent start.
+    const measure = (groupDef(id) || {}).measure || 'count';
     const rungMin = efRungMs / 60000;
     const startWall = toNaive(efExtent[0]);
     const wallMin = Number(startWall.slice(11, 13)) * 60
@@ -1973,7 +1986,7 @@
       let index = Math.ceil((ms - firstEdge) / efRungMs);
       if (index < 0) index = 0;
       if (index >= bins) return;
-      counts[index] += efPointValue(p);
+      counts[index] += efPointValue(p, measure);
     });
     const points = [];
     for (let i = 0; i < bins; i++) {
@@ -2017,15 +2030,18 @@
       (data.curves[id].points || []).forEach(function (p) {
         const ms = Date.parse(p[0]);
         if (rangeMs && (ms <= rangeMs[0] || ms > rangeMs[1])) return;
+        // Chips count in the family's measure, so under core-hours a
+        // chip carries the hours that state held.
+        const bin = efBinMeasure(p, fam.measure);
         let sum = 0;
-        if (p[2]) {
+        if (bin.per) {
           any = true;
-          for (const q in p[2]) {
-            sum += (+p[2][q] || 0);
-            counts[q] = (counts[q] || 0) + (+p[2][q] || 0);
+          for (const q in bin.per) {
+            sum += (+bin.per[q] || 0);
+            counts[q] = (counts[q] || 0) + (+bin.per[q] || 0);
           }
         }
-        const rem = (+p[1] || 0) - sum;
+        const rem = bin.total - sum;
         if (rem > 0) {
           counts.unrecorded = (counts.unrecorded || 0) + rem;
         }
@@ -2103,7 +2119,7 @@
       label.innerHTML = '<input type="checkbox" class="form-check-input">'
           + ' <span class="form-check-label">' + escapeHtml(q)
           + ' <span class="text-muted">('
-          + (viewCounts[q] || 0).toLocaleString() + ')</span></span>';
+          + Math.round(viewCounts[q] || 0).toLocaleString() + ')</span></span>';
       const input = label.querySelector('input');
       input.checked = efQualSelected.has(q);
       input.addEventListener('change', function (e) {
@@ -2127,17 +2143,26 @@
     return '&' + fam.qualifier_param + '='
         + encodeURIComponent(Array.from(efQualSelected).sort().join(','));
   }
-  function efPointValue(p) {
-    // A native bin's value under the active qualifier selection.
-    if (efQualSelected === null) return (+p[1] || 0);
+  function efBinMeasure(p, measure) {
+    // A native bin's total and per-qualifier breakdown in one
+    // measure: the count (p[1], p[2]) or the summed weight (p[3], p[4]).
+    return measure === 'weight'
+        ? {total: (+p[3] || 0), per: p[4]}
+        : {total: (+p[1] || 0), per: p[2]};
+  }
+  function efPointValue(p, measure) {
+    // A native bin's value under the active qualifier selection, in
+    // the family's measure.
+    const bin = efBinMeasure(p, measure);
+    if (efQualSelected === null) return bin.total;
     let v = 0, sum = 0;
-    if (p[2]) {
-      for (const q in p[2]) {
-        sum += (+p[2][q] || 0);
-        if (efQualSelected.has(q)) v += (+p[2][q] || 0);
+    if (bin.per) {
+      for (const q in bin.per) {
+        sum += (+bin.per[q] || 0);
+        if (efQualSelected.has(q)) v += (+bin.per[q] || 0);
       }
     }
-    const rem = (+p[1] || 0) - sum;
+    const rem = bin.total - sum;
     if (rem > 0 && efQualSelected.has('unrecorded')) v += rem;
     return v;
   }

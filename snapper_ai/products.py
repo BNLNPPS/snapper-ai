@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 _FAMILY_KEYS = ('name', 'title', 'prefixes', 'ids', 'order', 'stacked',
                 'window_relative', 'cumulative_stack', 'end_stamped',
-                'event_flow', 'event_flow_bin_scale', 'default_off',
+                'event_flow', 'event_flow_bin_scale', 'measure_param',
+                'units_by_measure', 'title_by_measure', 'default_off',
                 'default_off_ids', 'units', 'fills')
 
 
@@ -100,7 +101,8 @@ def resolve_focus(scope, focus, selection=None, selectors=None):
                 f"unknown {sel.get('param') or 'quantity'} value {value!r}; "
                 f"known: {', '.join(v for v in values if v)}")
         selected_values.append(value or sel.get('default') or '')
-    families_key = '|'.join(selected_values)
+    from .views import _families_key
+    families_key = _families_key(selector_defs, selected_values)
 
     def _families(option):
         by_key = option.get('families_by')

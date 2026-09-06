@@ -41,6 +41,17 @@ def _focus_curve_filter(all_groups, wanted):
     return _filter
 
 
+def _families_key(selector_defs, values):
+    """The families_by key for a focus option: the selector values in
+    declaration order, joined by '|'. An axis declaring ``families``
+    False chooses nothing about which families render (a measure
+    switch, say) and stays out of the key."""
+    return '|'.join(
+        str(value or '')
+        for sel, value in zip(selector_defs, values)
+        if sel.get('families') is not False)
+
+
 def _compact_count(value):
     """A count for a label: millions as 1.3M, else with separators."""
     value = int(value or 0)
@@ -53,7 +64,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
     """The focus product key; the families set is its identity."""
     identity = '\n'.join(sorted(wanted)) or 'empty'
     token = sha256(identity.encode()).hexdigest()[:16]
-    return (f'snapper_series:v21:{scope}:focus:'
+    return (f'snapper_series:v22:{scope}:focus:'
             f'{focus_param}:{token}:{cache_span}')
 
 
@@ -93,8 +104,8 @@ def prewarm_focus_series(scope, window_keys=()):
         selector_defs = list(focus_def.get('selectors') or ())
         if not selector_defs and focus_def.get('quantity'):
             selector_defs = [focus_def['quantity']]
-        families_key = '|'.join(
-            str(sel.get('default') or '') for sel in selector_defs)
+        families_key = _families_key(
+            selector_defs, [sel.get('default') for sel in selector_defs])
         for option in (focus_def.get('options') or ()):
             by_key = option.get('families_by')
             families = ((by_key.get(families_key) if by_key
@@ -628,7 +639,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 if value not in values:
                     value = sel.get('default') or ''
                 selected_values.append(value)
-            families_key = '|'.join(selected_values)
+            families_key = _families_key(selector_defs, selected_values)
 
             def _families(option):
                 by_key = option.get('families_by')
@@ -736,7 +747,7 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     scope, focus_def.get('param') or 'focus',
                     wanted, cache_span)
             else:
-                cache_key = f'snapper_series:v21:{scope}:{cache_span}'
+                cache_key = f'snapper_series:v22:{scope}:{cache_span}'
     if cache_key:
         cached = series_cache(
             cache_key,
