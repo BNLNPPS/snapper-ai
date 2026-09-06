@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _FAMILY_KEYS = ('name', 'title', 'prefixes', 'ids', 'order', 'stacked',
                 'window_relative', 'cumulative_stack', 'end_stamped',
                 'event_flow', 'event_flow_bin_scale', 'cumulative_panel',
-                'measure_param',
+                'aggregate_detail_key', 'measure_param',
                 'units_by_measure', 'title_by_measure', 'default_off',
                 'default_off_ids', 'units', 'fills')
 

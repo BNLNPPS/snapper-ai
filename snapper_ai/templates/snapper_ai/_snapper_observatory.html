@@ -898,11 +898,6 @@
   // double-click zoom reverts to it).
   let cutTrueMs = null;
   let confirmedCutTrueMs = null;
-  // A cut taken in an integrated panel reads its detail over the
-  // integration range, the view's left edge to the cut, so the card
-  // matches the bands at that x; the URL carries it as
-  // detail=integrated.
-  let cutIntegrated = false;
   let cutFetchController = null;
   let cutRangeTimer = null;
 
@@ -1538,14 +1533,22 @@
       const panelByName = {};
       panels.forEach(function (p) { panelByName[p.name] = p; });
       sections = dockedRows.map(function (r) {
+        // An integrated panel's row docks its family's aggregate
+        // detail; the family's own row docks the cut detail.
+        const derived = r.name.slice(-CUMULATIVE_SUFFIX.length)
+            === CUMULATIVE_SUFFIX;
+        const familyName = derived
+            ? r.name.slice(0, -CUMULATIVE_SUFFIX.length) : r.name;
         const def = GROUPS.find(function (g) {
-          return g.name === r.name;
+          return g.name === familyName;
         }) || {};
         const panel = panelByName[r.name] || null;
-        const detailEl = panel && def.detail_key
-            ? dockedCutDetails[def.detail_key] : null;
+        const detailKey = (derived ? def.aggregate_detail_key
+                                   : def.detail_key) || '';
+        const detailEl = panel && detailKey
+            ? dockedCutDetails[detailKey] : null;
         return {name: r.name, el: r.el, detailEl: detailEl,
-                detailKey: def.detail_key || '',
+                detailKey: detailKey,
                 rowPx: r.el.offsetHeight + 10,
                 detailPx: detailEl ? detailEl.offsetHeight + 16 : 0,
                 panel: panel};
@@ -1952,6 +1955,7 @@
             event_flow_bin_scale: Math.max(
                 1, Math.round(+g.event_flow_bin_scale) || 1),
             cumulative_panel: !!g.cumulative_panel,
+            aggregate_detail_key: g.aggregate_detail_key || '',
             default_off: !!g.default_off, units: units,
             qualifier_label: g.qualifier_label || '',
             qualifier_param: g.qualifier_param || 'quals',
@@ -3390,26 +3394,6 @@
     }, 60);
   }
 
-  function integratedPanelAtY(event) {
-    // Whether a plot click falls in an integrated panel. Never blocks
-    // a cut: a failure here reads as a click in an ordinary panel and
-    // is logged.
-    try {
-      const fl = plotDiv._fullLayout;
-      if (!fl) return false;
-      const bb = plotDiv.getBoundingClientRect();
-      const y = event.clientY - bb.top;
-      return panels.some(function (panel) {
-        if (!panel.derived) return false;
-        const ya = fl[panel.axisKey];
-        return !!ya && y >= ya._offset && y <= ya._offset + ya._length;
-      });
-    } catch (err) {
-      console.error('integrated panel lookup failed', err);
-      return false;
-    }
-  }
-
   function laneAtY(event) {
     // Which lane band a plot click falls in: category axes place the
     // first lane at the bottom.
@@ -3460,7 +3444,10 @@
         cutPanel.querySelectorAll('[data-snapper-detail-key]'));
     const dockable = siteDetails.filter(function (detail) {
       return GROUPS.some(function (group) {
-        return group.detail_key === detail.dataset.snapperDetailKey
+        const key = detail.dataset.snapperDetailKey;
+        return (group.detail_key === key
+                || (group.cumulative_panel
+                    && group.aggregate_detail_key === key))
             && groupMembers[group.name];
       });
     });
@@ -3556,15 +3543,11 @@
     // cut — the one-hour floor, clamped inside the loaded window.
     let efWindowQuery = '';
     let loadingRange = '';
+    let aggFrom = null, aggTo = null;
     if (efHasFamilies() && efRungMs) {
       const HOUR_MS = 3600000;
       let detailFrom, detailTo;
-      if (cutIntegrated) {
-        // The integrated panel's detail: the integration range, the
-        // view's left edge to the cut.
-        detailFrom = axisRange ? axisRange[0] : Date.parse(data.start);
-        detailTo = confirmedCutTrueMs;
-      } else if (efRungMs >= HOUR_MS) {
+      if (efRungMs >= HOUR_MS) {
         detailTo = efBinEnd(confirmedCutTrueMs);
         detailFrom = detailTo - efRungMs;
       } else {
@@ -3573,55 +3556,55 @@
       }
       const endMs = Date.parse(data.end);
       if (detailTo > endMs) {
-        if (!cutIntegrated) detailFrom -= (detailTo - endMs);
+        detailFrom -= (detailTo - endMs);
         detailTo = endMs;
       }
       efWindowQuery =
           '&from=' + encodeURIComponent(new Date(detailFrom).toISOString())
-          + '&to=' + encodeURIComponent(new Date(detailTo).toISOString())
-          + (cutIntegrated ? '&integrated=1' : '')
-          + '&window=' + encodeURIComponent(pageWindow);
-      loadingRange = toNaive(detailFrom).slice(0, 16).replace('T', ' ')
-          + ' – ' + toNaive(detailTo).slice(0, 16).replace('T', ' ') + ' ET';
+          + '&to=' + encodeURIComponent(new Date(detailTo).toISOString());
+      loadingRange = rangeText(detailFrom, detailTo);
+      // The aggregate detail's range, the integrated panels' range:
+      // the view's left edge to the cut. It rides the same request and
+      // docks beneath the integrated panel (aggregate_detail_key).
+      if (GROUPS.some(function (g) { return g.cumulative_panel; })) {
+        aggFrom = axisRange ? axisRange[0] : Date.parse(data.start);
+        aggTo = Math.min(confirmedCutTrueMs, endMs);
+        efWindowQuery += '&agg_from='
+            + encodeURIComponent(new Date(aggFrom).toISOString())
+            + '&agg_to=' + encodeURIComponent(new Date(aggTo).toISOString())
+            + '&window=' + encodeURIComponent(pageWindow);
+      }
     }
+    const baseQuery = cutUrl + '?time=' + encodeURIComponent(lookupIso)
+        + (focusComponent
+           ? '&component=' + encodeURIComponent(focusComponent)
+             + '&compact=1' : '')
+        + (focusValue
+           ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
+           : '')
+        + (focusCutQuery ? '&' + focusCutQuery : '')
+        + (data.queue_members && data.queue_members.length
+           ? '&queues=' + encodeURIComponent(data.queue_members.join(','))
+           : '')
+        + '&since=' + encodeURIComponent(sinceIso)
+        + efQualQuery(efQualFamily());
     // The old card must not pass for the new one while the fetch
     // runs: say what is loading, over which range, and dim the rest.
-    cutPanel.querySelectorAll('.snapper-cut-loading').forEach(function (el) {
-      el.remove();
+    showLoading(cutPanel, 'Loading the detail'
+                + (loadingRange ? ' ' + loadingRange : '')
+                + (aggFrom !== null
+                   ? ' and the aggregate detail '
+                     + rangeText(aggFrom, aggTo) : ''));
+    Object.keys(dockedCutDetails).forEach(function (key) {
+      dockedCutDetails[key].style.opacity = '0.55';
     });
-    const loading = document.createElement('div');
-    loading.className = 'snapper-cut-loading';
-    loading.style.cssText = 'padding:.35em .8em; font-size:1.05em; '
-        + 'color:#37474f; background:#fff8e1; border:1px solid #f9a825; '
-        + 'border-radius:.4em; margin-bottom:.4em;';
-    loading.textContent = (cutIntegrated
-        ? 'Loading the breakdown over the integration range'
-        : 'Loading the detail')
-        + (loadingRange ? ' ' + loadingRange : '') + ' …';
-    cutPanel.hidden = false;
-    cutPanel.prepend(loading);
-    cutPanel.style.opacity = '0.55';
     // Average-time queries make a card fetch materially slower than a
     // range gesture. Cancel the previous request so an older interval
     // cannot arrive late and overwrite the current one.
     if (cutFetchController) cutFetchController.abort();
     cutFetchController = new AbortController();
     const controller = cutFetchController;
-    fetch(cutUrl + '?time=' + encodeURIComponent(lookupIso)
-          + (focusComponent
-             ? '&component=' + encodeURIComponent(focusComponent)
-               + '&compact=1' : '')
-          + (focusValue
-             ? '&' + focusParam + '=' + encodeURIComponent(focusValue)
-             : '')
-          + (focusCutQuery ? '&' + focusCutQuery : '')
-          + (data.queue_members && data.queue_members.length
-             ? '&queues=' + encodeURIComponent(data.queue_members.join(','))
-             : '')
-          + '&since=' + encodeURIComponent(sinceIso)
-          + efWindowQuery
-          + efQualQuery(efQualFamily()),
-          {signal: controller.signal})
+    fetch(baseQuery + efWindowQuery, {signal: controller.signal})
       .then(function (r) {
         if (!r.ok) {
           throw new Error('cut endpoint returned HTTP ' + r.status);
@@ -3644,6 +3627,24 @@
             + ') — <a href="javascript:location.reload()">reload'
             + '</a>.</div>';
       });
+  }
+  function rangeText(fromMs, toMs) {
+    return toNaive(fromMs).slice(0, 16).replace('T', ' ') + ' – '
+        + toNaive(toMs).slice(0, 16).replace('T', ' ') + ' ET';
+  }
+  function showLoading(panel, text) {
+    panel.querySelectorAll('.snapper-cut-loading').forEach(function (el) {
+      el.remove();
+    });
+    const loading = document.createElement('div');
+    loading.className = 'snapper-cut-loading';
+    loading.style.cssText = 'padding:.35em .8em; font-size:1.05em; '
+        + 'color:#37474f; background:#fff8e1; border:1px solid #f9a825; '
+        + 'border-radius:.4em; margin-bottom:.4em;';
+    loading.textContent = text + ' …';
+    panel.hidden = false;
+    panel.prepend(loading);
+    panel.style.opacity = '0.55';
   }
   function syncCutToViewRange() {
     // A range gesture selects an interval, not merely a new left-edge
@@ -3986,8 +3987,6 @@
     } else {
       url.searchParams.set('cut', timeIso);
     }
-    if (cutIntegrated) url.searchParams.set('detail', 'integrated');
-    else url.searchParams.delete('detail');
     stampWindow(url);
     history.replaceState(null, '', url);
   }
@@ -3996,7 +3995,6 @@
     // An unpinned cut is a display default and holds no URL space.
     const url = new URL(window.location.href);
     url.searchParams.delete('cut');
-    url.searchParams.delete('detail');
     stampWindow(url);
     history.replaceState(null, '', url);
   }
@@ -4312,7 +4310,6 @@
     // state cards elsewhere. Do not pre-snap the line — it must stay
     // where the cursor is.
     pendingSliceLane = laneAtY(event);
-    cutIntegrated = integratedPanelAtY(event);
     cutTrueMs = time;
     applyShapes();
     updateClearAll();
@@ -4394,8 +4391,6 @@
   // server merely defaulted (no cut in the URL) renders identically
   // but does not stamp the URL: the page stays un-pinned and live.
   const initialCut = '{{ observatory_cut|escapejs }}';
-  cutIntegrated = new URL(window.location.href)
-      .searchParams.get('detail') === 'integrated';
   if (new URL(window.location.href).searchParams.get('cut') === 'now') {
     // cut=now IS track-now: enter it exactly as the Now button does.
     goNow();
