@@ -898,6 +898,11 @@
   // double-click zoom reverts to it).
   let cutTrueMs = null;
   let confirmedCutTrueMs = null;
+  // A cut taken in an integrated panel reads its detail over the
+  // integration range, the view's left edge to the cut, so the card
+  // matches the bands at that x; the URL carries it as
+  // detail=integrated.
+  let cutIntegrated = false;
   let cutFetchController = null;
   let cutRangeTimer = null;
 
@@ -3385,6 +3390,19 @@
     }, 60);
   }
 
+  function integratedPanelAtY(event) {
+    // Whether a plot click falls in an integrated panel.
+    const fl = plotDiv._fullLayout;
+    if (!fl) return false;
+    const bb = plotDiv.getBoundingClientRect();
+    const y = event.clientY - bb.top;
+    return panels.some(function (panel) {
+      if (!panel.derived) return false;
+      const ya = fl[panel.axisKey];
+      return !!ya && y >= ya._offset && y <= ya._offset + ya._length;
+    });
+  }
+
   function laneAtY(event) {
     // Which lane band a plot click falls in: category axes place the
     // first lane at the bottom.
@@ -3533,7 +3551,12 @@
     if (efHasFamilies() && efRungMs) {
       const HOUR_MS = 3600000;
       let detailFrom, detailTo;
-      if (efRungMs >= HOUR_MS) {
+      if (cutIntegrated) {
+        // The integrated panel's detail: the integration range, the
+        // view's left edge to the cut.
+        detailFrom = axisRange ? axisRange[0] : Date.parse(data.start);
+        detailTo = confirmedCutTrueMs;
+      } else if (efRungMs >= HOUR_MS) {
         detailTo = efBinEnd(confirmedCutTrueMs);
         detailFrom = detailTo - efRungMs;
       } else {
@@ -3542,12 +3565,13 @@
       }
       const endMs = Date.parse(data.end);
       if (detailTo > endMs) {
-        detailFrom -= (detailTo - endMs);
+        if (!cutIntegrated) detailFrom -= (detailTo - endMs);
         detailTo = endMs;
       }
       efWindowQuery =
           '&from=' + encodeURIComponent(new Date(detailFrom).toISOString())
-          + '&to=' + encodeURIComponent(new Date(detailTo).toISOString());
+          + '&to=' + encodeURIComponent(new Date(detailTo).toISOString())
+          + (cutIntegrated ? '&integrated=1' : '');
     }
     // Average-time queries make a card fetch materially slower than a
     // range gesture. Cancel the previous request so an older interval
@@ -3932,6 +3956,8 @@
     } else {
       url.searchParams.set('cut', timeIso);
     }
+    if (cutIntegrated) url.searchParams.set('detail', 'integrated');
+    else url.searchParams.delete('detail');
     stampWindow(url);
     history.replaceState(null, '', url);
   }
@@ -3940,6 +3966,7 @@
     // An unpinned cut is a display default and holds no URL space.
     const url = new URL(window.location.href);
     url.searchParams.delete('cut');
+    url.searchParams.delete('detail');
     stampWindow(url);
     history.replaceState(null, '', url);
   }
@@ -4255,6 +4282,7 @@
     // state cards elsewhere. Do not pre-snap the line — it must stay
     // where the cursor is.
     pendingSliceLane = laneAtY(event);
+    cutIntegrated = integratedPanelAtY(event);
     cutTrueMs = time;
     applyShapes();
     updateClearAll();
@@ -4336,6 +4364,8 @@
   // server merely defaulted (no cut in the URL) renders identically
   // but does not stamp the URL: the page stays un-pinned and live.
   const initialCut = '{{ observatory_cut|escapejs }}';
+  cutIntegrated = new URL(window.location.href)
+      .searchParams.get('detail') === 'integrated';
   if (new URL(window.location.href).searchParams.get('cut') === 'now') {
     // cut=now IS track-now: enter it exactly as the Now button does.
     goNow();
