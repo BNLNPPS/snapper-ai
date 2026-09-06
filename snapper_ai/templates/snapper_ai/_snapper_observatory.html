@@ -856,6 +856,18 @@
   let gapShapes = [], fullRange = [0, 0], groupMembers = {};
   let laneLabelById = {}, parentKids = {}, curveAxis = {}, panels = [];
   let cutDomains = [];
+  // The integrated panel of an event-flow family declaring
+  // cumulative_panel: its bins summed from the left edge of the view,
+  // stacked by the same members on an axis of its own beneath the
+  // family's panel — the running total of what the panel above shows,
+  // in the same measure and under the same chips, re-based when the
+  // view moves. Keyed by family name while a render builds.
+  let cumulativeAxis = {};
+  const CUMULATIVE_SUFFIX = ' · integrated';
+  function cumulativeTitle(def) {
+    return (def.title || def.name) + ' · integrated over the window'
+        + (DOCK_CONTROLS && def.units ? ' — ' + def.units : '');
+  }
   // Minimum on-screen bar length for episodic run periods, in ms of the
   // rendered view span — a minutes-long run stays visible at a 7-day
   // zoom. Recomputed (with a re-render) when the view span changes.
@@ -1177,6 +1189,47 @@
         });
       });
       quiltGeom.push(geom);
+      const cumAxis = cumulativeAxis[familyName];
+      if (cumAxis) {
+        // The integrated panel: each member's bins summed from the
+        // left edge of the view, stacked in the same order. A bin
+        // joins the sum once its trailing edge lies inside the view.
+        const leftMs = viewTrue ? viewTrue[0] : Date.parse(data.start);
+        const cumRunning = unionX.map(function () { return 0; });
+        const cumGeom = {axisKey: 'yaxis' + cumAxis.slice(1),
+                         edgesMs: edgesMs, members: [],
+                         endStamped: endStamped, eventFlow: false,
+                         fitView: true, daily: geom.daily,
+                         units: geom.units};
+        geom.members.forEach(function (member, memberIndex) {
+          let acc = 0;
+          const own = [], tops = [];
+          unionX.forEach(function (x, xi) {
+            const trail = edgesMs[xi + 1] !== undefined
+                ? edgesMs[xi + 1] : edgesMs[xi];
+            if (trail > leftMs) acc += member.own[xi];
+            own.push(acc);
+            cumRunning[xi] += acc;
+            tops.push(cumRunning[xi]);
+          });
+          cumGeom.members.push({id: member.id, label: member.label,
+                                own: own, tops: tops});
+          traces.push({
+            x: traceX,
+            y: endStamped ? tops.concat(tops[tops.length - 1]) : tops,
+            mode: 'lines',
+            line: {shape: 'hv', width: 0.5, color: curveColor[member.id]},
+            fill: memberIndex === 0 ? 'tozeroy' : 'tonexty',
+            fillcolor: curveColor[member.id],
+            name: member.label,
+            yaxis: cumAxis,
+            visible: true,
+            showlegend: false,
+            hoverinfo: 'skip',
+          });
+        });
+        quiltGeom.push(cumGeom);
+      }
     });
     // A family may declare fills: per-member hatched areas from zero
     // to the curve, marking a member that is a subset of a sibling
@@ -1331,6 +1384,7 @@
     panels = [];
     cutDomains = [];
     curveAxis = {};
+    cumulativeAxis = {};
     GROUPS.concat([{name: 'Other', match: function () { return true; }}])
         .forEach(function (group) {
       const members = curveIds.filter(function (id) {
@@ -1358,6 +1412,16 @@
                    units: group.units || '',
                    axisKey: traceAxis === 'y' ? 'yaxis'
                        : 'yaxis' + traceAxis.slice(1)});
+      if (group.cumulative_panel && group.stacked && group.event_flow) {
+        const cumAxis = 'y' + (panels.length + 2);
+        cumulativeAxis[group.name] = cumAxis;
+        panels.push({name: group.name + CUMULATIVE_SUFFIX,
+                     memberGroup: group.name, derived: true,
+                     title: cumulativeTitle(group),
+                     traceAxis: cumAxis, detailKey: '',
+                     px: 220, units: group.units || '',
+                     axisKey: 'yaxis' + cumAxis.slice(1)});
+      }
     });
 
     // Known coverage gaps render as grey spans, never painted over.
@@ -1750,7 +1814,8 @@
       };
       // A panel whose members hold points but no nonzero value in the
       // window states its emptiness plainly, never a bare grid.
-      const panelMembers = groupMembers[panel.name] || [];
+      const panelFamily = panel.memberGroup || panel.name;
+      const panelMembers = groupMembers[panelFamily] || [];
       const panelHasSignal = panelMembers.some(function (id) {
         const measure = (groupDef(id) || {}).measure || 'count';
         return ((data.curves[id] || {}).points || []).some(function (p) {
@@ -1759,7 +1824,7 @@
       });
       if (!panelHasSignal) {
         const panelDef = GROUPS.find(function (g) {
-          return g.name === panel.name;
+          return g.name === panelFamily;
         }) || {};
         layout.annotations.push({
           xref: 'paper', x: 0.5, xanchor: 'center',
@@ -1881,6 +1946,7 @@
             event_flow: !!g.event_flow,
             event_flow_bin_scale: Math.max(
                 1, Math.round(+g.event_flow_bin_scale) || 1),
+            cumulative_panel: !!g.cumulative_panel,
             default_off: !!g.default_off, units: units,
             qualifier_label: g.qualifier_label || '',
             qualifier_param: g.qualifier_param || 'quals',
@@ -2180,7 +2246,9 @@
         : [Date.parse(data.start), Date.parse(data.end)];
     const update = {};
     quiltGeom.forEach(function (geom) {
-      if (!geom.eventFlow || !geom.members.length) return;
+      if (!(geom.eventFlow || geom.fitView) || !geom.members.length) {
+        return;
+      }
       const tops = geom.members[geom.members.length - 1].tops;
       let max = 0;
       for (let i = 0; i < tops.length; i++) {
@@ -2392,7 +2460,9 @@
     curveIds.forEach(function (id) {
       if (!curvesOff.has(id)) visibleFamilies.add(groupName(id));
     });
-    const current = new Set(panels.map(function (p) { return p.name; }));
+    const current = new Set(panels.filter(function (p) {
+      return !p.derived;
+    }).map(function (p) { return p.name; }));
     let differ = visibleFamilies.size !== current.size;
     visibleFamilies.forEach(function (name) {
       if (!current.has(name)) differ = true;
@@ -2435,9 +2505,34 @@
         row.style.top = '0px';
         plotWrap.appendChild(row);
         dockedRows.push({name: name, el: row});
+        attachIntegratedRow(name);
       } else {
         controls.appendChild(row);
       }
+    }
+    function attachIntegratedRow(name) {
+      // The integrated panel's docked row: a title beneath its
+      // family's row, so the section layout allots the panel its
+      // space like any other. Absent while the family or its section
+      // is closed, when the panel is absent too.
+      const def = GROUPS.find(function (g) { return g.name === name; });
+      if (!def || !def.cumulative_panel || familyClosed(name, def)) {
+        return;
+      }
+      const section = familySectionOf(name);
+      if (section && sectionClosed(section)) return;
+      const row = document.createElement('div');
+      row.className = 'snapper-curve-row snapper-curve-row-docked';
+      row.dataset.family = name + CUMULATIVE_SUFFIX;
+      const head = document.createElement('div');
+      head.className = 'snapper-curve-row-label';
+      head.innerHTML = '<strong>' + escapeHtml(cumulativeTitle(def))
+          + '</strong>';
+      row.appendChild(head);
+      row.style.visibility = 'hidden';
+      row.style.top = '0px';
+      plotWrap.appendChild(row);
+      dockedRows.push({name: name + CUMULATIVE_SUFFIX, el: row});
     }
     groupMembers = {};
     curveIds.forEach(function (curveId) {
