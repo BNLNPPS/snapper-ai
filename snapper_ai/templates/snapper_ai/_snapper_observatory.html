@@ -34,6 +34,11 @@
 .snapper-curve-row-label {
   flex: 0 0 10.5rem;
 }
+/* A family-scoped selector axis, in the family's own control row. */
+.snapper-curve-row-selector {
+  flex: 0 0 auto;
+  margin-right: 1.2rem;
+}
 .snapper-curve-row-boxes {
   flex: 1 1 20rem;
   display: flex;
@@ -159,7 +164,10 @@
       {% endfor %}
     </div>
     {% endif %}
-    {% for sel in observatory_focus.selectors %}
+    {# An axis naming a family is not a page control: it renders in    #}
+    {# that family's own docked control row, beside the ticks and the  #}
+    {# rotator, where the choice has meaning.                          #}
+    {% for sel in observatory_focus.selectors %}{% if not sel.family %}
     <div class="mb-1 d-flex flex-wrap align-items-center column-gap-3">
       <strong>{{ sel.label }}:</strong>
       {% for choice in sel.choices %}
@@ -170,7 +178,8 @@
       </label>
       {% endfor %}
     </div>
-    {% endfor %}
+    {% endif %}{% endfor %}
+    {{ observatory_focus.family_selectors|json_script:"snapper-family-selectors" }}
     {# Summaries, directly under the selector rows: quick trips to the #}
     {# cut's summary material below — every card element declaring    #}
     {# data-snapper-summary, in page order; the back button returns   #}
@@ -585,6 +594,57 @@
   // still settling — a cut detail docking above the target moves it.
   // The row is resolved by name on every scroll: a re-render rebuilds
   // the row elements, so a held element would be detached.
+  // Family-scoped selector axes: an axis naming a family renders in
+  // that family's own docked control row, beside its ticks and its
+  // rotator, instead of the page's selector rows — the choice sits
+  // where it has meaning, and a panel offers only the groupings its
+  // record supports. Each choice navigates, exactly as a page-level
+  // axis does, so the whole state stays in the URL.
+  const FAMILY_SELECTORS = (function () {
+    const el = document.getElementById('snapper-family-selectors');
+    let defs = [];
+    try {
+      defs = el ? (JSON.parse(el.textContent) || []) : [];
+    } catch (e) {
+      console.error('snapper: family selector definitions unreadable', e);
+      defs = [];
+    }
+    const byFamily = {};
+    defs.forEach(function (sel) {
+      (byFamily[sel.family] = byFamily[sel.family] || []).push(sel);
+    });
+    return byFamily;
+  })();
+  function attachFamilySelectors(name, row) {
+    // An axis names a family by its registry name or by the
+    // selector_group several families share — the form a per-entity
+    // view takes, where one panel kind repeats per entity and the
+    // family name carries the grouping the axis chooses.
+    const famDef = GROUPS.find(function (g) { return g.name === name; }) || {};
+    const axes = (FAMILY_SELECTORS[name] || []).concat(
+        famDef.selector_group
+            ? (FAMILY_SELECTORS[famDef.selector_group] || []) : []);
+    axes.forEach(function (sel) {
+      const wrap = document.createElement('span');
+      wrap.className = 'snapper-curve-row-selector';
+      wrap.innerHTML = '<strong>' + escapeHtml(sel.label) + ':</strong> '
+          + (sel.choices || []).map(function (c) {
+            return '<label class="form-check form-check-inline mb-0">'
+                + '<input type="radio" class="form-check-input" name="'
+                + escapeHtml('snapper-fam-' + sel.param + '-' + name)
+                + '"' + (c.active ? ' checked' : '') + '> '
+                + escapeHtml(c.label) + '</label>';
+          }).join('');
+      const inputs = wrap.querySelectorAll('input');
+      (sel.choices || []).forEach(function (c, i) {
+        if (!inputs[i]) return;
+        inputs[i].addEventListener('change', function () {
+          window.location = c.url;
+        });
+      });
+      row.appendChild(wrap);
+    });
+  }
   function familyRow(name) {
     let found = null;
     document.querySelectorAll('[data-family]').forEach(function (r) {
@@ -2028,6 +2088,10 @@
     // family's tick boxes by the active lens: a box toggles its
     // member SET while every member keeps its own curve and color.
     return {name: g.name, title: title, measure: measure,
+            // The key by which a family-scoped selector axis finds
+            // this family, when the axis governs a panel kind that
+            // repeats per entity rather than one named family.
+            selector_group: g.selector_group || '',
             measures: measures, measure_param: g.measure_param || '',
             units_by_measure: g.units_by_measure || null,
             title_by_measure: g.title_by_measure || null,
@@ -2788,6 +2852,7 @@
       }
       if (closed || noTicks) {
         row.appendChild(head);
+        if (!closed) attachFamilySelectors(name, row);
         attachRow(name, row);
         return;
       }
@@ -2796,6 +2861,7 @@
       head.querySelector('[data-group-off]').addEventListener('click',
           function (e) { e.preventDefault(); setGroup(name, false); });
       row.appendChild(head);
+      attachFamilySelectors(name, row);
       const boxes = document.createElement('div');
       boxes.className = 'snapper-curve-row-boxes';
       const rowDef = GROUPS.filter(function (g) {

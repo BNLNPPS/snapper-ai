@@ -52,6 +52,20 @@ def _families_key(selector_defs, values):
         if sel.get('families') is not False)
 
 
+def _option_families(option, families_key, values=None):
+    """A focus option's families under the selected axes. ``families_by``
+    is either a map keyed by the families key or a callable over the
+    selected values, {param: value} — the form a view with several
+    selector axes takes, so it resolves its families directly instead
+    of precomputing every combination of them."""
+    by_key = option.get('families_by')
+    if callable(by_key):
+        return tuple(by_key(dict(values or {})) or ())
+    if by_key:
+        return tuple(by_key.get(families_key) or ())
+    return tuple(option.get('families') or ())
+
+
 def _compact_count(value):
     """A count for a label: millions as 1.3M, else with separators."""
     value = int(value or 0)
@@ -104,12 +118,12 @@ def prewarm_focus_series(scope, window_keys=()):
         selector_defs = list(focus_def.get('selectors') or ())
         if not selector_defs and focus_def.get('quantity'):
             selector_defs = [focus_def['quantity']]
-        families_key = _families_key(
-            selector_defs, [sel.get('default') for sel in selector_defs])
+        defaults = [sel.get('default') for sel in selector_defs]
+        families_key = _families_key(selector_defs, defaults)
+        default_values = {sel.get('param') or 'quantity': value or ''
+                          for sel, value in zip(selector_defs, defaults)}
         for option in (focus_def.get('options') or ()):
-            by_key = option.get('families_by')
-            families = ((by_key.get(families_key) if by_key
-                         else option.get('families')) or ())
+            families = _option_families(option, families_key, default_values)
             wanted = set(families)
             curve_filter = _focus_curve_filter(all_groups, wanted)
             floor = option.get('start')
@@ -640,12 +654,12 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                     value = sel.get('default') or ''
                 selected_values.append(value)
             families_key = _families_key(selector_defs, selected_values)
+            selector_state = {
+                sel.get('param') or 'quantity': value
+                for sel, value in zip(selector_defs, selected_values)}
 
             def _families(option):
-                by_key = option.get('families_by')
-                if by_key:
-                    return by_key.get(families_key) or ()
-                return option.get('families') or ()
+                return _option_families(option, families_key, selector_state)
 
             # One or several options at once: families union, window
             # floored at the earliest start. All off is valid: no
@@ -1032,6 +1046,11 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
             selectors_context.append({
                 'label': sel.get('label') or 'Counting',
                 'param': sel_param,
+                # An axis naming a family renders in that family's own
+                # docked control row, beside the controls already
+                # there, not in the page's selector rows: the choice
+                # belongs where it has meaning.
+                'family': sel.get('family') or '',
                 'value': selected_values[i],
                 'choices': [
                     {'value': c.get('value'), 'label': c.get('label'),
@@ -1075,6 +1094,10 @@ def snapper_report(request, scope, snap_id=None, focus_slug=None):
                 if not any(o.get('value') == v
                            for o in (focus_def.get('options') or ()))),
             'selectors': selectors_context,
+            # The family-scoped axes, for the client that builds each
+            # family's docked control row.
+            'family_selectors': [sel for sel in selectors_context
+                                 if sel['family']],
             # The visible statement of a member_restrict narrowing.
             'member_note': member_note,
             # The cut narrows by the EFFECTIVE selector values — the
