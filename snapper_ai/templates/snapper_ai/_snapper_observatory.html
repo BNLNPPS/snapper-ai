@@ -4050,10 +4050,15 @@
     const index = curveTraceIndex[curveId];
     const trace = index === undefined ? null : plotDiv.data[index];
     if (!trace || trace.visible === 'legendonly') return null;
+    // trace.x holds naive ET strings, which Date.parse reads as
+    // browser-local time; `time` is a true instant (eventTime). The
+    // same correction eventTime applies brings the two onto one basis
+    // — without it the lookup is skewed by the browser's offset from
+    // ET, and a curve younger than that offset never hovers at all.
     let lo = 0, hi = trace.x.length - 1, found = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (Date.parse(trace.x[mid]) <= time) {
+      if (Date.parse(trace.x[mid]) + basisCorrection <= time) {
         found = mid;
         lo = mid + 1;
       } else {
