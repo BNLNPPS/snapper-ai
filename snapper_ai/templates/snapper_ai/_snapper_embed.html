@@ -130,7 +130,15 @@ the context sets ``hide_key``.
     const px = event.clientX - box.left - xa._offset;
     if (px < 0 || px > xa._length) return null;
     const left = Date.parse(xa.range[0]), right = Date.parse(xa.range[1]);
-    return left + (px / xa._length) * (right - left);
+    // xa.range holds naive ET strings, which Date.parse reads as
+    // browser-local time, while the points and lane spans the hit
+    // tests compare against are true instants. The end stamp's round
+    // trip through the naive form measures the browser's offset from
+    // ET and brings the pointer onto the points' basis (the
+    // observatory's basisCorrection).
+    const endMs = Date.parse(data.end);
+    const correction = endMs - Date.parse(toNaive(endMs));
+    return left + (px / xa._length) * (right - left) + correction;
   }
 
   function stepValue(points, time) {
