@@ -82,7 +82,7 @@ def _focus_cache_key(scope, focus_param, wanted, cache_span):
             f'{focus_param}:{token}:{cache_span}')
 
 
-def prewarm_focus_series(scope, window_keys=()):
+def prewarm_focus_series(scope, window_keys=(), only=None):
     """Rebuild a scope's cache-opted focus products so pages land warm.
 
     For each focus view declaring ``cache_series`` and each of its
@@ -93,6 +93,11 @@ def prewarm_focus_series(scope, window_keys=()):
     record — through a ``series_cache`` hook accepting
     ``refresh=True``; a hook without the parameter still fills any
     missing product.
+
+    ``only`` names the focus views to warm, by their ``param``. A view
+    over a record that advances every refresh cycle is warmed on that
+    cycle rather than nightly, and warming the rest with it would pay
+    for records that did not move.
 
     Returns the product keys rebuilt.
     """
@@ -114,6 +119,8 @@ def prewarm_focus_series(scope, window_keys=()):
                 or focus_def.get('prewarm_series') is False):
             continue
         focus_param = focus_def.get('param') or 'focus'
+        if only is not None and focus_param not in only:
+            continue
         components = tuple(focus_def.get('components') or ()) or None
         selector_defs = list(focus_def.get('selectors') or ())
         if not selector_defs and focus_def.get('quantity'):

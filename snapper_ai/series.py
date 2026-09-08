@@ -100,6 +100,7 @@ def observatory_series(scope, start, end, curve_filter=None,
     the focus views discard.
     """
     from django.db.models import Q
+    from django.db.models.fields.json import KeyTransform
 
     provider = registry.get(scope)
 
@@ -110,17 +111,46 @@ def observatory_series(scope, start, end, curve_filter=None,
         for name in snap_components:
             component_q |= Q(changed_components__contains=name)
         snap_q = snap_q.filter(component_q)
-    rows = list(
-        snap_q
-        .order_by('snap_time')
-        .values('snap_time', 'state', 'recovered_gap_started_at',
-                'recovered_gap_start_unknown', 'reasons'))
-    boundary = (
-        SystemSnap.objects
-        .filter(scope=scope, snap_time__lt=start)
-        .order_by('-snap_time')
-        .values('snap_time', 'state')
-        .first())
+
+    # A focused walk reads a handful of numbers per snap out of a state
+    # document holding every component of the scope, so the components it
+    # does not plot are the bulk of what a whole-state read carries: on
+    # the epicprod platform view, 46 MB of state for 11 MB the view uses.
+    # Postgres projects the declared components instead, and the walk
+    # sees a state document of the same shape with only those in it.
+    # The health component rides along because the lane entries read it.
+    projected = (sorted(set(snap_components) | {'health'})
+                 if snap_components else None)
+
+    def _select(query, fields):
+        if not projected:
+            return query.values(*fields, 'state')
+        annotations = {
+            f'c_{index}': KeyTransform(name, KeyTransform('components', 'state'))
+            for index, name in enumerate(projected)}
+        return query.annotate(**annotations).values(
+            *fields, *annotations.keys())
+
+    def _restore(row):
+        """One row with a state document carrying the projected components."""
+        if not projected:
+            return row
+        components = {}
+        for index, name in enumerate(projected):
+            value = row.pop(f'c_{index}', None)
+            if value is not None:
+                components[name] = value
+        row['state'] = {'components': components}
+        return row
+
+    rows = [_restore(row) for row in _select(
+        snap_q.order_by('snap_time'),
+        ('snap_time', 'recovered_gap_started_at',
+         'recovered_gap_start_unknown', 'reasons'))]
+    boundary_row = _select(
+        SystemSnap.objects.filter(scope=scope, snap_time__lt=start)
+        .order_by('-snap_time'), ('snap_time',)).first()
+    boundary = _restore(boundary_row) if boundary_row else None
 
     dangle_seconds = 3600.0 * float(
         registry.config_get('snapper_lane_dangle_hours', 12))
