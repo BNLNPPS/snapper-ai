@@ -176,6 +176,19 @@ the explicit range otherwise. Errors, including an unknown scope or
 family, render visibly in the partial. The swf host embeds the
 epicprod jobs and tasks families on its PanDA activity page.
 
+A host page that filters its own content can narrow the embed to
+match without a request. Two context keys set the first render:
+`embed['data']['hidden_ids']`, curve ids left out of the drawing
+(colors stay assigned over the full set, so a curve keeps its color
+whatever is hidden), and `embed['report_query_extra']`, a query
+fragment appended to the click-through URL. At runtime the partial
+registers `window.snapperEmbeds[embed.dom_id]` with `curveIds()`,
+`setHidden(ids)`, which redraws the plot in place, and
+`setReportQuery(extra)`. A redraw of several hundred curves costs a
+few hundred milliseconds, so a host runs `setHidden` after its own
+content has painted. The swf host's campaign plan page drives its
+delivery map this way from its row filter.
+
 ## 5. Own the transports you want
 
 REST and MCP transports for the temporal queries are host territory by

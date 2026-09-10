@@ -5,12 +5,19 @@ over one window, rendered from an embed_context() dict passed as
 preferences; a click anywhere on the plot opens the scope's full Time
 history. The curve key above the plot is a static legend, dropped when
 the context sets ``hide_key``.
+
+A host page may narrow the plotted curves without a request: the
+context's ``data.hidden_ids`` lists curve ids left out of the first
+render, and ``embed.report_query_extra`` is a query fragment appended
+to the click-through. Both are changeable at runtime through
+``window.snapperEmbeds[embed.dom_id]``: ``curveIds()``,
+``setHidden(ids)`` (re-renders), ``setReportQuery(extra)``.
 {% endcomment %}
 {% if embed.error %}
 <p class="text-danger mb-0">Snapper state history unavailable: {{ embed.error }}</p>
 {% elif not embed.has_points %}
 <p class="text-muted mb-0">No recorded state in this window.
-  <a href="{% url 'snapper_ai:snapper_report' scope=embed.scope %}?{{ embed.report_query }}">Open the {{ embed.label }} Time history</a>.</p>
+  <a href="{% url 'snapper_ai:snapper_report' scope=embed.scope %}?{{ embed.report_query }}{% if embed.report_query_extra %}&amp;{{ embed.report_query_extra }}{% endif %}">Open the {{ embed.label }} Time history</a>.</p>
 {% else %}
 {% if embed.clamp_note %}
 <p class="text-muted mb-1">{{ embed.clamp_note }}</p>
@@ -27,16 +34,55 @@ the context sets ``hide_key``.
 {{ embed.data|json_script:embed.data_dom_id }}
 <script>
 (function () {
-  const data = JSON.parse(
+  // `full` is the context as served; `data` is what is drawn, the full
+  // context less the curves a host page hides (data.hidden_ids at first
+  // render, setHidden() after). Colors are assigned over the full set,
+  // so a curve keeps its color whatever is hidden.
+  const full = JSON.parse(
       document.getElementById('{{ embed.data_dom_id }}').textContent);
+  let data = full;
   const plotDiv = document.getElementById('{{ embed.dom_id }}');
   const keyDiv = document.getElementById('{{ embed.dom_id }}-key');
   {# Path resolved at render time — a cached context must never bake a script-prefix path. #}
   {% if embed.report_focus_slug %}
-  const reportUrl = '{% url "snapper_ai:snapper_focus" scope=embed.scope focus_slug=embed.report_focus_slug %}?{{ embed.report_query|escapejs }}';
+  const reportUrlBase = '{% url "snapper_ai:snapper_focus" scope=embed.scope focus_slug=embed.report_focus_slug %}?{{ embed.report_query|escapejs }}';
   {% else %}
-  const reportUrl = '{% url "snapper_ai:snapper_report" scope=embed.scope %}?{{ embed.report_query|escapejs }}';
+  const reportUrlBase = '{% url "snapper_ai:snapper_report" scope=embed.scope %}?{{ embed.report_query|escapejs }}';
   {% endif %}
+  let reportExtra = '{{ embed.report_query_extra|default:""|escapejs }}';
+  function reportUrl() {
+    return reportUrlBase + (reportExtra ? '&' + reportExtra : '');
+  }
+  plotDiv.addEventListener('click', function () {
+    window.location = reportUrl();
+  });
+
+  function withHidden(ids) {
+    const hidden = new Set(ids || []);
+    if (!hidden.size) return full;
+    const curves = {};
+    Object.keys(full.curves).forEach(function (id) {
+      if (!hidden.has(id)) curves[id] = full.curves[id];
+    });
+    const panels = full.panels.map(function (panel) {
+      return Object.assign({}, panel, {
+        ids: panel.ids.filter(function (id) { return !hidden.has(id); }),
+        overlay: (panel.overlay || []).filter(function (id) { return !hidden.has(id); }),
+      });
+    }).filter(function (panel) { return panel.ids.length; });
+    return Object.assign({}, full, {curves: curves, panels: panels});
+  }
+  data = withHidden(full.hidden_ids);
+
+  window.snapperEmbeds = window.snapperEmbeds || {};
+  window.snapperEmbeds['{{ embed.dom_id }}'] = {
+    curveIds: function () { return Object.keys(full.curves); },
+    setHidden: function (ids) {
+      data = withHidden(ids);
+      if (window.Plotly) render();
+    },
+    setReportQuery: function (extra) { reportExtra = extra || ''; },
+  };
 
   // The observatory template's curve palette, verbatim: colors are
   // assigned by position in the scope's FULL sorted curve list, so a
@@ -46,13 +92,13 @@ the context sets ``hide_key``.
                    '#0277bd', '#8e24aa', '#f4511e', '#558b2f', '#5d4037',
                    '#c2185b'];
   const curveColor = {};
-  data.all_curve_ids.forEach(function (id, index) {
+  full.all_curve_ids.forEach(function (id, index) {
     curveColor[id] = PALETTE[index % PALETTE.length];
   });
   // Provider-declared colors (the host's semantic vocabulary, e.g.
   // state colors) override the positional deal, as on the report page.
-  Object.keys(data.colors || {}).forEach(function (id) {
-    curveColor[id] = data.colors[id];
+  Object.keys(full.colors || {}).forEach(function (id) {
+    curveColor[id] = full.colors[id];
   });
 
   // Namespace lane colors: hue = namespace identity from the report
@@ -560,12 +606,11 @@ the context sets ``hide_key``.
         borderpad: 3,
       });
     });
+    // A fresh draw each time: for several hundred stacked traces it is
+    // faster than Plotly.react's in-place update (measured 2026-09-10).
     Plotly.newPlot(plotDiv, traces, layout,
                    {responsive: true, displayModeBar: false,
                     doubleClick: false, showTips: false});
-    plotDiv.addEventListener('click', function () {
-      window.location = reportUrl;
-    });
   }
 
   if (window.Plotly) {
