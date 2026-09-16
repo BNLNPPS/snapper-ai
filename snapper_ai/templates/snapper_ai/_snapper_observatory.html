@@ -760,7 +760,7 @@
   // slate) only when many namespaces are active at once — red belongs
   // to failure, not identity.
   const NS_PALETTE = ['#1565c0', '#6a1b9a', '#00acc1', '#f57c00',
-                      '#00838f', '#ad1457', '#5d4037', '#37474f'];
+                      '#00838f', '#1e88e5', '#5d4037', '#37474f'];
   function mixWhite(hex, f) {
     const n = parseInt(hex.slice(1), 16);
     const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
@@ -884,9 +884,9 @@
     return stateColor(value);
   }
   const PALETTE = ['#1565c0', '#6a1b9a', '#00838f', '#ef6c00', '#33691e',
-                   '#ad1457', '#4527a0', '#00695c', '#bf360c', '#37474f',
-                   '#0277bd', '#8e24aa', '#f4511e', '#558b2f', '#5d4037',
-                   '#c2185b'];
+                   '#1e88e5', '#4527a0', '#00695c', '#00897b', '#37474f',
+                   '#0277bd', '#8e24aa', '#7cb342', '#558b2f', '#5d4037',
+                   '#3949ab'];
   let paletteNext = 0;
   const valueColor = {};
   function stateColor(value) {
