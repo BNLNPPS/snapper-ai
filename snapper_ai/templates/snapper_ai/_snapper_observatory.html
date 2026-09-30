@@ -473,6 +473,9 @@
   // focus selector writes none (2026-09-05), never as the list of the
   // curves it had then: a member that appears later is off too.
   const familiesOff = new Set(selectionPrefs.families_off || []);
+  // Family membership, rebuilt at each render; declared here because the
+  // URL stamp reads it and can run at load, before the first render.
+  let groupMembers = {};
   // A family with fewer curves on than off is written by the ones on,
   // '<family>:only:<id>+<id>': none, then tick one, reads as that one.
   const familiesOnly = new Map(Object.entries(selectionPrefs.families_only || {})
@@ -934,7 +937,7 @@
   // Stacked-family geometry for the in-house band hover. End-stamped
   // daily stacks additionally drive centered date ticks and day cuts.
   let quiltGeom = [];
-  let gapShapes = [], fullRange = [0, 0], groupMembers = {};
+  let gapShapes = [], fullRange = [0, 0];
   let laneLabelById = {}, parentKids = {}, curveAxis = {}, panels = [];
   let cutDomains = [];
   // Derived panels of an event-flow family: one per further measure
