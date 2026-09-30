@@ -469,12 +469,28 @@
   const urlHasOff = new URL(window.location.href).searchParams.has('off');
   const urlHasOn = new URL(window.location.href).searchParams.has('on');
   const urlHasCurveState = urlHasOff || urlHasOn;
+  // A family with every curve off is written '<family>:none', as the
+  // focus selector writes none (2026-09-05), never as the list of the
+  // curves it had then: a member that appears later is off too.
+  const familiesOff = new Set(selectionPrefs.families_off || []);
+  // A family with fewer curves on than off is written by the ones on,
+  // '<family>:only:<id>+<id>': none, then tick one, reads as that one.
+  const familiesOnly = new Map(Object.entries(selectionPrefs.families_only || {})
+      .map(function (kv) { return [kv[0], new Set(kv[1])]; }));
   if (urlHasCurveState) {
     curvesOff.clear();
     curvesOn.clear();
+    familiesOff.clear();
+    familiesOnly.clear();
     (new URL(window.location.href).searchParams.get('off') || '')
         .split(',').filter(Boolean)
-        .forEach(function (id) { curvesOff.add(id); });
+        .forEach(function (id) {
+          const only = id.indexOf(':only:');
+          if (id.slice(-5) === ':none') familiesOff.add(id.slice(0, -5));
+          else if (only > 0) familiesOnly.set(id.slice(0, only),
+              new Set(id.slice(only + 6).split('+').filter(Boolean)));
+          else curvesOff.add(id);
+        });
     (new URL(window.location.href).searchParams.get('on') || '')
         .split(',').filter(Boolean)
         .forEach(function (id) { curvesOn.add(id); });
@@ -513,6 +529,9 @@
     if (familiesParam) return;
     stampOffUrl();
     const payload = {curves_off6: explicitOffIds(),
+                     families_off: Array.from(familiesOff),
+                     families_only: Object.fromEntries(Array.from(familiesOnly.entries())
+                         .map(function (kv) { return [kv[0], Array.from(kv[1])]; })),
                      curves_on6: Array.from(curvesOn),
                      pc_off: Array.from(pcOff),
                      lanes_open: Array.from(lanesOpen),
@@ -2522,6 +2541,10 @@
     }
     return 'Other';
   }
+  function familySlug(name) {
+    return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+  }
   // ?families= preset (comma-separated family names): only the named
   // families' curves show, overriding remembered preferences — the
   // durable link form for a focused view, e.g. one campaign's
@@ -2743,6 +2766,20 @@
     curveIds.forEach(function (curveId) {
       const name = groupName(curveId);
       (groupMembers[name] = groupMembers[name] || []).push(curveId);
+    });
+    // A family set to none holds every member it has now off; one set
+    // to only some holds every other member off, newcomers included.
+    Object.keys(groupMembers).forEach(function (name) {
+      const slug = familySlug(name);
+      if (familiesOff.has(slug)) {
+        groupMembers[name].forEach(function (id) { curvesOff.add(id); });
+      } else if (familiesOnly.has(slug)) {
+        const keep = familiesOnly.get(slug);
+        groupMembers[name].forEach(function (id) {
+          if (keep.has(id)) curvesOff.delete(id);
+          else curvesOff.add(id);
+        });
+      }
     });
     // A family with a declared member order (e.g. a job lifecycle)
     // shows in that order; unlisted members follow alphabetically.
@@ -4213,8 +4250,36 @@
     // on= is the explicit opt-in for provider-declared default-off
     // curves. Window navigation carries both lists.
     const url = new URL(window.location.href);
-    url.searchParams.set(
-        'off', currentCurveIds(explicitOffIds()).join(','));
+    // A family whose every member is off is written '<family>:none';
+    // only a partial selection lists its curves.
+    const covered = new Set();
+    // Before the first render there are no families to read: the
+    // families already set stand as they are.
+    if (Object.keys(groupMembers).length) {
+      familiesOff.clear();
+      familiesOnly.clear();
+    }
+    Object.keys(groupMembers).forEach(function (name) {
+      const members = groupMembers[name] || [];
+      if (!members.length) return;
+      if (members.every(function (id) { return defaultOffCurveIds.has(id); })) return;
+      const on = members.filter(function (id) { return !curvesOff.has(id); });
+      if (on.length === members.length) return;
+      const slug = familySlug(name);
+      if (!on.length) familiesOff.add(slug);
+      else if (on.length < members.length - on.length) familiesOnly.set(slug, new Set(on));
+      else return;
+      members.forEach(function (id) { covered.add(id); });
+    });
+    const offIds = currentCurveIds(explicitOffIds()).filter(function (id) {
+      return !covered.has(id);
+    });
+    const familyTokens = Array.from(familiesOff).map(function (slug) {
+      return slug + ':none';
+    }).concat(Array.from(familiesOnly.entries()).map(function (kv) {
+      return kv[0] + ':only:' + Array.from(kv[1]).join('+');
+    }));
+    url.searchParams.set('off', familyTokens.concat(offIds).join(','));
     const currentOn = currentCurveIds(Array.from(curvesOn));
     if (currentOn.length) {
       url.searchParams.set('on', currentOn.join(','));

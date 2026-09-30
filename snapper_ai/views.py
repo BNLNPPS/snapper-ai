@@ -537,7 +537,8 @@ def snapper_prefs_save(request, scope):
                            'curves_off4', 'curves_off5', 'curves_on5',
                            'curves_off6', 'curves_on6',
                            'window', 'lanes_open',
-                           'pc_off', 'pc_off2', 'focus_last')
+                           'pc_off', 'pc_off2', 'focus_last',
+                           'families_off', 'families_only')
                if key in payload}
     prefs_set(request.user.username, scope, allowed)
     return JsonResponse({'saved': True})
