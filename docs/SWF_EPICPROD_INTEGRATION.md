@@ -82,7 +82,7 @@ snapper-ai applies canonical comparison after this curation.
 
 Before enabling a component, its owner must complete its quantity registration,
 publication trigger, curation resolution, freshness and assessment policy,
-maximum serialized size, visibility, and related event sources.
+visibility, and related event sources.
 
 The PanDA projection requires an explicit commissioning choice. Publishing raw
 job counts grouped by state makes every canonical count change meaningful and can
@@ -129,8 +129,8 @@ The complete revision-driving projection is:
 }
 ```
 
-The map is limited to 128 checks, each summary to 500 characters, and the
-canonical component JSON to 64 KiB. Raw collector data and continuously
+The map is limited to 128 checks and each summary to 500 characters. Raw
+collector data and continuously
 advancing check timestamps stay in SystemStatus and its history rather than
 forcing Snapper revisions. The assessment time is when the scoped projection is
 evaluated; the source time is the oldest non-null check time among its included
@@ -187,8 +187,7 @@ The complete revision-driving projection is:
 }
 ```
 
-The map is limited to 128 namespaces and the canonical component JSON to 64
-KiB. Within each namespace, substate is omitted when the state model does not
+The map is limited to 128 namespaces. Within each namespace, substate is omitted when the state model does not
 define one, and the last-transition time carries the authoritative state-change
 time. The assessment time is the adapter evaluation time. The source time is
 unset because no single source timestamp represents the
@@ -271,7 +270,7 @@ The revision-driving projection is:
 ```
 
 Job and task status maps are limited to 32 entries, each site map to 32 sites,
-the task-type map to 32 types, and canonical component JSON to 64 KiB. Both site
+and the task-type map to 32 types. Both site
 maps retain every non-test queue in the Canary catalog, including explicit zero
 state for inactive queues. Remaining job-site slots rank by current in-flight
 work and then trailing job volume; remaining task-site slots rank by current
@@ -456,8 +455,7 @@ See [PLAN.md](PLAN.md) for completed, current, and pending work.
 The integration is ready for production when:
 
 - every enabled component has an identified owner and authenticated publisher;
-- curation resolution, freshness, schema, provenance, and size bounds are
-  registered;
+- curation resolution, freshness, schema, and provenance are registered;
 - scheduler liveness and capture failures reach the existing alarm system;
 - coverage gaps and recovery are visible to queries;
 - AI results surface component assessment and source times;

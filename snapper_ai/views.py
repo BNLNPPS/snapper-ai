@@ -1505,7 +1505,6 @@ def _component_registration(component):
         'owning_subsystem': registration.get('owning_subsystem', ''),
         'visibility': registration.get('visibility', ''),
         'assessment_policy': registration.get('assessment_policy', ''),
-        'max_serialized_bytes': registration.get('max_serialized_bytes'),
         'quantities': quantities,
         'event_sources': event_sources,
         'registration_json': _json(registration),

@@ -177,6 +177,11 @@ _HOOKS = {
     # (the prewarm path). A hook without the refresh parameter and a
     # legacy bare series dict are both accepted; None builds inline.
     'series_cache': None,
+    # publication_too_large(scope, name, size, limit): a publication over
+    # the data limit, called before the rejection is raised. It runs
+    # inside the publication's transaction, which then rolls back, so a
+    # host that records the event writes it outside that transaction.
+    'publication_too_large': None,
 }
 
 

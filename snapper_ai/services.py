@@ -7,6 +7,7 @@ owner; it never derives an identity from component data.
 
 import hashlib
 import json
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,11 +16,13 @@ from typing import Any, Dict, Optional, Tuple
 from django.db import transaction
 from django.utils import timezone
 
+from . import registry
 from .models import CurrentComponent
 
+logger = logging.getLogger(__name__)
 
 MAX_REGISTRATION_BYTES = 256 * 1024
-DEFAULT_MAX_DATA_BYTES = 64 * 1024
+# The one limit on component data, the same for every component.
 MAX_DATA_BYTES = 1024 * 1024
 JSON_TYPES = {"object", "array", "string", "number", "integer", "boolean", "null"}
 VISIBILITIES = {"public", "operator", "internal"}
@@ -36,6 +39,15 @@ class InvalidRegistration(SnapperError):
 
 class InvalidPublication(SnapperError):
     pass
+
+
+class PublicationTooLarge(InvalidPublication):
+    def __init__(self, size: int, limit: int):
+        super().__init__(
+            f"component data is {size} canonical bytes, over the {limit}-byte limit"
+        )
+        self.size = size
+        self.limit = limit
 
 
 class PublisherNotAuthorized(SnapperError):
@@ -181,15 +193,10 @@ def _validate_registration(
         if "enum" in definition and not isinstance(definition["enum"], list):
             raise InvalidRegistration(f"quantity {key!r}.enum must be an array")
 
-    max_bytes = normalized.get("max_serialized_bytes", DEFAULT_MAX_DATA_BYTES)
-    if (
-        not isinstance(max_bytes, int)
-        or isinstance(max_bytes, bool)
-        or max_bytes < 1
-        or max_bytes > MAX_DATA_BYTES
-    ):
+    if "max_serialized_bytes" in normalized:
         raise InvalidRegistration(
-            f"registration.max_serialized_bytes must be between 1 and {MAX_DATA_BYTES}"
+            "registration.max_serialized_bytes is not supported; component data "
+            f"has one limit, {MAX_DATA_BYTES} canonical bytes"
         )
 
     envelope = {
@@ -234,11 +241,8 @@ def _validate_data(
         normalized, encoded, content_hash = _canonical(data)
     except (TypeError, ValueError) as exc:
         raise InvalidPublication(str(exc)) from exc
-    max_bytes = registration.get("max_serialized_bytes", DEFAULT_MAX_DATA_BYTES)
-    if len(encoded) > max_bytes:
-        raise InvalidPublication(
-            f"component data exceeds {max_bytes} canonical bytes"
-        )
+    if len(encoded) > MAX_DATA_BYTES:
+        raise PublicationTooLarge(len(encoded), MAX_DATA_BYTES)
 
     for key, definition in registration["quantities"].items():
         value = _path_value(normalized, definition["path"])
@@ -410,7 +414,17 @@ def publish_component(
         raise StaleAssessment(
             f"assessment for {scope}:{name} predates the accepted assessment"
         )
-    normalized, content_hash = _validate_data(data, component.registration)
+    try:
+        normalized, content_hash = _validate_data(data, component.registration)
+    except PublicationTooLarge as exc:
+        notify = registry.hook("publication_too_large")
+        if notify is not None:
+            try:
+                notify(scope, name, exc.size, exc.limit)
+            except Exception:  # noqa: BLE001 - the rejection below must stand
+                logger.exception("publication_too_large hook failed for %s:%s",
+                                 scope, name)
+        raise
     content_changed = component.data is None or component.content_hash != content_hash
     accepted_at = timezone.now()
     component.data = normalized

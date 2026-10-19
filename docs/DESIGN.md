@@ -85,7 +85,7 @@ Each quantity definition includes, as applicable:
 - dimension definitions and whether their value sets are open;
 - publication resolution, aggregation, or bucketing semantics when relevant;
 - required, optional, unavailable, and unknown-value semantics;
-- maximum cardinality or serialized size for bounded collections;
+- maximum cardinality for bounded collections;
 - visibility classification; and
 - freshness, assessment, algorithm, and provenance policy identifiers.
 
@@ -148,6 +148,11 @@ Publication performs these generic operations:
 5. compute registration and content hashes;
 6. compare with the current accepted state; and
 7. atomically store the new now and return its acceptance result.
+
+Component data has one size limit, 1 MiB of canonical JSON, the same for every
+component; registrations declare none of their own. A publication over it is
+rejected, and the host's `publication_too_large` hook (`snapper_ai.registry`)
+is called first so the deployment can raise an alarm.
 
 An identical reading is valid. It refreshes acceptance and observation metadata
 while preserving the component revision. A semantic content or registration
