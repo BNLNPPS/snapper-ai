@@ -178,6 +178,28 @@ def series_product(scope, focus, window='24h', selection=None,
         else:
             series = cached
             cache = {'key': key}
+        # A stored product older than the window it is asked for shows
+        # none of that window. The page answers a stale product with a
+        # follow-up fetch when the rebuild its read set off lands; this
+        # product is one answer, so it takes the rebuild here (a hook
+        # accepting refresh=True waits for it or builds), and builds
+        # inline when that does not land.
+        age = cache.get('age_seconds')
+        if series is not None and age is not None and age > hours * 3600:
+            try:
+                fresh = series_cache(key, build, refresh=True)
+            except TypeError:
+                fresh = None
+            fresh_age = fresh.get('age_seconds') if isinstance(fresh, dict) else None
+            if (isinstance(fresh, dict) and fresh.get('value') is not None
+                    and fresh_age is not None and fresh_age <= hours * 3600):
+                series = fresh['value']
+                cache = {'key': key, 'built_at': _iso(fresh.get('built_at')),
+                         'age_seconds': fresh_age,
+                         'refreshing': bool(fresh.get('refreshing'))}
+            else:
+                series = None
+                cache = {'key': key, 'built_inline': True}
     if series is None:
         # No cache, or another worker owns the first fill: build here.
         series = build()

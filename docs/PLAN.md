@@ -320,7 +320,11 @@ as queries, in the same evidence envelope.
   series product as data — curves with their points and labels, the
   family declarations, coverage gaps, the window basis — resolved and
   built exactly as the page does, through the same cache, so the two
-  never disagree.
+  never disagree. A stored product older than the window asked for
+  shows none of that window, and a query has no follow-up fetch as the
+  page does, so it takes the rebuild its read set off (the hook's
+  `refresh=True`) or builds inline (2026-10-20: an 8-day-old site
+  product answered a 24 h query).
 - [x] Generic `cut_summary(scope, focus, time, since)`: the summary at
   a cut as data — one row per plotted metric in panel order with raw
   and formatted value, delta against the previous snap, window
