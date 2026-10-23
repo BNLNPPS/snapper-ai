@@ -21,8 +21,8 @@ from .presentation import ET_ZONE, component_data, et_naive
 
 # The observatory plot draws every snap point; windows are bounded so
 # assembly stays a bounded read (12-13 snaps/hour at current cadence).
-WINDOW_HOURS = {'6h': 6, '24h': 24, '48h': 48, '7d': 168, '14d': 336,
-                '30d': 720}
+WINDOW_HOURS = {'6h': 6, '12h': 12, '24h': 24, '48h': 48, '7d': 168,
+                '14d': 336, '30d': 720}
 DEFAULT_WINDOW = '24h'
 
 # Event-flow curves are served as sparse bins at the native rung —
